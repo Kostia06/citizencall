@@ -22,3 +22,6 @@ harness/.cache/
 CLAUDE.md
 
 .DS_Store
+
+# TS build info
+ui/tsconfig.tsbuildinfo
