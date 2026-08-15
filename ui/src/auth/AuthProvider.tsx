@@ -9,6 +9,8 @@ export interface AuthContextValue {
   accessToken: string | null;
   status: AuthStatus;
   login(email: string, password: string): Promise<void>;
+  /** Creates the account and immediately establishes an authed session —
+   * there is no email-confirmation step to wait on. */
   signup(email: string, password: string): Promise<{ userId: string }>;
   logout(): Promise<void>;
   /** Attaches the bearer token; on a 401 does one silent refresh + retry,
@@ -69,9 +71,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [setSession],
   );
 
-  const signup = useCallback(async (email: string, password: string) => {
-    return authApi.signup(email, password);
-  }, []);
+  const signup = useCallback(
+    async (email: string, password: string) => {
+      const result = await authApi.signup(email, password);
+      // No email-confirmation gate anymore — signup lands the user straight
+      // in an authed session, so log in immediately behind the scenes.
+      const session = await authApi.login(email, password);
+      setSession(session.accessToken, session.user);
+      return result;
+    },
+    [setSession],
+  );
 
   const logout = useCallback(async () => {
     try {

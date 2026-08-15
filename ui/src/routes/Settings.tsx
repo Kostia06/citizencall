@@ -5,7 +5,7 @@ import { motion, useReducedMotion } from 'framer-motion';
 import KeybindingEditor from '../components/settings/KeybindingEditor';
 import ButtonEditor from '../components/settings/ButtonEditor';
 import ConnectionsPanel from '../components/settings/ConnectionsPanel';
-import AuthNav from '../components/AuthNav';
+import TopNav from '../components/TopNav';
 import { AuthError, DEFAULT_PREFS, MOCK, storeApi } from '../api';
 import type { Connection, UserPrefs } from '../api';
 import { useAuth } from '../auth/useAuth';
@@ -124,16 +124,8 @@ export default function Settings() {
 
   return (
     <div className="relative min-h-screen w-full px-6 pb-24 pt-6">
-      <div className="mx-auto flex max-w-2xl items-center justify-between text-[11px] text-white/30">
-        <Link to="/" className="transition-colors hover:text-white/70">
-          understudy
-        </Link>
-        <div className="flex items-center gap-4">
-          {MOCK && (
-            <span className="rounded-full border border-accent/30 bg-accent/10 px-2 py-0.5 text-accent-bright">MOCK</span>
-          )}
-          <AuthNav />
-        </div>
+      <div className="mx-auto max-w-2xl">
+        <TopNav />
       </div>
 
       <motion.div

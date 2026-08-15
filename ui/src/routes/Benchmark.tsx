@@ -1,9 +1,8 @@
 import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
-import { Link } from 'react-router-dom';
 import { motion, useReducedMotion } from 'framer-motion';
 import { fetchBenchmark } from '../api';
-import AuthNav from '../components/AuthNav';
+import TopNav from '../components/TopNav';
 import { formatPct, formatUsd, useCountUp } from '../lib/format';
 import type { BenchmarkResult } from '../types';
 
@@ -30,17 +29,9 @@ export default function Benchmark() {
   const maxCost = data ? Math.max(...BAR_ORDER.map((k) => data.baselines[k].costPer1k)) : 1;
 
   return (
-    <div className="min-h-screen w-full px-6 pb-24 pt-10">
+    <div className="min-h-screen w-full px-6 pb-24 pt-6">
       <div className="mx-auto max-w-3xl">
-        <div className="flex items-center justify-between text-[11px] text-white/30">
-          <span>understudy</span>
-          <div className="flex items-center gap-4">
-            <Link to="/" className="transition-colors hover:text-white/70">
-              ← bar
-            </Link>
-            <AuthNav />
-          </div>
-        </div>
+        <TopNav />
 
         <div className="mt-8">
           <p className="text-[12px] font-medium uppercase tracking-[0.2em] text-accent-bright">cold cache</p>

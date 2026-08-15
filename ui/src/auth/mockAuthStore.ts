@@ -42,9 +42,8 @@ export const mockAuthStore = {
       id: makeToken('user'),
       email: key,
       password,
-      // Mock mode has no email provider — auto-verify so the demo isn't
-      // blocked on a link that can never arrive. Verify.tsx still renders
-      // and works for anyone who navigates there with a token.
+      // There's no confirmation step at all now — accounts are verified
+      // on creation and signup logs the user straight in.
       emailVerified: true,
       createdAt: Date.now(),
     };
@@ -77,12 +76,6 @@ export const mockAuthStore = {
 
   async logout(): Promise<void> {
     session = null;
-  },
-
-  async verify(token: string): Promise<void> {
-    if (!token) throw new Error('Missing verification token');
-    // No real email round-trip in mock mode — accepting any non-empty token
-    // lets the Verify screen demo its success state without a backend.
   },
 
   async forgotPassword(_email: string): Promise<void> {

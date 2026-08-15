@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
 import { motion, useReducedMotion } from 'framer-motion';
 import { fetchBenchmark, fetchRoster } from '../api';
-import AuthNav from '../components/AuthNav';
+import TopNav from '../components/TopNav';
 import { formatDownloads, formatPct, formatUsd, timeAgo } from '../lib/format';
 import { entranceStandardReduced, headlineVariants } from '../lib/motion';
 import type { RosterEntry, TaskKind } from '../types';
@@ -38,17 +37,9 @@ export default function Roster() {
   const ratio = headline && frontierCostPer1k ? frontierCostPer1k / headline.costPer1k : null;
 
   return (
-    <div className="min-h-screen w-full px-6 pb-24 pt-10">
+    <div className="min-h-screen w-full px-6 pb-24 pt-6">
       <div className="mx-auto max-w-3xl">
-        <div className="flex items-center justify-between text-[11px] text-white/30">
-          <span>understudy</span>
-          <div className="flex items-center gap-4">
-            <Link to="/" className="transition-colors hover:text-white/70">
-              ← bar
-            </Link>
-            <AuthNav />
-          </div>
-        </div>
+        <TopNav />
 
         {headline && (
           <motion.div className="mt-10" variants={headlineParent} initial="hidden" animate="show">

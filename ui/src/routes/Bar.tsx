@@ -1,11 +1,10 @@
 import { useEffect, useLayoutEffect, useReducer, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
 import { motion, useReducedMotion } from 'framer-motion';
 import CommandBar from '../components/CommandBar';
 import ConversationTurn from '../components/ConversationTurn';
 import Orbs from '../components/Orbs';
 import { ToastStack, useToasts } from '../components/Toast';
-import AuthNav from '../components/AuthNav';
+import TopNav from '../components/TopNav';
 import { MOCK, startRun, storeApi, type Connection, type RunHandle } from '../api';
 import { conversationReducer, initialConversationState } from '../lib/traceReducer';
 import { layoutFlow, layoutFlowReduced } from '../lib/motion';
@@ -138,22 +137,8 @@ export default function Bar() {
     <div className="relative flex h-screen w-full flex-col overflow-hidden px-6">
       {/* pinned top nav */}
       <div className="absolute inset-x-0 top-0 z-10 px-6 pt-6">
-        <div className="mx-auto flex max-w-2xl items-center justify-between text-[11px] text-white/30">
-          <span>understudy</span>
-          <div className="flex items-center gap-4">
-            {MOCK && (
-              <span className="rounded-full border border-accent/30 bg-accent/10 px-2 py-0.5 text-accent-bright">
-                MOCK
-              </span>
-            )}
-            <Link to="/roster" className="transition-colors hover:text-white/70">
-              roster
-            </Link>
-            <Link to="/benchmark" className="transition-colors hover:text-white/70">
-              benchmark
-            </Link>
-            <AuthNav />
-          </div>
+        <div className="mx-auto max-w-2xl">
+          <TopNav />
         </div>
       </div>
 

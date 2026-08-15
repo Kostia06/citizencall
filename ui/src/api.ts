@@ -263,16 +263,6 @@ export const authApi = {
     );
   },
 
-  async verify(token: string): Promise<void> {
-    return withMockFallback(
-      async () => {
-        const res = await authFetch('/auth/verify', { method: 'POST', body: JSON.stringify({ token }) });
-        if (!res.ok) throw new AuthError(await readJsonError(res), res.status);
-      },
-      () => mockAuthStore.verify(token),
-    );
-  },
-
   async forgotPassword(email: string): Promise<void> {
     return withMockFallback(
       async () => {

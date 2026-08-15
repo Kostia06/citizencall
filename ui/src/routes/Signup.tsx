@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { FormEvent } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import AuthCard from '../components/AuthCard';
 import { AuthError } from '../api';
 import { useAuth } from '../auth/useAuth';
@@ -10,16 +10,16 @@ const inputClass =
 
 const MIN_PASSWORD_LENGTH = 12; // NIST 800-63B alignment — auth-foundation spec §3
 
-/** Signup creates an unverified user (201 `{userId}`) — it does NOT log the
- * user in. design spec §3. */
+/** Signup creates the account and logs the user straight in — no email
+ * confirmation step. A successful submit lands on `/` already authed. */
 export default function Signup() {
   const { signup } = useAuth();
+  const navigate = useNavigate();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [done, setDone] = useState(false);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -35,22 +35,12 @@ export default function Signup() {
     setSubmitting(true);
     try {
       await signup(email, password);
-      setDone(true);
+      navigate('/');
     } catch (err) {
       setError(err instanceof AuthError ? err.message : 'Could not create your account. Try again.');
     } finally {
       setSubmitting(false);
     }
-  }
-
-  if (done) {
-    return (
-      <AuthCard title="Check your email" subtitle="We sent a verification link — click it, then log in.">
-        <Link to="/login" className="text-[13px] text-accent-bright transition-colors hover:text-accent">
-          Go to log in →
-        </Link>
-      </AuthCard>
-    );
   }
 
   return (
