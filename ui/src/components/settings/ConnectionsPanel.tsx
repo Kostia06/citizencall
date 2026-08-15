@@ -1,16 +1,20 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { CATEGORIES, storeApi } from '../../api';
+import { CATEGORIES, TOP_CATEGORIES, storeApi } from '../../api';
 import type { Connection, ToolkitApp } from '../../api';
 
-/** Icon-only connect tile — app name lives in `title`/`aria-label` plus a
- * CSS hover tooltip, never as a visible label (grid requirement). Walks an
- * ordered list of image candidates on each `onError`: the Simple Icons brand
- * mark (skipped for brands not in that catalog), then the Clearbit logo,
- * then Google's favicon service keyed off the real domain — which resolves
- * for essentially any live domain, so it's a guaranteed real icon rather
- * than a placeholder. Only falls back to a neutral initials monogram (no
- * color) if every image source fails (offline demo, ad-blocker). */
+// Rendering all ~1,201 tiles at once would mount 1,201 <img> nodes and fire
+// 1,201 simultaneous image loads — a real jank/memory cost for zero benefit,
+// since a human can't usefully scan that many icons anyway. Search/category
+// narrow the set; this cap applies after filtering, so it only ever bites on
+// broad/empty queries and the count line says so explicitly.
+const RENDER_CAP = 150;
+
+/** Icon-only connect tile — app name lives in `title`/`aria-label` plus a CSS
+ * hover tooltip, never as a visible label (grid requirement). Composio's own
+ * hosted `logo` is the authoritative source for every app in the catalog, so
+ * there's no clearbit/favicon fallback chain to walk — just a neutral
+ * initials monogram if the logo itself 404s (offline demo, ad-blocker). */
 function AppTile({
   app,
   connected,
@@ -24,15 +28,7 @@ function AppTile({
   onConnect(slug: string): void;
   onDisconnect(slug: string): void;
 }) {
-  const candidates = useMemo(
-    () =>
-      [app.icon, app.logo, `https://www.google.com/s2/favicons?domain=${encodeURIComponent(app.domain)}&sz=64`].filter(
-        Boolean,
-      ),
-    [app.icon, app.logo, app.domain],
-  );
-  const [stepIndex, setStepIndex] = useState(0);
-  const exhausted = stepIndex >= candidates.length;
+  const [failed, setFailed] = useState(false);
 
   return (
     <div className="group relative">
@@ -48,7 +44,7 @@ function AppTile({
             : 'border-white/10 bg-white/[0.03] hover:border-white/25 hover:bg-white/[0.07]'
         }`}
       >
-        {exhausted ? (
+        {failed || !app.logo ? (
           <span
             className="flex h-6 w-6 items-center justify-center rounded-md bg-white/10 text-[9px] font-bold text-white/70"
             aria-hidden
@@ -57,12 +53,11 @@ function AppTile({
           </span>
         ) : (
           <img
-            src={candidates[stepIndex]}
+            src={app.logo}
             alt=""
             aria-hidden
             loading="lazy"
-            data-fallback-step={stepIndex}
-            onError={() => setStepIndex((step) => step + 1)}
+            onError={() => setFailed(true)}
             className="h-6 w-6 rounded-sm bg-white/95 object-contain p-0.5"
           />
         )}
@@ -84,7 +79,7 @@ function FilterChip({ label, active, onClick }: { label: string; active: boolean
     <button
       type="button"
       onClick={onClick}
-      className={`rounded-full border px-2.5 py-1 text-[11.5px] transition-colors duration-150 ${
+      className={`rounded-full border px-2.5 py-1 text-[11.5px] capitalize transition-colors duration-150 ${
         active
           ? 'border-accent/60 bg-accent/15 text-accent-bright'
           : 'border-white/10 text-white/50 hover:border-white/25 hover:text-white/80'
@@ -95,13 +90,17 @@ function FilterChip({ label, active, onClick }: { label: string; active: boolean
   );
 }
 
-/** Connections section — searchable icon-only grid of 100+ apps (web UI
- * design spec §6, reworked). Loads the toolkit catalog via
- * `storeApi.toolkits()` (bundled 100+ app list in MOCK mode — store/apps.ts
- * — or a live `/api/toolkits` catalog), filters client-side by name/slug and
- * category. Connect/disconnect wiring is unchanged from before — a
- * per-toolkit inline "log in to connect" prompt still appears when the call
- * 401s. */
+/** Connections section — searchable icon-only grid over the full ~1,201-app
+ * Composio catalog (web UI design spec §6, reworked for full-catalog scale).
+ * Loads the toolkit list via `storeApi.toolkits()` (bundled catalog in MOCK
+ * mode — store/apps.ts / composio-apps.json — or a live `/api/toolkits`
+ * catalog), filters client-side by name/slug/category, and renders only the
+ * top `RENDER_CAP` of the filtered set so the DOM never has to hold more
+ * than ~150 tiles at once. Only the top 10 categories (by app count) get a
+ * chip — the rest of the 82 are reachable by typing the category name into
+ * search, or via the "browse all" select. Connect/disconnect wiring is
+ * unchanged — a per-toolkit inline "log in to connect" prompt still appears
+ * when the call 401s. */
 export default function ConnectionsPanel({
   connections,
   onConnect,
@@ -139,7 +138,8 @@ export default function ConnectionsPanel({
     [connections],
   );
 
-  const categories = useMemo(() => {
+  const topCategories = TOP_CATEGORIES.length ? TOP_CATEGORIES : [];
+  const allCategories = useMemo(() => {
     const fromApps = [...new Set(apps.map((a) => a.category))];
     return fromApps.length ? fromApps.sort() : CATEGORIES;
   }, [apps]);
@@ -147,11 +147,21 @@ export default function ConnectionsPanel({
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return apps.filter((app) => {
-      if (q && !app.name.toLowerCase().includes(q) && !app.slug.toLowerCase().includes(q)) return false;
+      if (
+        q &&
+        !app.name.toLowerCase().includes(q) &&
+        !app.slug.toLowerCase().includes(q) &&
+        !app.category.toLowerCase().includes(q)
+      ) {
+        return false;
+      }
       if (category && app.category !== category) return false;
       return true;
     });
   }, [apps, query, category]);
+
+  const capped = filtered.length > RENDER_CAP;
+  const visible = capped ? filtered.slice(0, RENDER_CAP) : filtered;
 
   const loginRequiredApp = loginRequiredFor ? apps.find((a) => a.slug === loginRequiredFor) : undefined;
 
@@ -162,20 +172,35 @@ export default function ConnectionsPanel({
           type="text"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search apps…"
-          aria-label="Search apps by name"
+          placeholder="Search apps or categories…"
+          aria-label="Search apps by name or category"
           className="w-full max-w-xs rounded-lg border border-white/10 bg-surface-sunken px-3 py-1.5 text-[13px] text-white outline-none transition-colors placeholder:text-white/25 focus:border-accent/60"
         />
+        <select
+          value={category ?? ''}
+          onChange={(e) => setCategory(e.target.value || null)}
+          aria-label="Browse all categories"
+          className="rounded-lg border border-white/10 bg-surface-sunken px-2 py-1.5 text-[12px] capitalize text-white/70 outline-none transition-colors focus:border-accent/60"
+        >
+          <option value="">All categories</option>
+          {allCategories.map((c) => (
+            <option key={c} value={c} className="capitalize">
+              {c}
+            </option>
+          ))}
+        </select>
         <span className="text-[11.5px] text-white/35">
           {loading
             ? 'Loading…'
-            : `${filtered.length === apps.length ? apps.length : `${filtered.length} of ${apps.length}`} apps · ${connectedSlugs.size} connected`}
+            : capped
+              ? `${apps.length.toLocaleString()} apps · showing ${RENDER_CAP} · connected ${connectedSlugs.size} — refine search to see more`
+              : `${filtered.length === apps.length ? apps.length.toLocaleString() : `${filtered.length} of ${apps.length.toLocaleString()}`} apps · ${connectedSlugs.size} connected`}
         </span>
       </div>
 
       <div className="flex flex-wrap gap-1.5">
         <FilterChip label="All" active={category === null} onClick={() => setCategory(null)} />
-        {categories.map((c) => (
+        {topCategories.map((c) => (
           <FilterChip key={c} label={c} active={category === c} onClick={() => setCategory(category === c ? null : c)} />
         ))}
       </div>
@@ -190,7 +215,7 @@ export default function ConnectionsPanel({
         <p className="py-4 text-[13px] text-white/35">No apps match your filters.</p>
       ) : (
         <div className="flex max-h-80 flex-wrap gap-2.5 overflow-y-auto py-1 pr-1">
-          {filtered.map((app) => (
+          {visible.map((app) => (
             <AppTile
               key={app.slug}
               app={app}

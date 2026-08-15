@@ -11,7 +11,7 @@ import type { ToolkitApp } from './store/apps';
 export { DEFAULT_PREFS } from './store/types';
 export type { Connection, UserPrefs, UserPrefsButton, FixedButtonAction } from './store/types';
 export type { ToolkitApp } from './store/apps';
-export { CATEGORIES } from './store/apps';
+export { CATEGORIES, TOP_CATEGORIES } from './store/apps';
 
 // MOCK is on by default so the UI is fully demoable with zero backend —
 // flip VITE_MOCK=false to talk to a real Worker. See SPEC.md §13.
@@ -351,8 +351,9 @@ export const storeApi = {
   /** Full connect-app catalog for the Connections grid — public (no auth
    * needed to browse), so this hits the network directly rather than going
    * through `authedFetch`/`withMockFallback`'s AuthError handling. Falls
-   * back to the bundled 100+ app catalog (`store/apps.ts`) in MOCK mode or
-   * whenever the live call fails, so the grid is always fully demoable. */
+   * back to the bundled ~1,201-app Composio catalog (`store/apps.ts` /
+   * `store/composio-apps.json`) in MOCK mode or whenever the live call
+   * fails, so the grid is always fully demoable. */
   async toolkits(): Promise<{ toolkits: ToolkitApp[]; source: 'live' | 'mock' }> {
     if (MOCK) return { toolkits: APPS, source: 'mock' };
     try {
