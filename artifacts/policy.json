@@ -1,17 +1,17 @@
 {
   "version": "v1-offline",
-  "generatedAt": "2026-08-15T01:17:43.826050+00:00",
+  "generatedAt": "2026-08-15T01:44:20.881102+00:00",
   "weights": {
     "quality": 1.0,
     "cost": 0.35
   },
   "ladders": {
     "classify": [
-      "teknium/OpenHermes-2.5-Mistral-7B",
+      "NousResearch/Hermes-3-Llama-3.1-8B",
       "zai-org/GLM-5.2"
     ],
     "extract_fields": [
-      "mistralai/Mistral-7B-Instruct-v0.3",
+      "Qwen/Qwen2.5-Coder-7B-Instruct",
       "zai-org/GLM-5.2"
     ],
     "summarize": [
@@ -19,47 +19,47 @@
       "zai-org/GLM-5.2"
     ],
     "normalize": [
-      "meta-llama/Llama-3.1-8B-Instruct",
+      "Qwen/Qwen3-8B",
       "zai-org/GLM-5.2"
     ]
   },
   "quality": {
-    "teknium/OpenHermes-2.5-Mistral-7B": {
-      "classify": 1.0
+    "NousResearch/Hermes-3-Llama-3.1-8B": {
+      "classify": 0.6667
     },
-    "mistralai/Mistral-7B-Instruct-v0.3": {
-      "extract_fields": 0.6667
+    "Qwen/Qwen2.5-Coder-7B-Instruct": {
+      "extract_fields": 1.0
     },
     "Qwen/Qwen3-0.6B": {
-      "summarize": 0.5
+      "summarize": 0.4444
     },
-    "meta-llama/Llama-3.1-8B-Instruct": {
-      "normalize": 1.0
+    "Qwen/Qwen3-8B": {
+      "normalize": 0.8809
     }
   },
   "qualityCI": {
-    "teknium/OpenHermes-2.5-Mistral-7B": {
+    "NousResearch/Hermes-3-Llama-3.1-8B": {
       "classify": [
-        0.3424,
-        1.0
+        0.3906,
+        0.8619
       ]
     },
-    "mistralai/Mistral-7B-Instruct-v0.3": {
+    "Qwen/Qwen2.5-Coder-7B-Instruct": {
       "extract_fields": [
-        0.0945,
-        0.9055
+        0.7575,
+        1.0
       ]
     },
     "Qwen/Qwen3-0.6B": {
       "summarize": [
-        0.0945,
-        0.9055
+        0.1933,
+        0.6805
       ]
     },
-    "meta-llama/Llama-3.1-8B-Instruct": {
+    "Qwen/Qwen3-8B": {
       "normalize": [
-        0.3424,
-        1.0
+        0.6461,
+        0.9851
       ]
     }
   },

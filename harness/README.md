@@ -53,7 +53,7 @@ against warmed candidates.
 | `stats.py` | Wilson score intervals for proportions (not bootstrap — bootstrap degenerates to `[1,1]` at 12/12); bootstrap only for the paired Δ. The §9.4 promotion rule and `cost_effective = c_primary + p_escalate·c_escalation`. |
 | `promote.py` | Orchestrates the sweep, applies the promotion rule, **mechanically asserts** the held-out data-splitting invariant, writes `policy.json`/`results.json`/`funnel.json`, appends every call to `sweep-log.jsonl`. |
 | `derive_tasks.py` | Traces → `TaskInstance`s (SPEC.md §17). **Not wired to real traces yet** — see its module docstring TODO; it's a deliberate, documented no-op until `worker/` ships a trace export. |
-| `tasks/*.jsonl` | Seed gold-labeled instances (6-8/kind: `held_in` + `held_out`). **These are examples to expand to 24/kind by hand** per SPEC.md §9.5 — not the full benchmark. |
+| `tasks/*.jsonl` | Gold-labeled instances, **24/kind (12 `held_in` + 12 `held_out`)** per SPEC.md §9.5. Rounds split held-in 6/6 (non-overlapping); held-out reports at `n=12` to match the stated Wilson/δ statistics. Labels are hand-authored — replace the frontier-baseline pass with hand-correction (§9.5) before the real sweep. |
 
 ## Tests
 
