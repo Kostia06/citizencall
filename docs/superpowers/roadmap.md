@@ -4,7 +4,19 @@ Decomposition (each sub-project gets its own spec → plan → implementation):
 
 1. **Auth + identity foundation** ✅ DONE (feature/ui). Workers + D1, email+password (scrypt), JWT + rotating refresh w/ reuse-detection, `requireAuth`/`requireVerified`, fail-closed secret. Everything below keys off `users.id`.
 2. **Per-user store** ✅ DONE (feature/ui). Composio connections, MCPs, tool overrides, prefs (keybindings/buttons/contextPrompt); owner-scoped `/api/*` CRUD; `/oauth/done` persistence.
-   - **FOLLOW-UP (deferred from store final review):** the store is not yet consumed by the run pipeline — `isToolEnabled`/`getConnectedAccountId`/`loadUserContext` have no callers, so disabling a tool or revoking a connection has NO runtime effect yet, and the default context prompt isn't prepended to runs. Wire `runTool` (worker/src/pipeline/execute.ts) to check tool-enablement + connection status, and `/api/run` to prepend `contextPrompt`. Belongs to the run-auth / #4 integration.
+   - ~~FOLLOW-UP: store not consumed by run pipeline~~ ✅ DONE 2026-08-15: `runPipeline` prepends contextPrompt server-side, honors tool overrides (`*` wildcard + per-tool precedence, `tool_skipped` events), gates Composio calls on connection status; `/api/run` identity now comes from `resolveActor` (not body userId).
+
+## Full-functionality build-out ✅ (2026-08-15, feature/ui @ ce7d0d3, live-verified)
+
+- **Any-app connect**: all 1,201 Composio toolkits connectable via auto-created managed auth-configs (live: Slack/Notion/Airtable/Linear real OAuth pages, anonymous cookie-session included). Disconnect via customize panel.
+- **Custom MCPs**: full CRUD (worker validation + UI manager panel); enabled MCPs surface to the planner; call transport STUBBED behind `McpTransport` (`tool_skipped: mcp transport not implemented`) — remaining work.
+- **ElevenLabs STT**: `POST /api/stt` live-verified (real transcript); Mic uses MediaRecorder → transcribing state; MOCK fallback.
+- **Run cache + agent loop**: per-user 24h run cache (hit replays trace in ms; `noCache` ⌘⏎ bypass write-through), decompose→route→execute→verify→escalate live (GLM-5.2 rung-1; reasoning-token headroom fix), tool output spliced into prompts w/ §8 taint tracking.
+- **Live-bar orbs**: prefs.buttons-driven (incl. `toolkit:<slug>` bindings), hold-drag reorder persists (verified: server order changed).
+- **Expo client** (`expo/`): auth (secure-store, native bearer refresh), command/chat screen, connections, settings; tsc+jest+export verified; NO on-device run yet.
+- Fixes found live: `/auth/*` missing from `run_worker_first` (405s), refresh-rotation race vs StrictMode (single-flight), SSE reconnect-loop after run_end, suggest 500 (unservable catalog model → fallback chain).
+
+**Remaining known work:** MCP call transport (JSON-RPC client); `/api/stt` rate limit; promoted v1-live models absent from runtime catalog (all kinds fall back to GLM-5.2 — harness owner); Expo on-device verification + worker native-refresh branch check; Composio test auth-configs cleanup (slack/notion/airtable/bogus); memory system #3 (blocked on "Hermes memory system" clarification); bundle-size manualChunks.
 3. **Per-user memory system** (NEW — see below).
 4. **Web UI** — signup/login, centered auto-growing search bar, customizable buttons + keybinding editor, drag-drop attachments + clipboard read, settings for connections/tools/memory.
 5. **Expo search bar** — consumes the same token API (owner handles native).
