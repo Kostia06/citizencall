@@ -21,3 +21,15 @@ it('verifies via a single-use email token', async () => {
   const found = await getUserByEmail(env.DB, 'verify@example.com');
   expect(found?.emailVerified).toBe(true);
 });
+
+it('is single-use under concurrent consumption', async () => {
+  const u = await createUser(env.DB, { email: 'race@example.com', passwordHash: 'scrypt$x', now: 1 });
+  const token = await createEmailToken(env.DB, { userId: u.id, type: 'verify', now: 1, ttlMs: 1000 });
+  const [a, b] = await Promise.all([
+    consumeEmailToken(env.DB, 'verify', token, 2),
+    consumeEmailToken(env.DB, 'verify', token, 2),
+  ]);
+  const results = [a, b];
+  expect(results.filter((r) => r === u.id)).toHaveLength(1);
+  expect(results.filter((r) => r === null)).toHaveLength(1);
+});

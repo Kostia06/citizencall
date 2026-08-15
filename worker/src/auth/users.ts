@@ -58,11 +58,14 @@ export async function consumeEmailToken(
   now: number
 ): Promise<string | null> {
   const hash = await hashToken(token);
+  // Atomic claim: the used_at IS NULL / expires_at>=now guard runs inside the same
+  // UPDATE that sets used_at, so two concurrent callers can't both pass the check
+  // before either write commits — only one UPDATE can match and return a row.
   const r = await db
-    .prepare(`SELECT id,user_id,expires_at,used_at FROM email_tokens WHERE token_hash=? AND type=?`)
-    .bind(hash, type)
-    .first<{ id: string; user_id: string; expires_at: number; used_at: number | null }>();
-  if (!r || r.used_at !== null || r.expires_at < now) return null;
-  await db.prepare(`UPDATE email_tokens SET used_at=? WHERE id=?`).bind(now, r.id).run();
-  return r.user_id;
+    .prepare(
+      `UPDATE email_tokens SET used_at=? WHERE token_hash=? AND type=? AND used_at IS NULL AND expires_at>=? RETURNING user_id`
+    )
+    .bind(now, hash, type, now)
+    .first<{ user_id: string }>();
+  return r ? r.user_id : null;
 }
