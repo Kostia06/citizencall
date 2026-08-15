@@ -34,7 +34,13 @@ export default function Signup() {
     }
     setSubmitting(true);
     try {
-      await signup(email, password);
+      const result = await signup(email, password);
+      if (result.pending2fa) {
+        // Production email flow — the account exists but the session needs
+        // the emailed code; the login screen owns that step.
+        navigate('/login', { state: { pending2fa: result.pending2fa, email } });
+        return;
+      }
       navigate('/');
     } catch (err) {
       setError(err instanceof AuthError ? err.message : 'Could not create your account. Try again.');

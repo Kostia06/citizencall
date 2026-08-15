@@ -19,7 +19,10 @@ export interface AuthContextValue {
    * immediately after signup (fresh account, mock demo) is auto-verified
    * via its dev code rather than surfaced, since the browser that just
    * created the account is trivially the owner. */
-  signup(email: string, password: string): Promise<{ userId: string }>;
+  /** `pending2fa` is set only when the post-signup login raised a challenge
+   * that couldn't be auto-verified (production email flow) — the caller
+   * routes to the login code-entry step with it. */
+  signup(email: string, password: string): Promise<{ userId: string; pending2fa?: Requires2fa }>;
   /** Completes a challenge returned by `login` and establishes the session. */
   verify2fa(challengeId: string, code: string): Promise<void>;
   /** Re-sends the code for an in-flight challenge; returns the resend
@@ -101,16 +104,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     async (email: string, password: string) => {
       const result = await authApi.signup(email, password);
       // No email-confirmation gate anymore — signup lands the user straight
-      // in an authed session, so log in immediately behind the scenes. A
-      // fresh account isn't expected to have 2FA enabled yet, but if it
-      // does (mock always challenges), auto-verify with the dev code rather
-      // than bounce the just-created user into a code-entry screen.
+      // in an authed session, so log in immediately behind the scenes. When
+      // that login raises a 2FA challenge: with a devCode (dev builds / no
+      // email provider) auto-verify so a just-created user isn't bounced to
+      // a code screen; WITHOUT one (production, real email) auto-verify is
+      // impossible — surface the challenge so the caller can route into the
+      // normal code-entry step instead of throwing on a bad verify.
       const loginResult = await authApi.login(email, password);
-      const session =
-        'requires2fa' in loginResult
-          ? await authApi.verify2fa(loginResult.challengeId, loginResult.devCode ?? '')
-          : loginResult;
-      setSession(session.accessToken, session.user);
+      if ('requires2fa' in loginResult) {
+        if (!loginResult.devCode) return { ...result, pending2fa: loginResult };
+        const session = await authApi.verify2fa(loginResult.challengeId, loginResult.devCode);
+        setSession(session.accessToken, session.user);
+        return result;
+      }
+      setSession(loginResult.accessToken, loginResult.user);
       return result;
     },
     [setSession],

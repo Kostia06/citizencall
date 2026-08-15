@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ClipboardEvent, FormEvent, KeyboardEvent } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import AuthCard from '../components/AuthCard';
 import { authApi, AuthError } from '../api';
 import { useAuth } from '../auth/useAuth';
@@ -99,8 +99,12 @@ export default function Login() {
   const [forgotSent, setForgotSent] = useState(false);
 
   // 2FA step
-  const [challengeId, setChallengeId] = useState<string | null>(null);
-  const [devCode, setDevCode] = useState<string | null>(null);
+  // A signup that couldn't auto-verify (production email flow) hands its
+  // challenge over via router state — land directly on the code step.
+  const location = useLocation();
+  const handedOff = (location.state ?? null) as { pending2fa?: { challengeId: string; devCode?: string }; email?: string } | null;
+  const [challengeId, setChallengeId] = useState<string | null>(handedOff?.pending2fa?.challengeId ?? null);
+  const [devCode, setDevCode] = useState<string | null>(handedOff?.pending2fa?.devCode ?? null);
   const [digits, setDigits] = useState<string[]>(() => Array(CODE_LENGTH).fill(''));
   const [codeAttempt, setCodeAttempt] = useState(0); // bumped on wrong-code to refocus box 0
   const [codeError, setCodeError] = useState(false);
