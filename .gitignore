@@ -25,3 +25,7 @@ CLAUDE.md
 
 # TS build info
 ui/tsconfig.tsbuildinfo
+
+# Playwright scratch
+.playwright-mcp/
+*.png
