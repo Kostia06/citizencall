@@ -45,17 +45,22 @@ authRoutes.post('/signup', async (c) => {
 
   const existing = await getUserByEmail(c.env.DB, email);
   if (existing) {
-    // No enumeration: pretend success, notify the existing account instead.
+    // No enumeration: identical response body/status as the new-account path,
+    // and a dummy hash so timing doesn't reveal the account already exists.
+    await hashPassword(password);
     await sendVerifyEmail(c.env, existing.email, `${c.env.APP_URL ?? ''}/login`);
-    return c.json({ userId: null }, 201);
+    return c.json({ ok: true }, 201);
   }
   const user = await createUser(c.env.DB, { email, passwordHash: await hashPassword(password), now: now() });
   const token = await createEmailToken(c.env.DB, { userId: user.id, type: 'verify', now: now(), ttlMs: 24 * 3600000 });
   await sendVerifyEmail(c.env, user.email, `${c.env.APP_URL ?? ''}/verify?token=${token}`);
-  return c.json({ userId: user.id }, 201);
+  return c.json({ ok: true }, 201);
 });
 
 authRoutes.post('/verify', async (c) => {
+  const throttle = await checkAndIncrement(c.env.DB, `verify:ip:${clientIp(c)}`, now(), { windowMs: 3600000, max: 10 });
+  if (!throttle.allowed) return c.json({ error: 'Too many attempts.' }, 429);
+
   const { token } = await c.req.json().catch(() => ({}));
   if (typeof token !== 'string') return c.json({ error: 'Bad request.' }, 400);
   const userId = await consumeEmailToken(c.env.DB, 'verify', token, now());
@@ -110,6 +115,9 @@ authRoutes.post('/password/forgot', async (c) => {
 });
 
 authRoutes.post('/password/reset', async (c) => {
+  const throttle = await checkAndIncrement(c.env.DB, `reset:ip:${clientIp(c)}`, now(), { windowMs: 3600000, max: 10 });
+  if (!throttle.allowed) return c.json({ error: 'Too many attempts.' }, 429);
+
   const { token, password } = await c.req.json().catch(() => ({}));
   if (typeof token !== 'string' || typeof password !== 'string') return c.json({ error: 'Bad request.' }, 400);
   const policy = checkPasswordPolicy(password);
