@@ -1,12 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { appColor, CATEGORIES, COLOR_SWATCHES, storeApi } from '../../api';
+import { CATEGORIES, storeApi } from '../../api';
 import type { Connection, ToolkitApp } from '../../api';
 
 /** Icon-only connect tile — app name lives in `title`/`aria-label` plus a
- * CSS hover tooltip, never as a visible label (grid requirement). Falls
- * back to a colored initial avatar if the logo CDN request fails (offline
- * demo, ad-blocker) — same hash-based color used by the color filter below. */
+ * CSS hover tooltip, never as a visible label (grid requirement). Tries the
+ * Simple Icons brand mark first, falls back to the Clearbit logo if that
+ * 404s, and finally falls back to a neutral initials monogram (no color) if
+ * both image sources fail (offline demo, ad-blocker, unlisted brand). */
 function AppTile({
   app,
   connected,
@@ -20,8 +21,7 @@ function AppTile({
   onConnect(slug: string): void;
   onDisconnect(slug: string): void;
 }) {
-  const [imgError, setImgError] = useState(false);
-  const color = appColor(app.slug);
+  const [iconStage, setIconStage] = useState<'icon' | 'logo' | 'fallback'>('icon');
 
   return (
     <div className="group relative">
@@ -37,22 +37,21 @@ function AppTile({
             : 'border-white/10 bg-white/[0.03] hover:border-white/25 hover:bg-white/[0.07]'
         }`}
       >
-        {imgError ? (
+        {iconStage === 'fallback' ? (
           <span
-            className="flex h-6 w-6 items-center justify-center rounded-md text-[9px] font-bold text-black"
-            style={{ backgroundColor: color }}
+            className="flex h-6 w-6 items-center justify-center rounded-md bg-white/10 text-[9px] font-bold text-white/70"
             aria-hidden
           >
             {app.name.slice(0, 2).toUpperCase()}
           </span>
         ) : (
           <img
-            src={app.logo}
+            src={iconStage === 'icon' ? app.icon : app.logo}
             alt=""
             aria-hidden
             loading="lazy"
-            onError={() => setImgError(true)}
-            className="h-6 w-6 rounded-sm object-contain"
+            onError={() => setIconStage((stage) => (stage === 'icon' ? 'logo' : 'fallback'))}
+            className="h-6 w-6 rounded-sm bg-white/95 object-contain p-0.5"
           />
         )}
         {connected && (
@@ -87,10 +86,10 @@ function FilterChip({ label, active, onClick }: { label: string; active: boolean
 /** Connections section — searchable icon-only grid of 100+ apps (web UI
  * design spec §6, reworked). Loads the toolkit catalog via
  * `storeApi.toolkits()` (bundled 100+ app list in MOCK mode — store/apps.ts
- * — or a live `/api/toolkits` catalog), filters client-side by name/slug,
- * category, and a hash-derived color swatch. Connect/disconnect wiring is
- * unchanged from before — a per-toolkit inline "log in to connect" prompt
- * still appears when the call 401s. */
+ * — or a live `/api/toolkits` catalog), filters client-side by name/slug and
+ * category. Connect/disconnect wiring is unchanged from before — a
+ * per-toolkit inline "log in to connect" prompt still appears when the call
+ * 401s. */
 export default function ConnectionsPanel({
   connections,
   onConnect,
@@ -108,7 +107,6 @@ export default function ConnectionsPanel({
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState<string | null>(null);
-  const [color, setColor] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -139,10 +137,9 @@ export default function ConnectionsPanel({
     return apps.filter((app) => {
       if (q && !app.name.toLowerCase().includes(q) && !app.slug.toLowerCase().includes(q)) return false;
       if (category && app.category !== category) return false;
-      if (color && appColor(app.slug) !== color) return false;
       return true;
     });
-  }, [apps, query, category, color]);
+  }, [apps, query, category]);
 
   const loginRequiredApp = loginRequiredFor ? apps.find((a) => a.slug === loginRequiredFor) : undefined;
 
@@ -169,33 +166,6 @@ export default function ConnectionsPanel({
         {categories.map((c) => (
           <FilterChip key={c} label={c} active={category === c} onClick={() => setCategory(category === c ? null : c)} />
         ))}
-      </div>
-
-      <div className="flex flex-wrap items-center gap-1.5">
-        <span className="mr-0.5 text-[11px] text-white/35">Color</span>
-        {COLOR_SWATCHES.map((s) => (
-          <button
-            key={s}
-            type="button"
-            title="Filter by color"
-            aria-label={`Filter apps by color swatch ${s}`}
-            aria-pressed={color === s}
-            onClick={() => setColor(color === s ? null : s)}
-            style={{ backgroundColor: s }}
-            className={`h-4 w-4 shrink-0 rounded-full border transition-transform duration-150 ${
-              color === s ? 'scale-125 border-white' : 'border-white/20 hover:scale-110'
-            }`}
-          />
-        ))}
-        {color && (
-          <button
-            type="button"
-            onClick={() => setColor(null)}
-            className="text-[11px] text-white/40 transition-colors hover:text-white/70"
-          >
-            clear
-          </button>
-        )}
       </div>
 
       {loading ? (

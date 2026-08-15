@@ -1,210 +1,193 @@
 // Static catalog of 100+ popular apps for the Connections grid — guarantees
 // a fully demoable "100+ app" connect experience with zero backend (MOCK
 // mode, or a live Worker that hasn't implemented GET /api/toolkits yet).
-// Logos resolve via Clearbit's public logo CDN (`logo.clearbit.com/<domain>`)
-// keyed off each app's real domain, so every entry renders a real brand mark
-// with no icon-slug guessing. `AppTile` (ConnectionsPanel.tsx) falls back to
-// a colored initial avatar if a logo fails to load (offline demo, ad-blocker,
-// etc.) — see `appColor` below.
+//
+// Icons resolve via Simple Icons' public CDN
+// (`cdn.simpleicons.org/<simpleicons-slug>`), which serves brand-colored SVG
+// marks with no auth/token and near-100% uptime. Each app also carries a
+// Clearbit `logo.clearbit.com/<domain>` URL as a secondary fallback for the
+// handful of brands not in the Simple Icons catalog. `AppTile`
+// (ConnectionsPanel.tsx) tries Simple Icons first, then Clearbit, then a
+// neutral initials avatar if both fail — never a colored swatch.
 export interface ToolkitApp {
   slug: string;
   name: string;
   category: string;
+  /** Primary icon — Simple Icons CDN (brand-colored SVG). */
+  icon: string;
+  /** Secondary fallback — Clearbit logo CDN, keyed off the real domain. */
   logo: string;
 }
 
-type RawApp = [slug: string, name: string, category: string, domain: string];
+// [slug, name, category, domain, simpleIconsSlug]
+type RawApp = [slug: string, name: string, category: string, domain: string, simpleIcons: string];
 
 const RAW_APPS: RawApp[] = [
   // Dev Tools
-  ['github', 'GitHub', 'Dev Tools', 'github.com'],
-  ['gitlab', 'GitLab', 'Dev Tools', 'gitlab.com'],
-  ['bitbucket', 'Bitbucket', 'Dev Tools', 'bitbucket.org'],
-  ['jira', 'Jira', 'Dev Tools', 'atlassian.com'],
-  ['confluence', 'Confluence', 'Dev Tools', 'atlassian.com'],
-  ['circleci', 'CircleCI', 'Dev Tools', 'circleci.com'],
-  ['jenkins', 'Jenkins', 'Dev Tools', 'jenkins.io'],
-  ['docker', 'Docker', 'Dev Tools', 'docker.com'],
-  ['vercel', 'Vercel', 'Dev Tools', 'vercel.com'],
-  ['netlify', 'Netlify', 'Dev Tools', 'netlify.com'],
-  ['npm', 'npm', 'Dev Tools', 'npmjs.com'],
-  ['pypi', 'PyPI', 'Dev Tools', 'pypi.org'],
-  ['postman', 'Postman', 'Dev Tools', 'postman.com'],
-  ['sentry', 'Sentry', 'Dev Tools', 'sentry.io'],
-  ['datadog', 'Datadog', 'Dev Tools', 'datadoghq.com'],
-  ['pagerduty', 'PagerDuty', 'Dev Tools', 'pagerduty.com'],
-  ['linear', 'Linear', 'Dev Tools', 'linear.app'],
-  ['heroku', 'Heroku', 'Dev Tools', 'heroku.com'],
-  ['digitalocean', 'DigitalOcean', 'Dev Tools', 'digitalocean.com'],
-  ['cloudflare', 'Cloudflare', 'Dev Tools', 'cloudflare.com'],
-  ['terraform', 'Terraform', 'Dev Tools', 'terraform.io'],
-  ['supabase', 'Supabase', 'Dev Tools', 'supabase.com'],
-  ['railway', 'Railway', 'Dev Tools', 'railway.app'],
+  ['github', 'GitHub', 'Dev Tools', 'github.com', 'github'],
+  ['gitlab', 'GitLab', 'Dev Tools', 'gitlab.com', 'gitlab'],
+  ['bitbucket', 'Bitbucket', 'Dev Tools', 'bitbucket.org', 'bitbucket'],
+  ['jira', 'Jira', 'Dev Tools', 'atlassian.com', 'jira'],
+  ['confluence', 'Confluence', 'Dev Tools', 'atlassian.com', 'confluence'],
+  ['circleci', 'CircleCI', 'Dev Tools', 'circleci.com', 'circleci'],
+  ['jenkins', 'Jenkins', 'Dev Tools', 'jenkins.io', 'jenkins'],
+  ['docker', 'Docker', 'Dev Tools', 'docker.com', 'docker'],
+  ['vercel', 'Vercel', 'Dev Tools', 'vercel.com', 'vercel'],
+  ['netlify', 'Netlify', 'Dev Tools', 'netlify.com', 'netlify'],
+  ['npm', 'npm', 'Dev Tools', 'npmjs.com', 'npm'],
+  ['pypi', 'PyPI', 'Dev Tools', 'pypi.org', 'pypi'],
+  ['postman', 'Postman', 'Dev Tools', 'postman.com', 'postman'],
+  ['sentry', 'Sentry', 'Dev Tools', 'sentry.io', 'sentry'],
+  ['datadog', 'Datadog', 'Dev Tools', 'datadoghq.com', 'datadog'],
+  ['pagerduty', 'PagerDuty', 'Dev Tools', 'pagerduty.com', 'pagerduty'],
+  ['linear', 'Linear', 'Dev Tools', 'linear.app', 'linear'],
+  ['heroku', 'Heroku', 'Dev Tools', 'heroku.com', 'heroku'],
+  ['digitalocean', 'DigitalOcean', 'Dev Tools', 'digitalocean.com', 'digitalocean'],
+  ['cloudflare', 'Cloudflare', 'Dev Tools', 'cloudflare.com', 'cloudflare'],
+  ['terraform', 'Terraform', 'Dev Tools', 'terraform.io', 'terraform'],
+  ['supabase', 'Supabase', 'Dev Tools', 'supabase.com', 'supabase'],
+  ['railway', 'Railway', 'Dev Tools', 'railway.app', 'railway'],
 
   // Communication
-  ['slack', 'Slack', 'Communication', 'slack.com'],
-  ['discord', 'Discord', 'Communication', 'discord.com'],
-  ['microsoft-teams', 'Microsoft Teams', 'Communication', 'microsoft.com'],
-  ['zoom', 'Zoom', 'Communication', 'zoom.us'],
-  ['google-meet', 'Google Meet', 'Communication', 'meet.google.com'],
-  ['telegram', 'Telegram', 'Communication', 'telegram.org'],
-  ['whatsapp', 'WhatsApp', 'Communication', 'whatsapp.com'],
-  ['twilio', 'Twilio', 'Communication', 'twilio.com'],
-  ['intercom', 'Intercom', 'Communication', 'intercom.com'],
-  ['zendesk', 'Zendesk', 'Communication', 'zendesk.com'],
-  ['front', 'Front', 'Communication', 'front.com'],
-  ['loom', 'Loom', 'Communication', 'loom.com'],
-  ['calendly', 'Calendly', 'Communication', 'calendly.com'],
-  ['ringcentral', 'RingCentral', 'Communication', 'ringcentral.com'],
-  ['webex', 'Webex', 'Communication', 'webex.com'],
+  ['slack', 'Slack', 'Communication', 'slack.com', 'slack'],
+  ['discord', 'Discord', 'Communication', 'discord.com', 'discord'],
+  ['microsoft-teams', 'Microsoft Teams', 'Communication', 'microsoft.com', 'microsoftteams'],
+  ['zoom', 'Zoom', 'Communication', 'zoom.us', 'zoom'],
+  ['google-meet', 'Google Meet', 'Communication', 'meet.google.com', 'googlemeet'],
+  ['telegram', 'Telegram', 'Communication', 'telegram.org', 'telegram'],
+  ['whatsapp', 'WhatsApp', 'Communication', 'whatsapp.com', 'whatsapp'],
+  ['twilio', 'Twilio', 'Communication', 'twilio.com', 'twilio'],
+  ['intercom', 'Intercom', 'Communication', 'intercom.com', 'intercom'],
+  ['zendesk', 'Zendesk', 'Communication', 'zendesk.com', 'zendesk'],
+  ['front', 'Front', 'Communication', 'front.com', 'front'],
+  ['loom', 'Loom', 'Communication', 'loom.com', 'loom'],
+  ['calendly', 'Calendly', 'Communication', 'calendly.com', 'calendly'],
+  ['ringcentral', 'RingCentral', 'Communication', 'ringcentral.com', 'ringcentral'],
+  ['webex', 'Webex', 'Communication', 'webex.com', 'webex'],
 
   // Productivity
-  ['notion', 'Notion', 'Productivity', 'notion.so'],
-  ['trello', 'Trello', 'Productivity', 'trello.com'],
-  ['asana', 'Asana', 'Productivity', 'asana.com'],
-  ['monday', 'monday.com', 'Productivity', 'monday.com'],
-  ['clickup', 'ClickUp', 'Productivity', 'clickup.com'],
-  ['todoist', 'Todoist', 'Productivity', 'todoist.com'],
-  ['evernote', 'Evernote', 'Productivity', 'evernote.com'],
-  ['airtable', 'Airtable', 'Productivity', 'airtable.com'],
-  ['coda', 'Coda', 'Productivity', 'coda.io'],
-  ['miro', 'Miro', 'Productivity', 'miro.com'],
-  ['basecamp', 'Basecamp', 'Productivity', 'basecamp.com'],
-  ['wrike', 'Wrike', 'Productivity', 'wrike.com'],
-  ['smartsheet', 'Smartsheet', 'Productivity', 'smartsheet.com'],
-  ['google-calendar', 'Google Calendar', 'Productivity', 'calendar.google.com'],
-  ['google-docs', 'Google Docs', 'Productivity', 'docs.google.com'],
-  ['gmail', 'Gmail', 'Productivity', 'gmail.com'],
+  ['notion', 'Notion', 'Productivity', 'notion.so', 'notion'],
+  ['trello', 'Trello', 'Productivity', 'trello.com', 'trello'],
+  ['asana', 'Asana', 'Productivity', 'asana.com', 'asana'],
+  ['monday', 'monday.com', 'Productivity', 'monday.com', 'mondaydotcom'],
+  ['clickup', 'ClickUp', 'Productivity', 'clickup.com', 'clickup'],
+  ['todoist', 'Todoist', 'Productivity', 'todoist.com', 'todoist'],
+  ['evernote', 'Evernote', 'Productivity', 'evernote.com', 'evernote'],
+  ['airtable', 'Airtable', 'Productivity', 'airtable.com', 'airtable'],
+  ['coda', 'Coda', 'Productivity', 'coda.io', 'coda'],
+  ['miro', 'Miro', 'Productivity', 'miro.com', 'miro'],
+  ['basecamp', 'Basecamp', 'Productivity', 'basecamp.com', 'basecamp'],
+  ['wrike', 'Wrike', 'Productivity', 'wrike.com', 'wrike'],
+  ['smartsheet', 'Smartsheet', 'Productivity', 'smartsheet.com', 'smartsheet'],
+  ['google-calendar', 'Google Calendar', 'Productivity', 'calendar.google.com', 'googlecalendar'],
+  ['google-docs', 'Google Docs', 'Productivity', 'docs.google.com', 'googledocs'],
+  ['gmail', 'Gmail', 'Productivity', 'gmail.com', 'gmail'],
 
   // CRM / Sales
-  ['salesforce', 'Salesforce', 'CRM', 'salesforce.com'],
-  ['hubspot', 'HubSpot', 'CRM', 'hubspot.com'],
-  ['pipedrive', 'Pipedrive', 'CRM', 'pipedrive.com'],
-  ['zoho-crm', 'Zoho CRM', 'CRM', 'zoho.com'],
-  ['freshsales', 'Freshsales', 'CRM', 'freshworks.com'],
-  ['close', 'Close', 'CRM', 'close.com'],
-  ['copper', 'Copper', 'CRM', 'copper.com'],
-  ['insightly', 'Insightly', 'CRM', 'insightly.com'],
-  ['nutshell', 'Nutshell', 'CRM', 'nutshell.com'],
-  ['activecampaign', 'ActiveCampaign', 'CRM', 'activecampaign.com'],
+  ['salesforce', 'Salesforce', 'CRM', 'salesforce.com', 'salesforce'],
+  ['hubspot', 'HubSpot', 'CRM', 'hubspot.com', 'hubspot'],
+  ['pipedrive', 'Pipedrive', 'CRM', 'pipedrive.com', 'pipedrive'],
+  ['zoho-crm', 'Zoho CRM', 'CRM', 'zoho.com', 'zoho'],
+  ['freshsales', 'Freshsales', 'CRM', 'freshworks.com', 'freshworks'],
+  ['close', 'Close', 'CRM', 'close.com', 'close'],
+  ['copper', 'Copper', 'CRM', 'copper.com', 'copper'],
+  ['insightly', 'Insightly', 'CRM', 'insightly.com', 'insightly'],
+  ['nutshell', 'Nutshell', 'CRM', 'nutshell.com', 'nutshell'],
+  ['activecampaign', 'ActiveCampaign', 'CRM', 'activecampaign.com', 'activecampaign'],
 
   // Storage
-  ['google-drive', 'Google Drive', 'Storage', 'drive.google.com'],
-  ['dropbox', 'Dropbox', 'Storage', 'dropbox.com'],
-  ['box', 'Box', 'Storage', 'box.com'],
-  ['onedrive', 'OneDrive', 'Storage', 'onedrive.live.com'],
-  ['icloud', 'iCloud', 'Storage', 'icloud.com'],
-  ['amazon-s3', 'Amazon S3', 'Storage', 'aws.amazon.com'],
-  ['backblaze', 'Backblaze', 'Storage', 'backblaze.com'],
-  ['pcloud', 'pCloud', 'Storage', 'pcloud.com'],
-  ['mega', 'MEGA', 'Storage', 'mega.io'],
-  ['egnyte', 'Egnyte', 'Storage', 'egnyte.com'],
+  ['google-drive', 'Google Drive', 'Storage', 'drive.google.com', 'googledrive'],
+  ['dropbox', 'Dropbox', 'Storage', 'dropbox.com', 'dropbox'],
+  ['box', 'Box', 'Storage', 'box.com', 'box'],
+  ['onedrive', 'OneDrive', 'Storage', 'onedrive.live.com', 'microsoftonedrive'],
+  ['icloud', 'iCloud', 'Storage', 'icloud.com', 'icloud'],
+  ['amazon-s3', 'Amazon S3', 'Storage', 'aws.amazon.com', 'amazons3'],
+  ['backblaze', 'Backblaze', 'Storage', 'backblaze.com', 'backblaze'],
+  ['pcloud', 'pCloud', 'Storage', 'pcloud.com', 'pcloud'],
+  ['mega', 'MEGA', 'Storage', 'mega.io', 'mega'],
+  ['egnyte', 'Egnyte', 'Storage', 'egnyte.com', 'egnyte'],
 
   // Social
-  ['twitter', 'X (Twitter)', 'Social', 'x.com'],
-  ['facebook', 'Facebook', 'Social', 'facebook.com'],
-  ['instagram', 'Instagram', 'Social', 'instagram.com'],
-  ['linkedin', 'LinkedIn', 'Social', 'linkedin.com'],
-  ['youtube', 'YouTube', 'Social', 'youtube.com'],
-  ['tiktok', 'TikTok', 'Social', 'tiktok.com'],
-  ['pinterest', 'Pinterest', 'Social', 'pinterest.com'],
-  ['reddit', 'Reddit', 'Social', 'reddit.com'],
-  ['snapchat', 'Snapchat', 'Social', 'snapchat.com'],
-  ['threads', 'Threads', 'Social', 'threads.net'],
+  ['twitter', 'X (Twitter)', 'Social', 'x.com', 'x'],
+  ['facebook', 'Facebook', 'Social', 'facebook.com', 'facebook'],
+  ['instagram', 'Instagram', 'Social', 'instagram.com', 'instagram'],
+  ['linkedin', 'LinkedIn', 'Social', 'linkedin.com', 'linkedin'],
+  ['youtube', 'YouTube', 'Social', 'youtube.com', 'youtube'],
+  ['tiktok', 'TikTok', 'Social', 'tiktok.com', 'tiktok'],
+  ['pinterest', 'Pinterest', 'Social', 'pinterest.com', 'pinterest'],
+  ['reddit', 'Reddit', 'Social', 'reddit.com', 'reddit'],
+  ['snapchat', 'Snapchat', 'Social', 'snapchat.com', 'snapchat'],
+  ['threads', 'Threads', 'Social', 'threads.net', 'threads'],
 
   // Design
-  ['figma', 'Figma', 'Design', 'figma.com'],
-  ['adobe-xd', 'Adobe XD', 'Design', 'adobe.com'],
-  ['sketch', 'Sketch', 'Design', 'sketch.com'],
-  ['canva', 'Canva', 'Design', 'canva.com'],
-  ['invision', 'InVision', 'Design', 'invisionapp.com'],
-  ['framer', 'Framer', 'Design', 'framer.com'],
-  ['zeplin', 'Zeplin', 'Design', 'zeplin.io'],
-  ['photoshop', 'Photoshop', 'Design', 'adobe.com'],
-  ['illustrator', 'Illustrator', 'Design', 'adobe.com'],
-  ['webflow', 'Webflow', 'Design', 'webflow.com'],
+  ['figma', 'Figma', 'Design', 'figma.com', 'figma'],
+  ['adobe-xd', 'Adobe XD', 'Design', 'adobe.com', 'adobexd'],
+  ['sketch', 'Sketch', 'Design', 'sketch.com', 'sketch'],
+  ['canva', 'Canva', 'Design', 'canva.com', 'canva'],
+  ['invision', 'InVision', 'Design', 'invisionapp.com', 'invision'],
+  ['framer', 'Framer', 'Design', 'framer.com', 'framer'],
+  ['zeplin', 'Zeplin', 'Design', 'zeplin.io', 'zeplin'],
+  ['photoshop', 'Photoshop', 'Design', 'adobe.com', 'adobephotoshop'],
+  ['illustrator', 'Illustrator', 'Design', 'adobe.com', 'adobeillustrator'],
+  ['webflow', 'Webflow', 'Design', 'webflow.com', 'webflow'],
 
   // Finance
-  ['stripe', 'Stripe', 'Finance', 'stripe.com'],
-  ['paypal', 'PayPal', 'Finance', 'paypal.com'],
-  ['square', 'Square', 'Finance', 'squareup.com'],
-  ['quickbooks', 'QuickBooks', 'Finance', 'quickbooks.intuit.com'],
-  ['xero', 'Xero', 'Finance', 'xero.com'],
-  ['freshbooks', 'FreshBooks', 'Finance', 'freshbooks.com'],
-  ['wave', 'Wave', 'Finance', 'waveapps.com'],
-  ['plaid', 'Plaid', 'Finance', 'plaid.com'],
-  ['brex', 'Brex', 'Finance', 'brex.com'],
-  ['ramp', 'Ramp', 'Finance', 'ramp.com'],
+  ['stripe', 'Stripe', 'Finance', 'stripe.com', 'stripe'],
+  ['paypal', 'PayPal', 'Finance', 'paypal.com', 'paypal'],
+  ['square', 'Square', 'Finance', 'squareup.com', 'square'],
+  ['quickbooks', 'QuickBooks', 'Finance', 'quickbooks.intuit.com', 'quickbooks'],
+  ['xero', 'Xero', 'Finance', 'xero.com', 'xero'],
+  ['freshbooks', 'FreshBooks', 'Finance', 'freshbooks.com', 'freshbooks'],
+  ['wave', 'Wave', 'Finance', 'waveapps.com', 'wave'],
+  ['plaid', 'Plaid', 'Finance', 'plaid.com', 'plaid'],
+  ['brex', 'Brex', 'Finance', 'brex.com', 'brex'],
+  ['ramp', 'Ramp', 'Finance', 'ramp.com', 'ramp'],
 
   // AI
-  ['openai', 'OpenAI', 'AI', 'openai.com'],
-  ['anthropic', 'Anthropic', 'AI', 'anthropic.com'],
-  ['huggingface', 'Hugging Face', 'AI', 'huggingface.co'],
-  ['midjourney', 'Midjourney', 'AI', 'midjourney.com'],
-  ['replicate', 'Replicate', 'AI', 'replicate.com'],
-  ['cohere', 'Cohere', 'AI', 'cohere.com'],
-  ['stability-ai', 'Stability AI', 'AI', 'stability.ai'],
-  ['perplexity', 'Perplexity', 'AI', 'perplexity.ai'],
-  ['elevenlabs', 'ElevenLabs', 'AI', 'elevenlabs.io'],
-  ['runwayml', 'Runway', 'AI', 'runwayml.com'],
+  ['openai', 'OpenAI', 'AI', 'openai.com', 'openai'],
+  ['anthropic', 'Anthropic', 'AI', 'anthropic.com', 'anthropic'],
+  ['huggingface', 'Hugging Face', 'AI', 'huggingface.co', 'huggingface'],
+  ['midjourney', 'Midjourney', 'AI', 'midjourney.com', 'midjourney'],
+  ['replicate', 'Replicate', 'AI', 'replicate.com', 'replicate'],
+  ['cohere', 'Cohere', 'AI', 'cohere.com', 'cohere'],
+  ['stability-ai', 'Stability AI', 'AI', 'stability.ai', 'stabilityai'],
+  ['perplexity', 'Perplexity', 'AI', 'perplexity.ai', 'perplexity'],
+  ['elevenlabs', 'ElevenLabs', 'AI', 'elevenlabs.io', 'elevenlabs'],
+  ['runwayml', 'Runway', 'AI', 'runwayml.com', 'runway'],
 
   // Marketing
-  ['mailchimp', 'Mailchimp', 'Marketing', 'mailchimp.com'],
-  ['google-ads', 'Google Ads', 'Marketing', 'ads.google.com'],
-  ['facebook-ads', 'Meta Ads', 'Marketing', 'business.facebook.com'],
-  ['marketo', 'Marketo', 'Marketing', 'marketo.com'],
-  ['klaviyo', 'Klaviyo', 'Marketing', 'klaviyo.com'],
-  ['sendgrid', 'SendGrid', 'Marketing', 'sendgrid.com'],
-  ['constant-contact', 'Constant Contact', 'Marketing', 'constantcontact.com'],
-  ['convertkit', 'ConvertKit', 'Marketing', 'convertkit.com'],
-  ['braze', 'Braze', 'Marketing', 'braze.com'],
-  ['hootsuite', 'Hootsuite', 'Marketing', 'hootsuite.com'],
+  ['mailchimp', 'Mailchimp', 'Marketing', 'mailchimp.com', 'mailchimp'],
+  ['google-ads', 'Google Ads', 'Marketing', 'ads.google.com', 'googleads'],
+  ['facebook-ads', 'Meta Ads', 'Marketing', 'business.facebook.com', 'meta'],
+  ['marketo', 'Marketo', 'Marketing', 'marketo.com', 'marketo'],
+  ['klaviyo', 'Klaviyo', 'Marketing', 'klaviyo.com', 'klaviyo'],
+  ['sendgrid', 'SendGrid', 'Marketing', 'sendgrid.com', 'twiliosendgrid'],
+  ['constant-contact', 'Constant Contact', 'Marketing', 'constantcontact.com', 'constantcontact'],
+  ['convertkit', 'ConvertKit', 'Marketing', 'convertkit.com', 'convertkit'],
+  ['braze', 'Braze', 'Marketing', 'braze.com', 'braze'],
+  ['hootsuite', 'Hootsuite', 'Marketing', 'hootsuite.com', 'hootsuite'],
 
   // Analytics
-  ['google-analytics', 'Google Analytics', 'Analytics', 'analytics.google.com'],
-  ['mixpanel', 'Mixpanel', 'Analytics', 'mixpanel.com'],
-  ['amplitude', 'Amplitude', 'Analytics', 'amplitude.com'],
-  ['segment', 'Segment', 'Analytics', 'segment.com'],
-  ['hotjar', 'Hotjar', 'Analytics', 'hotjar.com'],
-  ['tableau', 'Tableau', 'Analytics', 'tableau.com'],
-  ['looker', 'Looker', 'Analytics', 'looker.com'],
-  ['powerbi', 'Power BI', 'Analytics', 'powerbi.microsoft.com'],
-  ['snowflake', 'Snowflake', 'Analytics', 'snowflake.com'],
-  ['shopify', 'Shopify', 'Analytics', 'shopify.com'],
-  ['wordpress', 'WordPress', 'Analytics', 'wordpress.com'],
-  ['etsy', 'Etsy', 'Analytics', 'etsy.com'],
+  ['google-analytics', 'Google Analytics', 'Analytics', 'analytics.google.com', 'googleanalytics'],
+  ['mixpanel', 'Mixpanel', 'Analytics', 'mixpanel.com', 'mixpanel'],
+  ['amplitude', 'Amplitude', 'Analytics', 'amplitude.com', 'amplitude'],
+  ['segment', 'Segment', 'Analytics', 'segment.com', 'segment'],
+  ['hotjar', 'Hotjar', 'Analytics', 'hotjar.com', 'hotjar'],
+  ['tableau', 'Tableau', 'Analytics', 'tableau.com', 'tableau'],
+  ['looker', 'Looker', 'Analytics', 'looker.com', 'looker'],
+  ['powerbi', 'Power BI', 'Analytics', 'powerbi.microsoft.com', 'powerbi'],
+  ['snowflake', 'Snowflake', 'Analytics', 'snowflake.com', 'snowflake'],
+  ['shopify', 'Shopify', 'Analytics', 'shopify.com', 'shopify'],
+  ['wordpress', 'WordPress', 'Analytics', 'wordpress.com', 'wordpress'],
+  ['etsy', 'Etsy', 'Analytics', 'etsy.com', 'etsy'],
 ];
 
-export const APPS: ToolkitApp[] = RAW_APPS.map(([slug, name, category, domain]) => ({
+export const APPS: ToolkitApp[] = RAW_APPS.map(([slug, name, category, domain, simpleIcons]) => ({
   slug,
   name,
   category,
+  icon: `https://cdn.simpleicons.org/${simpleIcons}`,
   logo: `https://logo.clearbit.com/${domain}`,
 }));
 
 export const CATEGORIES: string[] = [...new Set(APPS.map((a) => a.category))].sort();
-
-// Hash-based color swatch per app — deterministic, no per-brand color
-// hardcoding required (and no risk of getting a brand color wrong). Used
-// both as the fallback-avatar background (ConnectionsPanel.tsx) and as the
-// "color" filter dimension.
-export const COLOR_SWATCHES: string[] = [
-  '#F87171', // red
-  '#FB923C', // orange
-  '#FBBF24', // amber
-  '#34D399', // emerald
-  '#22D3EE', // cyan
-  '#60A5FA', // blue
-  '#818CF8', // indigo
-  '#A78BFA', // violet
-  '#F472B6', // pink
-  '#94A3B8', // slate
-];
-
-export function appColor(slug: string): string {
-  let hash = 0;
-  for (let i = 0; i < slug.length; i++) {
-    hash = (hash * 31 + slug.charCodeAt(i)) >>> 0;
-  }
-  return COLOR_SWATCHES[hash % COLOR_SWATCHES.length];
-}

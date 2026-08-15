@@ -11,7 +11,7 @@ import type { ToolkitApp } from './store/apps';
 export { DEFAULT_PREFS } from './store/types';
 export type { Connection, UserPrefs, UserPrefsButton, FixedButtonAction } from './store/types';
 export type { ToolkitApp } from './store/apps';
-export { appColor, CATEGORIES, COLOR_SWATCHES } from './store/apps';
+export { CATEGORIES } from './store/apps';
 
 // MOCK is on by default so the UI is fully demoable with zero backend —
 // flip VITE_MOCK=false to talk to a real Worker. See SPEC.md §13.
