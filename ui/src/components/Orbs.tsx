@@ -1,20 +1,29 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import type { PointerEvent as ReactPointerEvent, ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import { motion, useMotionValue, useReducedMotion, useSpring } from 'framer-motion';
+import { Reorder, motion, useDragControls, useMotionValue, useReducedMotion, useSpring } from 'framer-motion';
 import { magneticSnappy } from '../lib/motion';
+import { APPS } from '../store/apps';
+import type { UserPrefsButton } from '../api';
 
 interface OrbsProps {
-  githubConnected: boolean;
-  gmailConnected: boolean;
+  /** The bar buttons in saved order — prefs.buttons (settings §Buttons). */
+  buttons: UserPrefsButton[];
+  /** Toolkits with an active connection (mock fallback pre-seeds github+gmail). */
+  connectedSlugs: Set<string>;
   liveToolkit: 'github' | 'gmail' | null;
   policyVersion?: string;
   currentUser: string;
   onToggleUser(): void;
+  /** Connect an unconnected toolkit orb — opens the Composio OAuth flow. */
+  onConnect(slug: string): void;
+  /** Hold-drag reorder — fires with the full new order; parent persists it. */
+  onReorder(next: UserPrefsButton[]): void;
 }
 
 const HALO = 40; // px — cursor-proximity radius that triggers magnetism
 const MAX_PULL = 6; // px — max translate toward cursor
+const HOLD_MS = 200; // hold-to-drag threshold — under it, a press is a click
 
 const MotionLink = motion(Link);
 
@@ -112,55 +121,174 @@ function Orb({
 const orbBase =
   'relative flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/[0.04] cursor-pointer select-none hover:bg-white/[0.07] transition-colors duration-200';
 
-/** The four circles from SPEC.md §6 — they carry demo weight, not decoration. */
+/** Which toolkit a button action binds to, if any — `connect:github`/`connect:gmail`
+ * (legacy fixed actions) and `toolkit:<slug>` (bound from the settings arranger)
+ * all resolve to a slug; pure actions (run, open:roster…) resolve to null. */
+function actionToolkit(action: string): string | null {
+  if (action === 'connect:github') return 'github';
+  if (action === 'connect:gmail') return 'gmail';
+  if (action.startsWith('toolkit:')) return action.slice('toolkit:'.length);
+  return null;
+}
+
+function ToolkitLogo({ slug }: { slug: string }) {
+  const app = APPS.find((a) => a.slug === slug);
+  const [failed, setFailed] = useState(false);
+  if (!app?.logo || failed) return <span className="text-lg leading-none">⬡</span>;
+  return (
+    <img
+      src={app.logo}
+      alt=""
+      aria-hidden
+      onError={() => setFailed(true)}
+      className="h-5 w-5 rounded-sm bg-white/95 object-contain p-0.5"
+    />
+  );
+}
+
+/** One draggable slot in the bar. Hold ~200ms to pick the orb up and drag it
+ * to a new position (framer Reorder, x-axis); a shorter press is a normal
+ * click and triggers the orb's action. Reduced motion: no drag — order still
+ * renders from prefs, reordering lives in the settings arranger's buttons. */
+function OrbSlot({
+  button,
+  children,
+}: {
+  button: UserPrefsButton;
+  children: ReactNode;
+}) {
+  const reduceMotion = useReducedMotion();
+  const controls = useDragControls();
+  const holdTimer = useRef<number | undefined>(undefined);
+
+  function clearHold() {
+    if (holdTimer.current) window.clearTimeout(holdTimer.current);
+    holdTimer.current = undefined;
+  }
+
+  return (
+    <Reorder.Item
+      as="div"
+      value={button}
+      dragListener={false}
+      dragControls={controls}
+      onPointerDown={(e: ReactPointerEvent<HTMLDivElement>) => {
+        if (reduceMotion) return;
+        clearHold();
+        holdTimer.current = window.setTimeout(() => controls.start(e), HOLD_MS);
+      }}
+      onPointerUp={clearHold}
+      onPointerCancel={clearHold}
+      onDragEnd={clearHold}
+      className="relative"
+      whileDrag={reduceMotion ? undefined : { scale: 1.12, zIndex: 30 }}
+    >
+      {children}
+    </Reorder.Item>
+  );
+}
+
+/** The bar orbs — SPEC.md §6, now driven by prefs.buttons: saved order,
+ * per-button actions (fixed or `toolkit:<slug>` from the settings arranger),
+ * and hold-drag reordering persisted by the parent. They carry demo weight,
+ * not decoration. */
 export default function Orbs({
-  githubConnected,
-  gmailConnected,
+  buttons,
+  connectedSlugs,
   liveToolkit,
   policyVersion,
   currentUser,
   onToggleUser,
+  onConnect,
+  onReorder,
 }: OrbsProps) {
   const [userSpun, setUserSpun] = useState(false);
 
-  return (
-    <div className="flex items-center gap-3">
-      <Orb className={`${orbBase} ${githubConnected ? 'text-white' : 'text-white/35'}`} title={githubConnected ? 'GitHub connected' : 'GitHub not connected'}>
-        {liveToolkit === 'github' && <PulseRings />}
-        <GithubIcon />
-      </Orb>
-
-      <Orb className={`${orbBase} ${gmailConnected ? 'text-white' : 'text-white/35'}`} title={gmailConnected ? 'Gmail connected' : 'Gmail not connected'}>
-        {liveToolkit === 'gmail' && <PulseRings />}
-        <GmailIcon />
-      </Orb>
-
-      <Orb as="link" to="/roster" className={`${orbBase} text-white/70`} title="Policy — open roster">
-        <span className="text-lg leading-none">◆</span>
-        {policyVersion && (
-          <span className="absolute -bottom-1 -right-1 rounded-full bg-accent px-1.5 py-0.5 text-[9px] font-bold leading-none text-black">
-            {policyVersion}
-          </span>
-        )}
-      </Orb>
-
-      <Orb
-        as="button"
-        className={`${orbBase} text-white/70`}
-        title={`Signed in as ${currentUser} — click to switch`}
-        onClick={() => {
-          setUserSpun((s) => !s);
-          onToggleUser();
-        }}
-      >
-        <span
-          className="text-lg leading-none transition-transform duration-500 ease-out"
-          style={{ transform: userSpun ? 'rotate(180deg)' : 'rotate(0deg)' }}
+  function renderOrb(btn: UserPrefsButton) {
+    const slug = actionToolkit(btn.action);
+    if (slug) {
+      const connected = connectedSlugs.has(slug);
+      const name = btn.label ?? (APPS.find((a) => a.slug === slug)?.name || slug);
+      return (
+        <Orb
+          as="button"
+          className={`${orbBase} ${connected ? 'text-white' : 'text-white/35'}`}
+          title={connected ? `${name} connected` : `Connect ${name}`}
+          onClick={() => {
+            if (!connected) onConnect(slug);
+          }}
         >
-          ◑
-        </span>
-      </Orb>
-    </div>
+          {liveToolkit === slug && <PulseRings />}
+          {slug === 'github' ? <GithubIcon /> : slug === 'gmail' ? <GmailIcon /> : <ToolkitLogo slug={slug} />}
+        </Orb>
+      );
+    }
+    switch (btn.action) {
+      case 'open:roster':
+        return (
+          <Orb as="link" to="/roster" className={`${orbBase} text-white/70`} title={btn.label ?? 'Policy — open roster'}>
+            <span className="text-lg leading-none">◆</span>
+            {policyVersion && (
+              <span className="absolute -bottom-1 -right-1 rounded-full bg-accent px-1.5 py-0.5 text-[9px] font-bold leading-none text-black">
+                {policyVersion}
+              </span>
+            )}
+          </Orb>
+        );
+      case 'toggle:user':
+        return (
+          <Orb
+            as="button"
+            className={`${orbBase} text-white/70`}
+            title={btn.label ?? `Signed in as ${currentUser} — click to switch`}
+            onClick={() => {
+              setUserSpun((s) => !s);
+              onToggleUser();
+            }}
+          >
+            <span
+              className="text-lg leading-none transition-transform duration-500 ease-out"
+              style={{ transform: userSpun ? 'rotate(180deg)' : 'rotate(0deg)' }}
+            >
+              ◑
+            </span>
+          </Orb>
+        );
+      case 'run':
+        return (
+          <Orb className={`${orbBase} text-white/70`} title={btn.label ?? 'Run (Enter in the bar)'}>
+            <span className="text-[15px] leading-none">▶</span>
+          </Orb>
+        );
+      case 'bypassCache':
+        return (
+          <Orb className={`${orbBase} text-white/70`} title={btn.label ?? 'Bypass cache (⌘⏎ in the bar)'}>
+            <span className="text-lg leading-none">⚡</span>
+          </Orb>
+        );
+      case 'suggest':
+        return (
+          <Orb className={`${orbBase} text-white/70`} title={btn.label ?? 'Next-action suggestions'}>
+            <span className="text-lg leading-none">✦</span>
+          </Orb>
+        );
+      default:
+        return (
+          <Orb className={`${orbBase} text-white/40`} title={btn.label ?? btn.action}>
+            <span className="text-[13px] leading-none">⬡</span>
+          </Orb>
+        );
+    }
+  }
+
+  return (
+    <Reorder.Group as="div" axis="x" values={buttons} onReorder={onReorder} className="flex items-center gap-3">
+      {buttons.map((btn) => (
+        <OrbSlot key={btn.id} button={btn}>
+          {renderOrb(btn)}
+        </OrbSlot>
+      ))}
+    </Reorder.Group>
   );
 }
 

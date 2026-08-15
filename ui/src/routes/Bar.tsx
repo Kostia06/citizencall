@@ -5,7 +5,7 @@ import ConversationTurn from '../components/ConversationTurn';
 import Orbs from '../components/Orbs';
 import { ToastStack, useToasts } from '../components/Toast';
 import TopNav from '../components/TopNav';
-import { MOCK, startRun, storeApi, type Connection, type RunHandle } from '../api';
+import { DEFAULT_PREFS, MOCK, startRun, storeApi, type Connection, type RunHandle, type UserPrefsButton } from '../api';
 import { conversationReducer, initialConversationState } from '../lib/traceReducer';
 import { layoutFlow, layoutFlowReduced } from '../lib/motion';
 import { useAuth } from '../auth/useAuth';
@@ -35,6 +35,8 @@ export default function Bar() {
   const [connections, setConnections] = useState<Connection[]>([]);
   const [contextPrompt, setContextPrompt] = useState('');
   const [suggestionsEnabled, setSuggestionsEnabled] = useState(true);
+  const [barButtons, setBarButtons] = useState<UserPrefsButton[]>(DEFAULT_PREFS.buttons);
+  const reorderSaveRef = useRef<number | undefined>(undefined);
   const runHandleRef = useRef<RunHandle | null>(null);
   const liveTimeoutRef = useRef<number | undefined>(undefined);
   const transcriptRef = useRef<HTMLDivElement>(null);
@@ -71,6 +73,7 @@ export default function Bar() {
         if (!cancelled) {
           setContextPrompt(prefs.contextPrompt);
           setSuggestionsEnabled(prefs.suggestions);
+          if (prefs.buttons.length > 0) setBarButtons(prefs.buttons);
         }
       })
       .catch(() => undefined);
@@ -110,6 +113,40 @@ export default function Bar() {
   // for anonymous visitors; once authed against a live backend the orbs
   // reflect real GET /api/connections state.
   const mockConnectedFallback = MOCK || status !== 'authed';
+  const connectedSlugs = (() => {
+    const set = new Set(connections.filter((c) => c.status === 'active').map((c) => c.toolkit));
+    if (mockConnectedFallback) {
+      set.add('github');
+      set.add('gmail');
+    }
+    return set;
+  })();
+
+  // Hold-drag reorder on the live orbs — mirror to state immediately (Reorder
+  // streams the new order during the drag), persist once it settles. Same
+  // prefs.buttons the settings arranger writes; anonymous save just no-ops
+  // server-side and keeps the order for this session.
+  function handleReorderButtons(next: UserPrefsButton[]) {
+    setBarButtons(next);
+    if (reorderSaveRef.current) window.clearTimeout(reorderSaveRef.current);
+    reorderSaveRef.current = window.setTimeout(() => {
+      storeApi.putSettings(authedFetch, { buttons: next }).catch(() => undefined);
+    }, 800);
+  }
+
+  // Orb click on an unconnected toolkit — same flow as the settings grid:
+  // POST /api/connect, open the returned Composio OAuth URL. MOCK mode fakes
+  // the connect and just refreshes the list.
+  function handleOrbConnect(slug: string) {
+    storeApi
+      .connect(authedFetch, slug)
+      .then(({ url }) => {
+        if (url && !MOCK) window.open(url, '_blank', 'noopener');
+        return storeApi.listConnections(authedFetch);
+      })
+      .then((list) => setConnections(list))
+      .catch(() => push(`Could not start connecting ${slug}`));
+  }
 
   function handleSubmit(
     text: string,
@@ -169,12 +206,14 @@ export default function Bar() {
           </div>
           <div className="sm:pt-1.5">
             <Orbs
-              githubConnected={mockConnectedFallback || connections.some((c) => c.toolkit === 'github' && c.status === 'active')}
-              gmailConnected={mockConnectedFallback || connections.some((c) => c.toolkit === 'gmail' && c.status === 'active')}
+              buttons={barButtons}
+              connectedSlugs={connectedSlugs}
               liveToolkit={liveToolkit}
               policyVersion="v3"
               currentUser={currentUser}
               onToggleUser={() => setUserIdx((i) => (i + 1) % USERS.length)}
+              onConnect={handleOrbConnect}
+              onReorder={handleReorderButtons}
             />
           </div>
         </div>
