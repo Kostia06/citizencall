@@ -103,13 +103,26 @@ export default function CommandBar({ running, escalateTick, onSubmit, onFilesDro
   // Auto-grow: collapse then re-measure scrollHeight so we never overshoot,
   // clamp to MAX_LINES. The `.bar-textarea` CSS transition (index.css) is
   // what turns this into a smooth reflow rather than a snap.
+  // When the textarea is EMPTY, an empty scrollHeight ignores the placeholder,
+  // so a multi-line placeholder gets clipped. Measure against the placeholder
+  // in that case (temporarily assign it as the value — a pure DOM read, the
+  // controlled React value stays ''), so the pill grows to fit it. Re-run on
+  // resize too, since wrapping (of both value and placeholder) is width-dependent.
   useLayoutEffect(() => {
     const el = textareaRef.current;
     if (!el) return;
-    el.style.height = '0px';
-    const next = Math.min(el.scrollHeight, maxHeightRef.current);
-    el.style.height = `${next}px`;
-    el.style.overflowY = el.scrollHeight > maxHeightRef.current ? 'auto' : 'hidden';
+    const resize = () => {
+      el.style.height = '0px';
+      const measuringPlaceholder = el.value.length === 0 && el.placeholder.length > 0;
+      if (measuringPlaceholder) el.value = el.placeholder;
+      const measured = el.scrollHeight;
+      if (measuringPlaceholder) el.value = '';
+      el.style.height = `${Math.min(measured, maxHeightRef.current)}px`;
+      el.style.overflowY = measured > maxHeightRef.current ? 'auto' : 'hidden';
+    };
+    resize();
+    window.addEventListener('resize', resize);
+    return () => window.removeEventListener('resize', resize);
   }, [value]);
 
   const showSuggestions = focused && !running && value.trim().length === 0;
