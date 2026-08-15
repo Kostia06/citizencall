@@ -19,5 +19,6 @@ harness/.cache/
 
 # Local tooling
 .claude/
+CLAUDE.md
 
 .DS_Store
