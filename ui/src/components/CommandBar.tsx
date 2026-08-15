@@ -59,7 +59,7 @@ export default function CommandBar({ running, escalateTick, onSubmit, onFilesDro
   const [clearing, setClearing] = useState(false);
   const [ringSpike, setRingSpike] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const maxHeightRef = useRef(132); // ~6 lines @ 22px, refined on mount
+  const maxHeightRef = useRef(168); // ~6 lines + vertical padding, refined on mount
   const [confirmPulsing, fireConfirmPulse] = useBurst(200);
   const [emberFlashing, fireEmberFlash] = useBurst(150);
   const [focusPulsing, fireFocusPulse] = useBurst(400);
@@ -85,13 +85,19 @@ export default function CommandBar({ running, escalateTick, onSubmit, onFilesDro
     return () => window.clearTimeout(id);
   }, [escalateTick]);
 
-  // Measure the real line-height once mounted so the 6-line cap tracks the
-  // actual rendered font instead of a guessed constant.
+  // Measure the real line-height (+ vertical padding, now that padding
+  // lives on the textarea itself rather than the pill row) once mounted so
+  // the 6-line cap tracks the actual rendered font instead of a guessed
+  // constant.
   useLayoutEffect(() => {
     const el = textareaRef.current;
     if (!el) return;
-    const lineHeight = parseFloat(getComputedStyle(el).lineHeight);
-    if (Number.isFinite(lineHeight) && lineHeight > 0) maxHeightRef.current = lineHeight * MAX_LINES;
+    const cs = getComputedStyle(el);
+    const lineHeight = parseFloat(cs.lineHeight);
+    const paddingY = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom);
+    if (Number.isFinite(lineHeight) && lineHeight > 0) {
+      maxHeightRef.current = lineHeight * MAX_LINES + (Number.isFinite(paddingY) ? paddingY : 0);
+    }
   }, []);
 
   // Auto-grow: collapse then re-measure scrollHeight so we never overshoot,
@@ -117,6 +123,12 @@ export default function CommandBar({ running, escalateTick, onSubmit, onFilesDro
     fireConfirmPulse();
     if (bypassCache) fireEmberFlash();
     onSubmit(trimmed, { bypassCache, source, attachments });
+    // This is a chat now — the submitted prompt reappears as its own bubble
+    // in the transcript (ConversationTurn.tsx), so the bar clears and is
+    // immediately ready for the next turn instead of sitting frozen with
+    // the old text while the run plays out below.
+    setValue('');
+    setAttachments([]);
     setSource('text');
   }
 
@@ -257,13 +269,16 @@ export default function CommandBar({ running, escalateTick, onSubmit, onFilesDro
             <motion.div
               layout={!reduceMotion}
               transition={reduceMotion ? layoutFlowReduced : layoutFlow}
-              className={`bar-pill relative flex min-h-[60px] items-center gap-1.5 px-3 py-2.5 animate-bar-in ${
-                isDragOver ? 'is-dragover' : ''
-              } ${confirmPulsing ? 'animate-confirm-pulse' : ''} ${emberFlashing ? 'animate-ember-edge-flash' : ''} ${
-                focusPulsing ? 'animate-focus-glow-pulse' : ''
-              }`}
+              className={`bar-pill relative animate-bar-in ${isDragOver ? 'is-dragover' : ''} ${
+                confirmPulsing ? 'animate-confirm-pulse' : ''
+              } ${emberFlashing ? 'animate-ember-edge-flash' : ''} ${focusPulsing ? 'animate-focus-glow-pulse' : ''}`}
             >
-              <div className="relative flex-1">
+              {/* Icons are anchored to the bottom-right of the pill, not
+                  centered inline with the text row — that's what keeps them
+                  clear of wrapped text on every line, not just the first.
+                  The textarea's pr-24 reserves their width uniformly, so a
+                  2+ line prompt never runs underneath them. */}
+              <div className="relative">
                 <textarea
                   ref={textareaRef}
                   value={value}
@@ -279,12 +294,12 @@ export default function CommandBar({ running, escalateTick, onSubmit, onFilesDro
                   onPaste={handlePaste}
                   spellCheck={false}
                   aria-label="Command"
-                  className={`bar-textarea relative z-10 block w-full origin-left resize-none overflow-hidden bg-transparent text-[15px] leading-[1.5] text-white placeholder:text-white/25 outline-none transition-[transform,opacity] duration-100 ease-out disabled:opacity-50 ${
+                  className={`bar-textarea relative z-10 block w-full origin-left resize-none overflow-hidden bg-transparent py-[18px] pl-4 pr-24 text-[15px] leading-[1.5] text-white placeholder:text-white/25 outline-none transition-[transform,opacity] duration-100 ease-out disabled:opacity-50 ${
                     clearing ? 'scale-95 opacity-0' : 'scale-100 opacity-100'
                   }`}
                 />
                 {ghostSuffix && (
-                  <div className="pointer-events-none absolute inset-0 top-0 flex items-start whitespace-pre-wrap text-[15px] leading-[1.5]">
+                  <div className="pointer-events-none absolute inset-0 top-0 flex items-start whitespace-pre-wrap py-[18px] pl-4 pr-24 text-[15px] leading-[1.5]">
                     <span className="invisible">{value}</span>
                     <span
                       className={`ghost-text transition-colors duration-[120ms] ${
@@ -297,35 +312,37 @@ export default function CommandBar({ running, escalateTick, onSubmit, onFilesDro
                 )}
               </div>
 
-              <button
-                type="button"
-                disabled={running}
-                aria-label="Paste from clipboard"
-                onClick={handleClipboardButton}
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[#8E8E93] transition-colors hover:text-white disabled:opacity-30"
-              >
-                <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden>
-                  <rect x="7" y="3.5" width="10" height="4" rx="1.2" />
-                  <path
-                    d="M7 5.5H5.5a1.5 1.5 0 0 0-1.5 1.5v12.5a1.5 1.5 0 0 0 1.5 1.5h13a1.5 1.5 0 0 0 1.5-1.5V7a1.5 1.5 0 0 0-1.5-1.5H17"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                </svg>
-              </button>
+              <div className="absolute bottom-2.5 right-2.5 z-10 flex items-center gap-1.5">
+                <button
+                  type="button"
+                  disabled={running}
+                  aria-label="Paste from clipboard"
+                  onClick={handleClipboardButton}
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[#8E8E93] transition-colors hover:text-white disabled:opacity-30"
+                >
+                  <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden>
+                    <rect x="7" y="3.5" width="10" height="4" rx="1.2" />
+                    <path
+                      d="M7 5.5H5.5a1.5 1.5 0 0 0-1.5 1.5v12.5a1.5 1.5 0 0 0 1.5 1.5h13a1.5 1.5 0 0 0 1.5-1.5V7a1.5 1.5 0 0 0-1.5-1.5H17"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                </button>
 
-              <Mic
-                disabled={running}
-                onInterim={(text) => {
-                  setSource('voice');
-                  setValue(text);
-                }}
-                onFinal={(text) => {
-                  setSource('voice');
-                  setValue(text);
-                }}
-                onToast={onToast}
-              />
+                <Mic
+                  disabled={running}
+                  onInterim={(text) => {
+                    setSource('voice');
+                    setValue(text);
+                  }}
+                  onFinal={(text) => {
+                    setSource('voice');
+                    setValue(text);
+                  }}
+                  onToast={onToast}
+                />
+              </div>
             </motion.div>
           </motion.div>
 

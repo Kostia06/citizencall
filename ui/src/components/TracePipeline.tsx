@@ -1,16 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import HopCard from './HopCard';
-import { formatMs, formatPct, formatUsd, useCountUp } from '../lib/format';
+import { KIND_LABEL, formatMs, formatPct, formatUsd, useCountUp } from '../lib/format';
 import { layoutFlow, layoutFlowReduced } from '../lib/motion';
 import type { TraceState } from '../lib/traceReducer';
-
-const KIND_LABEL: Record<string, string> = {
-  classify: 'classify',
-  extract_fields: 'extract fields',
-  summarize: 'summarize',
-  normalize: 'normalize',
-};
 
 /** Tracks the trace column's measured content height so the left-edge
  * "current" spine (DESIGN.md §1/§5) can grow in sync with it. */
@@ -33,15 +26,23 @@ function useContentHeight() {
 
 /** The trace that expands DOWNWARD from the pinned bar — SPEC.md §6. Reads
  * live off TraceState; every sub-section only renders once its event has
- * arrived, so the reveal paces itself with the run. */
-export default function TracePipeline({ state }: { state: TraceState }) {
+ * arrived, so the reveal paces itself with the run. `className` lets a
+ * turn in the chat transcript (ConversationTurn.tsx) use tighter spacing
+ * than the default standalone layout. */
+export default function TracePipeline({
+  state,
+  className = 'mx-auto mt-6 w-full max-w-2xl pb-24',
+}: {
+  state: TraceState;
+  className?: string;
+}) {
   const [contentRef, contentHeight] = useContentHeight();
   const reduceMotion = useReducedMotion();
 
   if (state.status === 'idle') return null;
 
   return (
-    <div className="relative mx-auto mt-6 w-full max-w-2xl pb-24">
+    <div className={`relative ${className}`}>
       {/* "Current" spine — a circuit trace being etched as the run executes,
           DESIGN.md §1. Reduced motion: appears at full height instantly. */}
       <div className="pointer-events-none absolute inset-y-0 left-0 flex w-5 justify-center" aria-hidden>

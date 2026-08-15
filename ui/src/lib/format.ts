@@ -1,4 +1,15 @@
 import { useEffect, useRef, useState } from 'react';
+import type { TaskKind } from '../types';
+
+// Shared between TracePipeline's section headers and HopCard's collapsed
+// one-liner — kept here (not in either component) so neither has to import
+// the other just for this lookup table.
+export const KIND_LABEL: Record<TaskKind, string> = {
+  classify: 'classify',
+  extract_fields: 'extract fields',
+  summarize: 'summarize',
+  normalize: 'normalize',
+};
 
 function easeOutCubic(x: number): number {
   return 1 - Math.pow(1 - x, 3);

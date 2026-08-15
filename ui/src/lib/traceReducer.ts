@@ -162,3 +162,49 @@ export function traceReducer(state: TraceState, event: TraceEvent): TraceState {
       return state;
   }
 }
+
+// ---- Multi-turn conversation state ----
+//
+// The chat transcript is an ordered list of turns; each turn owns its own
+// TraceState, driven by the same `traceReducer` above. A submit always
+// starts a fresh turn (`start_turn`); every TraceEvent from that point on
+// is routed to the LAST turn in the list (`trace_event`) until the next
+// `start_turn` moves the target forward. This mirrors `startRun` being
+// called once per submit — the reducer never needs to know which run an
+// event belongs to, only that it belongs to "whatever is currently last".
+
+export interface Turn {
+  id: string;
+  prompt: string;
+  source: 'text' | 'voice';
+  trace: TraceState;
+}
+
+export interface ConversationState {
+  turns: Turn[];
+}
+
+export type ConversationAction =
+  | { type: 'start_turn'; id: string; prompt: string; source: 'text' | 'voice' }
+  | { type: 'trace_event'; event: TraceEvent };
+
+export function initialConversationState(): ConversationState {
+  return { turns: [] };
+}
+
+export function conversationReducer(state: ConversationState, action: ConversationAction): ConversationState {
+  if (action.type === 'start_turn') {
+    const turn: Turn = { id: action.id, prompt: action.prompt, source: action.source, trace: initialTraceState() };
+    return { turns: [...state.turns, turn] };
+  }
+
+  // trace_event — apply to the last turn only. Events arriving with no
+  // turn yet (shouldn't happen — start_turn always precedes startRun) are
+  // dropped rather than crashing the reducer.
+  const lastIdx = state.turns.length - 1;
+  if (lastIdx < 0) return state;
+  const lastTurn = state.turns[lastIdx];
+  const nextTurns = [...state.turns];
+  nextTurns[lastIdx] = { ...lastTurn, trace: traceReducer(lastTurn.trace, action.event) };
+  return { ...state, turns: nextTurns };
+}
