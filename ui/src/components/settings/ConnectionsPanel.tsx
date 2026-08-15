@@ -29,6 +29,12 @@ function AppTile({
   onDisconnect(slug: string): void;
 }) {
   const [failed, setFailed] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+  // Show the initials monogram until the real logo has painted (or if it
+  // 404s / is absent) — otherwise the img's own light backing renders as a
+  // blank white square during load, which reads as "no app there" across a
+  // grid of 150 tiles.
+  const showMonogram = !app.logo || failed || !loaded;
 
   return (
     <div className="group relative">
@@ -44,21 +50,23 @@ function AppTile({
             : 'border-white/10 bg-white/[0.03] hover:border-white/25 hover:bg-white/[0.07]'
         }`}
       >
-        {failed || !app.logo ? (
-          <span
-            className="flex h-6 w-6 items-center justify-center rounded-md bg-white/10 text-[9px] font-bold text-white/70"
-            aria-hidden
-          >
-            {app.name.slice(0, 2).toUpperCase()}
+        {showMonogram && (
+          <span className="pointer-events-none absolute inset-0 flex items-center justify-center" aria-hidden>
+            <span className="flex h-6 w-6 items-center justify-center rounded-md bg-white/10 text-[9px] font-bold text-white/70">
+              {app.name.slice(0, 2).toUpperCase()}
+            </span>
           </span>
-        ) : (
+        )}
+        {app.logo && !failed && (
           <img
             src={app.logo}
             alt=""
             aria-hidden
-            loading="lazy"
+            onLoad={() => setLoaded(true)}
             onError={() => setFailed(true)}
-            className="h-6 w-6 rounded-sm bg-white/95 object-contain p-0.5"
+            className={`h-6 w-6 rounded-sm bg-white/95 object-contain p-0.5 transition-opacity duration-200 ${
+              loaded ? 'opacity-100' : 'opacity-0'
+            }`}
           />
         )}
         {connected && (
