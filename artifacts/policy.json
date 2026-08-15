@@ -1,6 +1,6 @@
 {
-  "version": "v2-live-verified",
-  "generatedAt": "2026-08-15T00:00:00.000000+00:00",
+  "version": "v3-live-widened",
+  "generatedAt": "2026-08-15T12:00:00.000000+00:00",
   "weights": {
     "quality": 1.0,
     "cost": 0.35
@@ -25,6 +25,28 @@
   },
   "quality": {},
   "qualityCI": {},
+  "alternates": {
+    "classify": [
+      "Qwen/Qwen2.5-7B-Instruct",
+      "openai/gpt-oss-20b",
+      "zai-org/GLM-4.7-Flash"
+    ],
+    "extract_fields": [
+      "Qwen/Qwen2.5-7B-Instruct",
+      "microsoft/phi-4",
+      "zai-org/GLM-4.7-Flash"
+    ],
+    "summarize": [
+      "mistralai/Mistral-Nemo-Instruct-2407",
+      "Qwen/Qwen2.5-14B-Instruct",
+      "openai/gpt-oss-120b"
+    ],
+    "normalize": [
+      "Qwen/Qwen2.5-3B-Instruct",
+      "microsoft/phi-4",
+      "zai-org/GLM-4.7-Flash"
+    ]
+  },
   "baselines": {
     "frontier": "zai-org/GLM-5.2",
     "cheapDefault": "Qwen/Qwen3-4B"
@@ -46,6 +68,14 @@
       "zai-org/GLM-5.2 real price is $0.75/$2.40 per MTok (catalog previously claimed $2.50/$10.00); fixture corrected.",
       "mlabonne/Meta-Llama-3.1-8B-Instruct-abliterated was servable and marginally cheaper ($0.035/$0.065) but was not promoted: long-tail warmth churns (the exact failure this revision repairs) and an uncensored finetune is not a safe default."
     ],
+    "v3Findings": [
+      "2026-08-15 roster widening: live /v1/models re-fetched (799 models on plan) and 11 candidates probed with a real ~20-token completion each (temp 0, seed 42, non-empty content required; reasoning-family models probed at max_tokens 768).",
+      "PASS: Qwen2.5-3B-Instruct ($0.32/$1.60), Qwen2.5-7B-Instruct ($0.17/$0.20), Qwen2.5-14B-Instruct ($0.108/$0.28), microsoft/phi-4 ($0.07/$0.14), Mistral-Nemo-Instruct-2407 ($0.25/$0.40), gpt-oss-20b ($0.04/$0.15), gpt-oss-120b ($0.10/$0.55), GLM-4.7-Flash ($0.065/$0.40), Qwen3-32B ($0.102/$0.493, slow: 10.2s probe).",
+      "FAIL: google/gemma-2-2b-it and gemma-2-9b-it both 403 (HF-gated, org not connected) — gemma-2-2b not added; gemma-2-9b marked off-plan in the catalog.",
+      "Catalog prices/context corrected against live /v1/models for every listed entry; entries absent from the live listing (incl. deepseek-ai/DeepSeek-V3-Lite, which does not exist on Featherless) marked availableOnPlan=false.",
+      "gpt-oss-20b/120b report features.tool_use=false on Featherless — servable for non-tool subtasks only; catalog toolUse corrected accordingly."
+    ],
+    "alternatesNote": "route.ts's rung selection slices ladders[kind][0] (rung 0) and [1] (rung 1) — the schema effectively supports exactly 2 rungs. The new models are therefore wired as per-kind `alternates` (servability-verified, ordered by preference) for roster display and manual promotion, and the proven 2-rung ladders are left untouched. Alternates are NOT routed to at runtime.",
     "note": "quality/qualityCI are intentionally empty: rung-0 picks are servability-verified (shape-level verify() pass on live probes), not re-graded against gold labels. The v1 graded scores applied only to the now-delisted long-tail models."
   }
 }
