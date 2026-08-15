@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { motion, useReducedMotion } from 'framer-motion';
 import KeybindingEditor from '../components/settings/KeybindingEditor';
 import ButtonEditor from '../components/settings/ButtonEditor';
@@ -83,6 +83,20 @@ export default function Settings() {
     window.addEventListener('focus', onFocus);
     return () => window.removeEventListener('focus', onFocus);
   }, [refreshConnections]);
+
+  // /oauth/done redirects here with ?connected=<toolkit>&status=... — greet
+  // the returning user with the outcome, then strip the params so a reload
+  // doesn't re-toast.
+  const [searchParams, setSearchParams] = useSearchParams();
+  useEffect(() => {
+    const toolkit = searchParams.get('connected');
+    if (!toolkit) return;
+    const status = searchParams.get('status');
+    push(status === 'success' ? `${toolkit} connected` : `Connecting ${toolkit} ${status ? `ended: ${status}` : 'did not complete'}`);
+    refreshConnections();
+    setSearchParams({}, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
 
   async function handleSave() {
     setSaveState('saving');

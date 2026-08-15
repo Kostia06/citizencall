@@ -235,7 +235,12 @@ app.get('/oauth/done', async (c) => {
       now: Date.now(),
     });
   }
-  return c.json({ userId: payload.userId, toolkit: payload.toolkit, status, connectedAccountId });
+  // Bounce the browser back into the SPA instead of dead-ending on JSON.
+  // Relative redirect keeps whatever origin the callback arrived on — the
+  // Vite dev proxy origin in dev, the Worker (which serves the SPA) in
+  // prod — so the user lands on their own settings page either way.
+  const params = new URLSearchParams({ connected: payload.toolkit, status });
+  return c.redirect(`/settings?${params.toString()}`, 302);
 });
 
 export default app;
