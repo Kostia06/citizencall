@@ -8,6 +8,7 @@ import { getRoster, getRun } from './db';
 import { createConnectionLink, verifyState } from './providers/composio';
 import { getToolkitCatalog } from './providers/composio-catalog';
 import { AuthConfigUnavailableError, resolveAuthConfigId } from './providers/composio-auth-configs';
+import { MAX_AUDIO_BYTES, SttUpstreamError, transcribeAudio } from './providers/elevenlabs';
 import { policy } from './policy';
 import { authRoutes } from './auth/routes';
 import type { AuthVars } from './auth/middleware';
@@ -170,6 +171,36 @@ app.post('/api/connect', async (c) => {
   // `redirectUrl` is the cross-agent contract; `url` + `state` remain for
   // existing callers of the older shape.
   return c.json({ redirectUrl: link.url, url: link.url, state: link.state });
+});
+
+// ElevenLabs Scribe speech-to-text proxy (SPEC.md §7). No auth requirement —
+// voice must work for anonymous users — but resolveActor still runs so the
+// caller gets/keeps a signed `__Host-anon` cookie, making the endpoint
+// attributable (and rate-limitable) later. Contract: multipart field `audio`
+// -> 200 {text}.
+app.post('/api/stt', async (c) => {
+  await resolveActor(c);
+
+  // Fail closed on the missing secret (same posture as auth/secret.ts), but
+  // as a clear 503 rather than an unhandled 500: the route is "unconfigured",
+  // not broken.
+  const apiKey = c.env.ELEVENLABS_API_KEY;
+  if (!apiKey) return c.json({ error: 'stt not configured' }, 503);
+
+  const form = await c.req.raw.formData().catch(() => null);
+  if (!form) return c.json({ error: 'multipart/form-data body required' }, 400);
+  const audio = form.get('audio');
+  if (!(audio instanceof File)) return c.json({ error: 'audio file field required' }, 400);
+  if (audio.size > MAX_AUDIO_BYTES) return c.json({ error: 'audio too large (max 15MB)' }, 413);
+
+  try {
+    const text = await transcribeAudio(apiKey, audio);
+    return c.json({ text });
+  } catch (err) {
+    const detail = err instanceof SttUpstreamError ? err.message : 'speech-to-text upstream failed';
+    console.error('STT proxy failure:', err);
+    return c.json({ error: detail }, 502);
+  }
 });
 
 app.get('/oauth/done', async (c) => {
