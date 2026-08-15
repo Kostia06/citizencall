@@ -5,6 +5,7 @@ import { motion, useReducedMotion } from 'framer-motion';
 import KeybindingEditor from '../components/settings/KeybindingEditor';
 import ButtonEditor from '../components/settings/ButtonEditor';
 import ConnectionsPanel from '../components/settings/ConnectionsPanel';
+import CustomMcpsPanel from '../components/settings/CustomMcpsPanel';
 import TopNav from '../components/TopNav';
 import { AuthError, DEFAULT_PREFS, MOCK, storeApi } from '../api';
 import type { Connection, UserPrefs } from '../api';
@@ -189,14 +190,22 @@ export default function Settings() {
           />
         </SectionCard>
 
-        <SectionCard title="Connections" subtitle="Connect apps via OAuth — connected toolkits light their orb.">
+        <SectionCard
+          title="Connections"
+          subtitle="Connect apps via OAuth — connected toolkits light their orb. Click a connected app to customize its tools."
+        >
           <ConnectionsPanel
             connections={connections}
             onConnect={handleConnect}
             onDisconnect={handleDisconnect}
             pendingToolkit={connectPending}
             loginRequiredFor={connectLoginRequired}
+            authedFetch={authedFetch}
           />
+        </SectionCard>
+
+        <SectionCard title="Custom MCPs" subtitle="Bring your own MCP server — name, URL, and optional auth headers.">
+          <CustomMcpsPanel authedFetch={authedFetch} />
         </SectionCard>
 
         <div className="flex items-center gap-3">

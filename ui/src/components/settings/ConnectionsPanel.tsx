@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { CATEGORIES, TOP_CATEGORIES, storeApi } from '../../api';
-import type { Connection, ToolkitApp } from '../../api';
+import type { AuthedFetch, Connection, ToolkitApp } from '../../api';
+import ToolCustomizePanel from './ToolCustomizePanel';
 
 // Rendering all ~1,201 tiles at once would mount 1,201 <img> nodes and fire
 // 1,201 simultaneous image loads — a real jank/memory cost for zero benefit,
@@ -19,14 +20,16 @@ function AppTile({
   app,
   connected,
   pending,
+  active,
   onConnect,
-  onDisconnect,
+  onOpenCustomize,
 }: {
   app: ToolkitApp;
   connected: boolean;
   pending: boolean;
+  active: boolean;
   onConnect(slug: string): void;
-  onDisconnect(slug: string): void;
+  onOpenCustomize(slug: string): void;
 }) {
   const [failed, setFailed] = useState(false);
   const [loaded, setLoaded] = useState(false);
@@ -41,12 +44,12 @@ function AppTile({
       <button
         type="button"
         title={app.name}
-        aria-label={connected ? `${app.name} — connected. Click to disconnect.` : `Connect ${app.name}`}
+        aria-label={connected ? `${app.name} — connected. Click to customize.` : `Connect ${app.name}`}
         disabled={pending}
-        onClick={() => (connected ? onDisconnect(app.slug) : onConnect(app.slug))}
+        onClick={() => (connected ? onOpenCustomize(app.slug) : onConnect(app.slug))}
         className={`relative flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border transition-colors duration-200 disabled:opacity-40 ${
           connected
-            ? 'border-accent/70 bg-accent/10 shadow-glow-accent'
+            ? `border-accent/70 bg-accent/10 shadow-glow-accent ${active ? 'ring-2 ring-accent/70' : ''}`
             : 'border-white/10 bg-white/[0.03] hover:border-white/25 hover:bg-white/[0.07]'
         }`}
       >
@@ -106,26 +109,32 @@ function FilterChip({ label, active, onClick }: { label: string; active: boolean
  * top `RENDER_CAP` of the filtered set so the DOM never has to hold more
  * than ~150 tiles at once. Only the top 10 categories (by app count) get a
  * chip — the rest of the 82 are reachable by typing the category name into
- * search, or via the "browse all" select. Connect/disconnect wiring is
- * unchanged — a per-toolkit inline "log in to connect" prompt still appears
- * when the call 401s. */
+ * search, or via the "browse all" select. Connect wiring is unchanged — a
+ * per-toolkit inline "log in to connect" prompt still appears when the call
+ * 401s. Clicking a *connected* tile no longer disconnects immediately — it
+ * opens `ToolCustomizePanel` (per-tool enable/disable), which itself hosts
+ * the "Disconnect" action, so a disconnect is always an explicit second
+ * step rather than a single misclick. */
 export default function ConnectionsPanel({
   connections,
   onConnect,
   onDisconnect,
   pendingToolkit,
   loginRequiredFor,
+  authedFetch,
 }: {
   connections: Connection[];
   onConnect(toolkit: string): void;
   onDisconnect(toolkit: string): void;
   pendingToolkit: string | null;
   loginRequiredFor: string | null;
+  authedFetch: AuthedFetch;
 }) {
   const [apps, setApps] = useState<ToolkitApp[]>([]);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState<string | null>(null);
+  const [customizeSlug, setCustomizeSlug] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -172,6 +181,14 @@ export default function ConnectionsPanel({
   const visible = capped ? filtered.slice(0, RENDER_CAP) : filtered;
 
   const loginRequiredApp = loginRequiredFor ? apps.find((a) => a.slug === loginRequiredFor) : undefined;
+  const customizeApp = customizeSlug ? apps.find((a) => a.slug === customizeSlug) : undefined;
+
+  // Close the customize panel if its toolkit stops being connected — either
+  // disconnected from inside the panel itself, or out-of-band (another tab,
+  // focus refresh).
+  useEffect(() => {
+    if (customizeSlug && !connectedSlugs.has(customizeSlug)) setCustomizeSlug(null);
+  }, [customizeSlug, connectedSlugs]);
 
   return (
     <div className="flex flex-col gap-3.5">
@@ -229,11 +246,25 @@ export default function ConnectionsPanel({
               app={app}
               connected={connectedSlugs.has(app.slug)}
               pending={pendingToolkit === app.slug}
+              active={customizeSlug === app.slug}
               onConnect={onConnect}
-              onDisconnect={onDisconnect}
+              onOpenCustomize={(slug) => setCustomizeSlug((s) => (s === slug ? null : slug))}
             />
           ))}
         </div>
+      )}
+
+      {customizeApp && (
+        <ToolCustomizePanel
+          app={customizeApp}
+          authedFetch={authedFetch}
+          onClose={() => setCustomizeSlug(null)}
+          onDisconnect={(slug) => {
+            onDisconnect(slug);
+            setCustomizeSlug(null);
+          }}
+          disconnectPending={pendingToolkit === customizeApp.slug}
+        />
       )}
 
       {loginRequiredFor && (
