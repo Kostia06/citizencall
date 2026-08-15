@@ -153,7 +153,10 @@ export default function CommandBar({
     return () => window.removeEventListener('resize', resize);
   }, [value]);
 
-  const showSuggestions = focused && !running && value.trim().length === 0;
+  // Keep the list open while an arrow/hover PREVIEW is filling the input
+  // (highlight >= 0) — otherwise the now-non-empty value would hide the
+  // list mid-navigation. Empty + focused opens it; navigating keeps it.
+  const showSuggestions = focused && !running && (value.trim().length === 0 || highlight >= 0);
   const filtered = SUGGESTIONS;
   // Only shown while the input is empty — this is a context-aware next
   // ACTION, not a completion of whatever's been typed, so a partial prefix
@@ -327,7 +330,12 @@ export default function CommandBar({
     if (showSuggestions && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
       e.preventDefault();
       const dir = e.key === 'ArrowDown' ? 1 : -1;
-      setHighlight((h) => (h + dir + filtered.length) % filtered.length);
+      const next = (highlight + dir + filtered.length) % filtered.length;
+      setHighlight(next);
+      // Live-preview: the highlighted suggestion fills the input as you
+      // navigate, so the bar always shows what you're about to pick.
+      const picked = filtered[next];
+      if (picked !== undefined) setValue(picked);
       return;
     }
     if (e.key === 'Enter') {
@@ -384,6 +392,9 @@ export default function CommandBar({
                   onChange={(e) => {
                     const next = e.target.value;
                     setValue(next);
+                    // Typing is authoritative — drop any suggestion preview so
+                    // the list reflects the typed text, not a stale highlight.
+                    setHighlight(-1);
                     // Typing dismisses the context suggestion outright (not
                     // just hides it) — it was for the empty state, not a
                     // completion of whatever gets typed next.
