@@ -3,15 +3,16 @@ import { setCookie } from 'hono/cookie';
 import type { Env } from '../env';
 import { checkPasswordPolicy, hashPassword, verifyPassword } from './password';
 import { signAccessToken } from './jwt';
-import { createSession, revokeAllForUser, rotateSession } from './sessions';
+import { createSession, listSessions, revokeAllForUser, revokeSession, rotateSession } from './sessions';
 import {
   consumeEmailToken, createEmailToken, createUser, getUserByEmail,
   getUserById, setEmailVerified, updatePassword,
 } from './users';
 import { sendResetEmail, sendVerifyEmail } from './email';
 import { checkAndIncrement } from './throttle';
+import { requireAuth } from './middleware';
 
-type Vars = { authUserId?: string };
+type Vars = { authUserId?: string; authSessionId?: string; authEmailVerified?: boolean };
 export const authRoutes = new Hono<{ Bindings: Env; Variables: Vars }>();
 
 const GENERIC_LOGIN_ERR = 'Invalid email or password.';
@@ -127,4 +128,28 @@ authRoutes.post('/password/reset', async (c) => {
   await updatePassword(c.env.DB, userId, await hashPassword(password), now());
   await revokeAllForUser(c.env.DB, userId); // reset kills all sessions
   return c.json({ ok: true });
+});
+
+authRoutes.get('/me', requireAuth, async (c) => {
+  const user = await getUserById(c.env.DB, c.get('authUserId') as string);
+  return c.json({ user });
+});
+
+authRoutes.post('/logout', requireAuth, async (c) => {
+  await revokeSession(c.env.DB, c.get('authSessionId') as string);
+  return c.body(null, 204);
+});
+
+authRoutes.post('/logout-all', requireAuth, async (c) => {
+  await revokeAllForUser(c.env.DB, c.get('authUserId') as string);
+  return c.body(null, 204);
+});
+
+authRoutes.get('/sessions', requireAuth, async (c) => {
+  return c.json(await listSessions(c.env.DB, c.get('authUserId') as string));
+});
+
+authRoutes.delete('/sessions/:id', requireAuth, async (c) => {
+  await revokeSession(c.env.DB, c.req.param('id'));
+  return c.body(null, 204);
 });
