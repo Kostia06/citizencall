@@ -52,13 +52,39 @@ function stubSuggestion(context: string[]): string {
 export async function suggestNextAction(env: Env, context: string[]): Promise<string> {
   if (!env.FEATHERLESS_API_KEY) return stubSuggestion(context);
 
-  const result = await callFeatherless(env, {
-    modelId: cheapestAvailableModel(),
-    messages: [
-      { role: 'system', content: SYSTEM_PROMPT },
-      { role: 'user', content: context.length > 0 ? context.join('\n') : '(no prior context)' },
-    ],
-    maxTokens: 40,
-  });
-  return result.content.trim();
+  const messages = [
+    { role: 'system' as const, content: SYSTEM_PROMPT },
+    { role: 'user' as const, content: context.length > 0 ? context.join('\n') : '(no prior context)' },
+  ];
+  // 160 not 40: reasoning-family models (Qwen3 etc.) spend budget on a think
+  // block before content — at 40 the content comes back empty (found live).
+  // It's a cap, not a spend; tiny models still stop after one line.
+  try {
+    const result = await callFeatherless(env, { modelId: cheapestAvailableModel(), maxTokens: 160, messages });
+    const text = cleanSuggestion(result.content);
+    if (text) return text;
+  } catch {
+    // Catalog listings aren't always servable (found live: a warm-listed
+    // model 404ing as model_not_found). A suggestion is a nudge, never worth
+    // a 500 — fall through to the known-good fallback, then to canned.
+  }
+  try {
+    const result = await callFeatherless(env, { modelId: FALLBACK_MODEL_ID, maxTokens: 160, messages });
+    const text = cleanSuggestion(result.content);
+    if (text) return text;
+  } catch {
+    // fall through
+  }
+  return stubSuggestion(context);
+}
+
+// Reasoning models may leak a <think>…</think> block ahead of the actual
+// suggestion; strip it (and any unclosed variant) before judging emptiness.
+function cleanSuggestion(raw: string): string {
+  return raw
+    .replace(/<think>[\s\S]*?<\/think>/g, '')
+    .replace(/<think>[\s\S]*/g, '')
+    .trim()
+    .split('\n')[0]!
+    .trim();
 }
