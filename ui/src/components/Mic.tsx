@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { API_BASE, MOCK } from '../api';
 
 interface MicProps {
   onInterim(text: string): void;
@@ -7,19 +8,40 @@ interface MicProps {
   disabled?: boolean;
 }
 
-// Web Speech API — SPEC.md §7.2. Chrome/Edge only; Electron throws a
-// `network` error because Google's Speech API keys aren't shipped (§7.3).
-function getSpeechRecognition(): (new () => any) | undefined {
-  return (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+type Phase = 'idle' | 'recording' | 'transcribing';
+
+// Canned result for MOCK mode / no-backend demos — ElevenLabs STT round trip
+// has nothing to talk to, so this keeps the mic fully demoable.
+const MOCK_TRANSCRIPT = 'Summarize open pull requests and flag anything that needs review.';
+
+function pickMimeType(): string | undefined {
+  if (typeof MediaRecorder === 'undefined' || !MediaRecorder.isTypeSupported) return undefined;
+  for (const type of ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4']) {
+    if (MediaRecorder.isTypeSupported(type)) return type;
+  }
+  return undefined;
+}
+
+function extFor(mimeType?: string): string {
+  if (mimeType?.includes('mp4')) return 'mp4';
+  return 'webm';
 }
 
 /** Mic button — 5th element in the pill. Idle: grey glyph. Recording: red
- * dot, breathing ring, 5-bar AnalyserNode waveform. Degrades to type-only
- * on unsupported browsers or a denied permission. */
-export default function Mic({ onInterim, onFinal, onToast, disabled }: MicProps) {
-  const [recording, setRecording] = useState(false);
+ * dot, breathing ring, 5-bar AnalyserNode waveform (unchanged, decorative —
+ * it never sees the recorded audio, only a live monitoring stream).
+ * Transcribing: brief pulsing label between "stop" and the transcript
+ * landing. Records via MediaRecorder and posts the blob to
+ * `${API_BASE}/api/stt` (ElevenLabs STT behind the Worker) — MOCK mode (or
+ * no backend reachable) fails over to a canned transcript so the bar stays
+ * demoable with zero network. Degrades to type-only when MediaRecorder or
+ * mic permission is unavailable. */
+export default function Mic({ onFinal, onToast, disabled }: MicProps) {
+  const [phase, setPhase] = useState<Phase>('idle');
   const [unsupported, setUnsupported] = useState(false);
-  const recognitionRef = useRef<any>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
+  const mimeTypeRef = useRef<string | undefined>(undefined);
   const audioCtxRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -28,9 +50,10 @@ export default function Mic({ onInterim, onFinal, onToast, disabled }: MicProps)
   const barHeightsRef = useRef<number[]>([0, 0, 0, 0, 0]);
 
   useEffect(() => {
-    if (!getSpeechRecognition()) setUnsupported(true);
+    if (typeof MediaRecorder === 'undefined' || !navigator.mediaDevices?.getUserMedia) setUnsupported(true);
     return () => {
-      stop();
+      mediaRecorderRef.current?.stop();
+      teardownStream();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -68,11 +91,9 @@ export default function Mic({ onInterim, onFinal, onToast, disabled }: MicProps)
     rafRef.current = requestAnimationFrame(render);
   }
 
-  async function startWaveform() {
+  function attachAnalyser(stream: MediaStream) {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      streamRef.current = stream;
-      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
       const ctx = new AudioCtx();
       const source = ctx.createMediaStreamSource(stream);
       const analyser = ctx.createAnalyser();
@@ -82,11 +103,11 @@ export default function Mic({ onInterim, onFinal, onToast, disabled }: MicProps)
       analyserRef.current = analyser;
       drawWaveform();
     } catch {
-      // Waveform is decoration — speech recognition works without it.
+      // Waveform is decoration — recording works without it.
     }
   }
 
-  function stopWaveform() {
+  function teardownStream() {
     if (rafRef.current) cancelAnimationFrame(rafRef.current);
     streamRef.current?.getTracks().forEach((t) => t.stop());
     audioCtxRef.current?.close().catch(() => undefined);
@@ -97,50 +118,82 @@ export default function Mic({ onInterim, onFinal, onToast, disabled }: MicProps)
     if (ctx && canvasRef.current) ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
   }
 
-  function start() {
-    const SR = getSpeechRecognition();
-    if (!SR) {
+  async function start() {
+    if (typeof MediaRecorder === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
       setUnsupported(true);
-      onToast('Speech unavailable — type instead');
+      onToast('Voice unavailable — type instead');
       return;
     }
-    const rec = new SR();
-    rec.continuous = false;
-    rec.interimResults = true;
-    rec.lang = 'en-US';
-
-    rec.onresult = (e: any) => {
-      let interim = '';
-      let final = '';
-      for (let i = e.resultIndex; i < e.results.length; i++) {
-        const t = e.results[i][0].transcript;
-        e.results[i].isFinal ? (final += t) : (interim += t);
-      }
-      if (final) onFinal(final);
-      else onInterim(interim);
-    };
-    rec.onerror = (e: any) => {
-      onToast(e.error === 'not-allowed' ? 'Microphone blocked' : 'Speech unavailable — type instead');
-      setRecording(false);
-      stopWaveform();
-    };
-    rec.onend = () => {
-      setRecording(false);
-      stopWaveform();
-    };
-
-    recognitionRef.current = rec;
-    rec.start();
-    setRecording(true);
-    startWaveform();
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      streamRef.current = stream;
+      const mimeType = pickMimeType();
+      mimeTypeRef.current = mimeType;
+      const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+      chunksRef.current = [];
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) chunksRef.current.push(e.data);
+      };
+      recorder.onstop = () => {
+        void finishRecording();
+      };
+      mediaRecorderRef.current = recorder;
+      recorder.start();
+      setPhase('recording');
+      attachAnalyser(stream);
+    } catch {
+      onToast('Microphone blocked');
+      setPhase('idle');
+    }
   }
 
   function stop() {
-    recognitionRef.current?.stop();
-    recognitionRef.current = null;
-    setRecording(false);
-    stopWaveform();
+    // onstop (assembles the blob + kicks off transcription) fires
+    // asynchronously off this call.
+    mediaRecorderRef.current?.stop();
+    mediaRecorderRef.current = null;
   }
+
+  async function finishRecording() {
+    const mimeType = mimeTypeRef.current;
+    teardownStream();
+    const chunks = chunksRef.current;
+    chunksRef.current = [];
+
+    if (chunks.length === 0) {
+      setPhase('idle');
+      onToast('No audio captured');
+      return;
+    }
+
+    setPhase('transcribing');
+    const blob = new Blob(chunks, { type: mimeType ?? chunks[0].type ?? 'audio/webm' });
+
+    if (MOCK) {
+      window.setTimeout(() => {
+        setPhase('idle');
+        onFinal(MOCK_TRANSCRIPT);
+      }, 1000);
+      return;
+    }
+
+    try {
+      const form = new FormData();
+      form.append('audio', blob, `recording.${extFor(mimeType)}`);
+      const res = await fetch(`${API_BASE}/api/stt`, { method: 'POST', body: form });
+      if (!res.ok) throw new Error(`POST /api/stt failed: ${res.status}`);
+      const body = (await res.json()) as { text?: string };
+      setPhase('idle');
+      if (body.text?.trim()) onFinal(body.text.trim());
+      else onToast('No speech detected');
+    } catch {
+      setPhase('idle');
+      onToast('Transcription failed — type instead');
+    }
+  }
+
+  const recording = phase === 'recording';
+  const transcribing = phase === 'transcribing';
 
   return (
     <div className="relative flex items-center justify-center">
@@ -156,15 +209,20 @@ export default function Mic({ onInterim, onFinal, onToast, disabled }: MicProps)
           />
         </>
       )}
+      {transcribing && (
+        <span className="absolute -left-[4.75rem] top-1/2 -translate-y-1/2 whitespace-nowrap text-[11px] text-white/40 animate-pulse">
+          Transcribing…
+        </span>
+      )}
       <button
         type="button"
-        disabled={disabled}
-        aria-label={recording ? 'Stop recording' : unsupported ? 'Voice unavailable' : 'Start voice input'}
+        disabled={disabled || transcribing}
+        aria-label={recording ? 'Stop recording' : transcribing ? 'Transcribing' : unsupported ? 'Voice unavailable' : 'Start voice input'}
         onClick={() => (recording ? stop() : start())}
         className="relative flex h-8 w-8 items-center justify-center rounded-full text-[#8E8E93] transition-colors hover:text-white disabled:opacity-30"
       >
-        {/* Idle→recording crossfade, 150ms — DESIGN.md §5 Mic. Both glyphs
-            stay mounted and swap opacity rather than instant-swap. */}
+        {/* Idle→recording crossfade, 150ms — DESIGN.md §5 Mic. All three
+            glyphs stay mounted and swap opacity rather than instant-swap. */}
         <span
           className={`absolute inset-0 flex items-center justify-center transition-opacity duration-150 ease-out ${
             recording ? 'opacity-100' : 'opacity-0'
@@ -174,7 +232,14 @@ export default function Mic({ onInterim, onFinal, onToast, disabled }: MicProps)
         </span>
         <span
           className={`absolute inset-0 flex items-center justify-center transition-opacity duration-150 ease-out ${
-            recording ? 'opacity-0' : 'opacity-100'
+            transcribing ? 'opacity-100' : 'opacity-0'
+          }`}
+        >
+          <span className="h-3.5 w-3.5 animate-spin rounded-full border-[1.7px] border-accent/30 border-t-accent" />
+        </span>
+        <span
+          className={`absolute inset-0 flex items-center justify-center transition-opacity duration-150 ease-out ${
+            !recording && !transcribing ? 'opacity-100' : 'opacity-0'
           }`}
         >
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden>
