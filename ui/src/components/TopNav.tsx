@@ -18,7 +18,7 @@ export default function TopNav() {
   return (
     <nav className="flex items-center justify-between text-[11px] text-white/30">
       <Link to="/" className="font-medium transition-colors hover:text-white/70">
-        understudy
+        home
       </Link>
       <div className="flex items-center gap-4">
         {MOCK && (

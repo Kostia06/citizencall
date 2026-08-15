@@ -13,7 +13,7 @@ export default function AuthCard({ title, subtitle, children }: { title: string;
       <div className="absolute inset-x-0 top-0 px-6 pt-6 text-[11px] text-white/30">
         <div className="mx-auto flex max-w-md items-center justify-between">
           <Link to="/" className="transition-colors hover:text-white/70">
-            understudy
+            home
           </Link>
         </div>
       </div>
