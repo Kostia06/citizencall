@@ -389,6 +389,12 @@ export default function CommandBar({
                   value={value}
                   disabled={running}
                   rows={1}
+                  // Only the static placeholder OR the ghost next-action
+                  // suggestion should ever be visible at once — both render
+                  // at the same top-left position, so leaving the native
+                  // placeholder on while a ghost suggestion is showing would
+                  // double up as overlapping text.
+                  placeholder={ghostSuffix ? '' : 'Ask Understudy anything…'}
                   onChange={(e) => {
                     const next = e.target.value;
                     setValue(next);

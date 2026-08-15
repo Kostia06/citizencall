@@ -13,9 +13,14 @@ export type { Connection, UserPrefs, UserPrefsButton, FixedButtonAction, UserMcp
 export type { ToolkitApp } from './store/apps';
 export { CATEGORIES, TOP_CATEGORIES } from './store/apps';
 
-// MOCK is on by default so the UI is fully demoable with zero backend —
-// flip VITE_MOCK=false to talk to a real Worker. See SPEC.md §13.
-export const MOCK: boolean = import.meta.env.VITE_MOCK !== 'false';
+// LIVE by default — the SPA talks to the real Worker unless explicitly told
+// not to. `withMockFallback` (auth/store calls) and `startRun`'s own
+// try/catch (the run stream) still fall back to the in-memory mock per-call
+// whenever the backend is unreachable, so the app stays fully demoable with
+// zero backend even in this mode. Set VITE_MOCK=true as an explicit
+// force-mock escape hatch (e.g. filming a demo with no Worker running at
+// all, or working offline). See SPEC.md §13.
+export const MOCK: boolean = import.meta.env.VITE_MOCK === 'true';
 
 export const API_BASE: string = import.meta.env.VITE_API_BASE ?? '';
 
@@ -72,17 +77,22 @@ function startMockRun(opts: StartRunOpts): RunHandle {
 function startLiveRun(opts: StartRunOpts): RunHandle {
   let es: EventSource | undefined;
   let closed = false;
+  // Set once POST /api/run's initial request fails outright (network down,
+  // Worker not running) — falls back to the scripted mock run so the bar
+  // stays filmable/demoable with zero backend even when MOCK is off.
+  let fallback: RunHandle | null = null;
   // Placeholder id until POST /api/run resolves — callers only read runId
   // synchronously for mock mode; live mode should use the resolved id from
   // the run_start TraceEvent instead.
-  const provisional = { runId: '', close: () => undefined };
+  const provisional = { runId: '' };
   const handle: RunHandle = {
     get runId() {
-      return provisional.runId;
+      return fallback ? fallback.runId : provisional.runId;
     },
     close() {
       closed = true;
       es?.close();
+      fallback?.close();
     },
   };
 
@@ -131,7 +141,13 @@ function startLiveRun(opts: StartRunOpts): RunHandle {
         opts.onError?.(err);
       };
     } catch (err) {
-      opts.onError?.(err);
+      // Only the initial POST failing lands here (fetch throw, non-2xx, or
+      // a malformed JSON body) — a stream that connects and later drops is
+      // handled by es.onerror above and must NOT fall back mid-run, since
+      // that would silently swap a real (if flaky) run for a scripted one.
+      if (closed) return;
+      console.warn('[run] backend unreachable, falling back to scripted demo run', err);
+      fallback = startMockRun(opts);
     }
   })();
 
@@ -218,6 +234,18 @@ async function withMockFallback<T>(live: () => Promise<T>, mock: () => Promise<T
   }
 }
 
+/** Returned by `authApi.login` in place of a session when the account has
+ * 2FA enabled — `devCode` only ever appears on dev builds of the auth worker
+ * (never in prod), and MOCK mode always includes one ('000000') so the flow
+ * is demoable with zero backend. */
+export interface Requires2fa {
+  requires2fa: true;
+  challengeId: string;
+  devCode?: string;
+}
+
+export type LoginResult = { accessToken: string; user: AuthUser } | Requires2fa;
+
 // Shared by all authApi.refresh() callers — see the SINGLE-FLIGHT note there.
 let inflightRefresh: Promise<{ accessToken: string; user: AuthUser } | null> | null = null;
 
@@ -233,14 +261,44 @@ export const authApi = {
     );
   },
 
-  async login(email: string, password: string): Promise<{ accessToken: string; user: AuthUser }> {
+  async login(email: string, password: string): Promise<LoginResult> {
     return withMockFallback(
       async () => {
         const res = await authFetch('/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) });
         if (!res.ok) throw new AuthError(await readJsonError(res), res.status);
-        return res.json();
+        const body = await res.json();
+        return body as LoginResult;
       },
       () => mockAuthStore.login(email, password),
+    );
+  },
+
+  /** Completes a 2FA challenge from `login`'s `requires2fa` response. */
+  async verify2fa(challengeId: string, code: string): Promise<{ accessToken: string; user: AuthUser }> {
+    return withMockFallback(
+      async () => {
+        const res = await authFetch('/auth/2fa/verify', {
+          method: 'POST',
+          body: JSON.stringify({ challengeId, code }),
+        });
+        if (!res.ok) throw new AuthError(await readJsonError(res), res.status);
+        return res.json();
+      },
+      () => mockAuthStore.verify2fa(challengeId, code),
+    );
+  },
+
+  /** Re-sends the 2FA code for an in-flight challenge; the worker rate-limits
+   * this per `retryAfterSec` (30s), which the caller uses to drive the
+   * "Resend code" countdown. */
+  async resend2fa(challengeId: string): Promise<{ ok: true; retryAfterSec: number }> {
+    return withMockFallback(
+      async () => {
+        const res = await authFetch('/auth/2fa/resend', { method: 'POST', body: JSON.stringify({ challengeId }) });
+        if (!res.ok) throw new AuthError(await readJsonError(res), res.status);
+        return res.json();
+      },
+      () => mockAuthStore.resend2fa(challengeId),
     );
   },
 

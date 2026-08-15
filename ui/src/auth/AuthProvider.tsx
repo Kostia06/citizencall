@@ -1,6 +1,7 @@
 import { createContext, useCallback, useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { authApi } from '../api';
+import type { Requires2fa } from '../api';
 import { createAuthedFetch } from './authedFetch';
 import type { AuthStatus, AuthUser } from './types';
 
@@ -8,10 +9,22 @@ export interface AuthContextValue {
   user: AuthUser | null;
   accessToken: string | null;
   status: AuthStatus;
-  login(email: string, password: string): Promise<void>;
+  /** Resolves to a `Requires2fa` challenge (caller shows the code step and
+   * calls `verify2fa`) instead of establishing a session when the account
+   * has 2FA enabled; otherwise resolves to void with the session already
+   * set. */
+  login(email: string, password: string): Promise<Requires2fa | void>;
   /** Creates the account and immediately establishes an authed session —
-   * there is no email-confirmation step to wait on. */
+   * there is no email-confirmation step to wait on. A 2FA challenge
+   * immediately after signup (fresh account, mock demo) is auto-verified
+   * via its dev code rather than surfaced, since the browser that just
+   * created the account is trivially the owner. */
   signup(email: string, password: string): Promise<{ userId: string }>;
+  /** Completes a challenge returned by `login` and establishes the session. */
+  verify2fa(challengeId: string, code: string): Promise<void>;
+  /** Re-sends the code for an in-flight challenge; returns the resend
+   * cooldown in seconds for the caller's countdown. */
+  resend2fa(challengeId: string): Promise<{ retryAfterSec: number }>;
   logout(): Promise<void>;
   /** Attaches the bearer token; on a 401 does one silent refresh + retry,
    * else drops to anon. `credentials: 'include'` rides the refresh cookie. */
@@ -64,19 +77,39 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   ).current;
 
   const login = useCallback(
-    async (email: string, password: string) => {
+    async (email: string, password: string): Promise<Requires2fa | void> => {
       const result = await authApi.login(email, password);
+      if ('requires2fa' in result) return result; // caller shows the code step
       setSession(result.accessToken, result.user);
     },
     [setSession],
   );
 
+  const verify2fa = useCallback(
+    async (challengeId: string, code: string) => {
+      const result = await authApi.verify2fa(challengeId, code);
+      setSession(result.accessToken, result.user);
+    },
+    [setSession],
+  );
+
+  const resend2fa = useCallback(async (challengeId: string) => {
+    return authApi.resend2fa(challengeId);
+  }, []);
+
   const signup = useCallback(
     async (email: string, password: string) => {
       const result = await authApi.signup(email, password);
       // No email-confirmation gate anymore — signup lands the user straight
-      // in an authed session, so log in immediately behind the scenes.
-      const session = await authApi.login(email, password);
+      // in an authed session, so log in immediately behind the scenes. A
+      // fresh account isn't expected to have 2FA enabled yet, but if it
+      // does (mock always challenges), auto-verify with the dev code rather
+      // than bounce the just-created user into a code-entry screen.
+      const loginResult = await authApi.login(email, password);
+      const session =
+        'requires2fa' in loginResult
+          ? await authApi.verify2fa(loginResult.challengeId, loginResult.devCode ?? '')
+          : loginResult;
       setSession(session.accessToken, session.user);
       return result;
     },
@@ -91,6 +124,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [setSession]);
 
-  const value: AuthContextValue = { user, accessToken, status, login, signup, logout, authedFetch };
+  const value: AuthContextValue = { user, accessToken, status, login, signup, verify2fa, resend2fa, logout, authedFetch };
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

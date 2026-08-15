@@ -50,6 +50,7 @@ export default function ToolCustomizePanel({
   const [loading, setLoading] = useState(true);
   const [loginRequired, setLoginRequired] = useState(false);
   const [pendingTool, setPendingTool] = useState<string | null>(null);
+  const [toggleError, setToggleError] = useState(false);
 
   const tools = useMemo(() => STATIC_TOOLS[app.slug] ?? [ALL_TOOLS_SENTINEL], [app.slug]);
 
@@ -79,6 +80,7 @@ export default function ToolCustomizePanel({
     const next = !current;
     setOverrides((m) => ({ ...m, [tool]: next }));
     setPendingTool(tool);
+    setToggleError(false);
     try {
       await storeApi.setToolOverride(authedFetch, app.slug, tool, next);
       setLoginRequired(false);
@@ -87,6 +89,7 @@ export default function ToolCustomizePanel({
         setLoginRequired(true); // kept for this session, same pattern as elsewhere in Settings
       } else {
         setOverrides((m) => ({ ...m, [tool]: current }));
+        setToggleError(true);
       }
     } finally {
       setPendingTool(null);
@@ -141,6 +144,7 @@ export default function ToolCustomizePanel({
       </div>
 
       {pendingTool && <p className="mt-2 text-[11px] text-white/30">Saving…</p>}
+      {toggleError && <p className="mt-2 text-[12px] text-red-400">Couldn't save that change — try again.</p>}
       {loginRequired && (
         <p className="mt-2 text-[12px] text-white/40">
           Kept for this session —{' '}

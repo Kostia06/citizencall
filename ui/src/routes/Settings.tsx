@@ -7,6 +7,7 @@ import ButtonEditor from '../components/settings/ButtonEditor';
 import ConnectionsPanel from '../components/settings/ConnectionsPanel';
 import CustomMcpsPanel from '../components/settings/CustomMcpsPanel';
 import TopNav from '../components/TopNav';
+import { ToastStack, useToasts } from '../components/Toast';
 import { AuthError, DEFAULT_PREFS, MOCK, storeApi } from '../api';
 import type { Connection, UserPrefs } from '../api';
 import { useAuth } from '../auth/useAuth';
@@ -33,6 +34,7 @@ function SectionCard({ title, subtitle, children }: { title: string; subtitle?: 
 export default function Settings() {
   const { authedFetch, status } = useAuth();
   const reduceMotion = !!useReducedMotion();
+  const { toasts, push } = useToasts();
 
   const [draft, setDraft] = useState<UserPrefs>(DEFAULT_PREFS);
   const [loaded, setLoaded] = useState(false);
@@ -107,6 +109,8 @@ export default function Settings() {
     } catch (err) {
       if (err instanceof AuthError && err.status === 401) {
         setConnectLoginRequired(toolkit);
+      } else {
+        push(`Couldn't connect ${toolkit} — try again.`);
       }
     } finally {
       setConnectPending(null);
@@ -118,6 +122,8 @@ export default function Settings() {
     try {
       await storeApi.disconnect(authedFetch, toolkit);
       await refreshConnections();
+    } catch {
+      push(`Couldn't disconnect ${toolkit} — try again.`);
     } finally {
       setConnectPending(null);
     }
@@ -233,6 +239,8 @@ export default function Settings() {
           )}
         </div>
       </motion.div>
+
+      <ToastStack toasts={toasts} />
     </div>
   );
 }

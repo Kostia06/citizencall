@@ -13,8 +13,20 @@ interface MockAccount {
   createdAt: number;
 }
 
+interface MockChallenge {
+  userId: string;
+  code: string;
+}
+
 const accounts = new Map<string, MockAccount>(); // keyed by lowercased email
+const challenges = new Map<string, MockChallenge>(); // keyed by challengeId
 let session: { userId: string; accessToken: string } | null = null;
+
+// Fixed so MOCK mode is demoable without an inbox — every mock login goes
+// through a 2FA challenge (mirrors an account with 2FA enabled), and the
+// devCode surfaces in the UI's dev-hint chip so the flow completes without
+// a real email.
+const MOCK_2FA_CODE = '000000';
 
 function makeToken(prefix: string): string {
   return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
@@ -51,15 +63,35 @@ export const mockAuthStore = {
     return { userId: account.id };
   },
 
-  async login(email: string, password: string): Promise<{ accessToken: string; user: AuthUser }> {
+  async login(
+    email: string,
+    password: string,
+  ): Promise<{ requires2fa: true; challengeId: string; devCode: string }> {
     const key = normalize(email);
     const account = accounts.get(key);
     if (!account || account.password !== password) {
       throw new Error('Invalid email or password');
     }
+    const challengeId = makeToken('2fa');
+    challenges.set(challengeId, { userId: account.id, code: MOCK_2FA_CODE });
+    return { requires2fa: true, challengeId, devCode: MOCK_2FA_CODE };
+  },
+
+  async verify2fa(challengeId: string, code: string): Promise<{ accessToken: string; user: AuthUser }> {
+    const challenge = challenges.get(challengeId);
+    if (!challenge) throw new Error('That code has expired — request a new one.');
+    if (code !== challenge.code) throw new Error('Incorrect code');
+    const account = [...accounts.values()].find((a) => a.id === challenge.userId);
+    if (!account) throw new Error('Account not found');
+    challenges.delete(challengeId);
     const accessToken = makeToken('access');
     session = { userId: account.id, accessToken };
     return { accessToken, user: toAuthUser(account) };
+  },
+
+  async resend2fa(challengeId: string): Promise<{ ok: true; retryAfterSec: number }> {
+    if (!challenges.has(challengeId)) throw new Error('That code has expired — request a new one.');
+    return { ok: true, retryAfterSec: 30 };
   },
 
   async refresh(): Promise<{ accessToken: string; user: AuthUser } | null> {

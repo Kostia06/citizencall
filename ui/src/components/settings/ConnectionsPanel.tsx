@@ -1,8 +1,13 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Link } from 'react-router-dom';
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { CATEGORIES, TOP_CATEGORIES, storeApi } from '../../api';
 import type { AuthedFetch, Connection, ToolkitApp } from '../../api';
 import ToolCustomizePanel from './ToolCustomizePanel';
+import { entranceStandard, entranceStandardReduced } from '../../lib/motion';
+
+const POPOVER_WIDTH = 224; // px — w-56, used to clamp the portal's fixed position on-screen
 
 // Rendering all ~1,201 tiles at once would mount 1,201 <img> nodes and fire
 // 1,201 simultaneous image loads — a real jank/memory cost for zero benefit,
@@ -21,15 +26,13 @@ function AppTile({
   connected,
   pending,
   active,
-  onConnect,
-  onOpenCustomize,
+  onOpen,
 }: {
   app: ToolkitApp;
   connected: boolean;
   pending: boolean;
   active: boolean;
-  onConnect(slug: string): void;
-  onOpenCustomize(slug: string): void;
+  onOpen(slug: string, anchor: HTMLButtonElement): void;
 }) {
   const [failed, setFailed] = useState(false);
   const [loaded, setLoaded] = useState(false);
@@ -44,9 +47,10 @@ function AppTile({
       <button
         type="button"
         title={app.name}
-        aria-label={connected ? `${app.name} — connected. Click to customize.` : `Connect ${app.name}`}
+        aria-label={connected ? `${app.name} — connected. Click to manage.` : `Connect ${app.name}`}
+        aria-haspopup="dialog"
         disabled={pending}
-        onClick={() => (connected ? onOpenCustomize(app.slug) : onConnect(app.slug))}
+        onClick={(e) => onOpen(app.slug, e.currentTarget)}
         className={`relative flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border transition-colors duration-200 disabled:opacity-40 ${
           connected
             ? `border-accent/70 bg-accent/10 shadow-glow-accent ${active ? 'ring-2 ring-accent/70' : ''}`
@@ -85,6 +89,124 @@ function AppTile({
   );
 }
 
+/** Small confirm popover anchored to a tile — replaces the old
+ * click-straight-to-OAuth / click-straight-to-panel behavior. Rendered via a
+ * portal at `position: fixed` (computed from the tile's own bounding rect at
+ * open time) rather than absolutely inside the grid, so it's never clipped
+ * by the grid's `overflow-y-auto`/`max-h-80`. Esc closes; the primary action
+ * is autofocused so Enter confirms it (native button behavior — no extra
+ * keydown wiring needed). Closes automatically if the grid scrolls or the
+ * window resizes, since a stale fixed-position rect would otherwise drift
+ * away from the tile it's meant to anchor to. */
+function ConnectPopover({
+  app,
+  connected,
+  pending,
+  anchorRect,
+  onConnect,
+  onDisconnect,
+  onCustomize,
+  onClose,
+}: {
+  app: ToolkitApp;
+  connected: boolean;
+  pending: boolean;
+  anchorRect: DOMRect;
+  onConnect(): void;
+  onDisconnect(): void;
+  onCustomize(): void;
+  onClose(): void;
+}) {
+  const reduceMotion = !!useReducedMotion();
+  const dialogRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function onKeyDown(e: globalThis.KeyboardEvent) {
+      if (e.key === 'Escape') onClose();
+    }
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [onClose]);
+
+  const left = Math.min(
+    Math.max(anchorRect.left + anchorRect.width / 2, 8 + POPOVER_WIDTH / 2),
+    window.innerWidth - 8 - POPOVER_WIDTH / 2,
+  );
+  const top = anchorRect.bottom + 8;
+
+  return createPortal(
+    <>
+      {/* Full-viewport transparent backdrop — the click-away-to-close
+          surface; sits below the popover in stacking order. */}
+      <div className="fixed inset-0 z-40" onClick={onClose} aria-hidden />
+      <motion.div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label={connected ? `Manage ${app.name}` : `Connect ${app.name}`}
+        initial={reduceMotion ? { opacity: 0 } : { opacity: 0, y: -4, scale: 0.96 }}
+        animate={reduceMotion ? { opacity: 1 } : { opacity: 1, y: 0, scale: 1 }}
+        exit={reduceMotion ? { opacity: 0 } : { opacity: 0, y: -4, scale: 0.96 }}
+        transition={reduceMotion ? entranceStandardReduced : entranceStandard}
+        style={{ position: 'fixed', left, top, transform: 'translateX(-50%)', width: POPOVER_WIDTH }}
+        className="z-50 rounded-xl border border-white/10 bg-surface-raised/95 p-3 shadow-lift backdrop-blur-xl"
+      >
+        <div className="flex items-center gap-2">
+          {app.logo && (
+            <img src={app.logo} alt="" aria-hidden className="h-6 w-6 shrink-0 rounded-sm bg-white/95 object-contain p-0.5" />
+          )}
+          <p className="truncate text-[13px] font-medium text-white">{app.name}</p>
+        </div>
+
+        {connected ? (
+          <div className="mt-3 flex flex-col gap-1.5">
+            <p className="text-[11.5px] text-white/40">Connected</p>
+            <button
+              type="button"
+              onClick={onCustomize}
+              className="rounded-lg border border-white/10 px-3 py-1.5 text-left text-[12.5px] text-white/70 transition-colors hover:border-white/25 hover:text-white"
+            >
+              Customize tools
+            </button>
+            <button
+              type="button"
+              autoFocus
+              disabled={pending}
+              onClick={onDisconnect}
+              className="rounded-lg border border-red-400/30 bg-red-500/10 px-3 py-1.5 text-[12.5px] font-medium text-red-400 transition-colors hover:bg-red-500/20 disabled:opacity-50"
+            >
+              {pending ? 'Disconnecting…' : 'Disconnect'}
+            </button>
+          </div>
+        ) : (
+          <div className="mt-3 flex flex-col gap-2">
+            <p className="text-[12.5px] text-white/50">Connect {app.name}?</p>
+            <div className="flex gap-1.5">
+              <button
+                type="button"
+                autoFocus
+                disabled={pending}
+                onClick={onConnect}
+                className="flex-1 rounded-lg bg-accent px-3 py-1.5 text-[12.5px] font-medium text-black transition-colors hover:bg-accent-bright disabled:opacity-50"
+              >
+                {pending ? 'Connecting…' : 'Connect'}
+              </button>
+              <button
+                type="button"
+                onClick={onClose}
+                className="rounded-lg border border-white/10 px-3 py-1.5 text-[12.5px] text-white/60 transition-colors hover:text-white"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+      </motion.div>
+    </>,
+    document.body,
+  );
+}
+
 function FilterChip({ label, active, onClick }: { label: string; active: boolean; onClick(): void }) {
   return (
     <button
@@ -109,12 +231,14 @@ function FilterChip({ label, active, onClick }: { label: string; active: boolean
  * top `RENDER_CAP` of the filtered set so the DOM never has to hold more
  * than ~150 tiles at once. Only the top 10 categories (by app count) get a
  * chip — the rest of the 82 are reachable by typing the category name into
- * search, or via the "browse all" select. Connect wiring is unchanged — a
- * per-toolkit inline "log in to connect" prompt still appears when the call
- * 401s. Clicking a *connected* tile no longer disconnects immediately — it
- * opens `ToolCustomizePanel` (per-tool enable/disable), which itself hosts
- * the "Disconnect" action, so a disconnect is always an explicit second
- * step rather than a single misclick. */
+ * search, or via the "browse all" select. Clicking ANY tile opens a small
+ * `ConnectPopover` confirm dialog anchored to it — "Connect NAME?" for an
+ * unconnected app, or app name + Disconnect + "Customize tools" for a
+ * connected one — rather than acting immediately; a per-toolkit inline
+ * "log in to connect" prompt still appears below the grid when the call
+ * 401s. "Customize tools" opens `ToolCustomizePanel` (per-tool enable/
+ * disable), which also hosts its own Disconnect action for parity with the
+ * pre-popover flow. */
 export default function ConnectionsPanel({
   connections,
   onConnect,
@@ -135,6 +259,25 @@ export default function ConnectionsPanel({
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState<string | null>(null);
   const [customizeSlug, setCustomizeSlug] = useState<string | null>(null);
+  const [popover, setPopover] = useState<{ slug: string; anchorRect: DOMRect } | null>(null);
+  const gridRef = useRef<HTMLDivElement>(null);
+
+  // A fixed-position popover computed from a snapshot rect goes stale the
+  // moment the anchor moves — close it rather than let it drift away from
+  // the tile it's meant to point at.
+  useEffect(() => {
+    if (!popover) return;
+    const grid = gridRef.current;
+    function close() {
+      setPopover(null);
+    }
+    grid?.addEventListener('scroll', close);
+    window.addEventListener('resize', close);
+    return () => {
+      grid?.removeEventListener('scroll', close);
+      window.removeEventListener('resize', close);
+    };
+  }, [popover]);
 
   useEffect(() => {
     let cancelled = false;
@@ -182,6 +325,7 @@ export default function ConnectionsPanel({
 
   const loginRequiredApp = loginRequiredFor ? apps.find((a) => a.slug === loginRequiredFor) : undefined;
   const customizeApp = customizeSlug ? apps.find((a) => a.slug === customizeSlug) : undefined;
+  const popoverApp = popover ? apps.find((a) => a.slug === popover.slug) : undefined;
 
   // Close the customize panel if its toolkit stops being connected — either
   // disconnected from inside the panel itself, or out-of-band (another tab,
@@ -223,6 +367,8 @@ export default function ConnectionsPanel({
         </span>
       </div>
 
+      <p className="text-[11.5px] text-white/30">Click an app to connect it — click a connected app to manage it.</p>
+
       <div className="flex flex-wrap gap-1.5">
         <FilterChip label="All" active={category === null} onClick={() => setCategory(null)} />
         {topCategories.map((c) => (
@@ -239,20 +385,45 @@ export default function ConnectionsPanel({
       ) : filtered.length === 0 ? (
         <p className="py-4 text-[13px] text-white/35">No apps match your filters.</p>
       ) : (
-        <div className="flex max-h-80 flex-wrap gap-2.5 overflow-y-auto py-1 pr-1">
+        <div ref={gridRef} className="flex max-h-80 flex-wrap gap-2.5 overflow-y-auto py-1 pr-1">
           {visible.map((app) => (
             <AppTile
               key={app.slug}
               app={app}
               connected={connectedSlugs.has(app.slug)}
               pending={pendingToolkit === app.slug}
-              active={customizeSlug === app.slug}
-              onConnect={onConnect}
-              onOpenCustomize={(slug) => setCustomizeSlug((s) => (s === slug ? null : slug))}
+              active={popover?.slug === app.slug || customizeSlug === app.slug}
+              onOpen={(slug, anchor) =>
+                setPopover((p) => (p?.slug === slug ? null : { slug, anchorRect: anchor.getBoundingClientRect() }))
+              }
             />
           ))}
         </div>
       )}
+
+      <AnimatePresence>
+        {popoverApp && popover && (
+          <ConnectPopover
+            app={popoverApp}
+            connected={connectedSlugs.has(popoverApp.slug)}
+            pending={pendingToolkit === popoverApp.slug}
+            anchorRect={popover.anchorRect}
+            onConnect={() => {
+              onConnect(popoverApp.slug);
+              setPopover(null);
+            }}
+            onDisconnect={() => {
+              onDisconnect(popoverApp.slug);
+              setPopover(null);
+            }}
+            onCustomize={() => {
+              setCustomizeSlug(popoverApp.slug);
+              setPopover(null);
+            }}
+            onClose={() => setPopover(null)}
+          />
+        )}
+      </AnimatePresence>
 
       {customizeApp && (
         <ToolCustomizePanel
