@@ -18,6 +18,18 @@ import { authSecret } from './secret';
 const ANON_COOKIE_NAME = 'anon'; // + prefix:'host' => wire name `__Host-anon`
 const ANON_COOKIE_MAX_AGE = 60 * 60 * 24 * 365; // 1 year, in seconds
 
+// Domain-separates the anon cookie's HMAC key from the JWT signing key.
+// Both currently derive from the same AUTH_JWT_SECRET, but signing two
+// different artifacts (a short-lived access token vs. a year-long anon
+// cookie) with the literal same key is bad practice even when nothing
+// currently exploits the overlap — a suffix is enough to make them
+// unrelated keys without adding a new secret to provision. Used
+// consistently by every get/set/delete of the cookie, so it still
+// round-trips.
+function anonCookieSecret(env: Env): string {
+  return `${authSecret(env)}|anon-cookie-v1`;
+}
+
 export interface Actor {
   userId: string;
   anon: boolean;
@@ -57,17 +69,37 @@ async function mintAnonCookie<E extends { Bindings: Env }>(c: ActorContext<E>, s
 // Bearer wins whenever present and valid. Otherwise reuses — or mints — a
 // signed `__Host-anon` cookie, setting it on the response itself when a
 // fresh id is minted so callers never need to remember to.
+//
+// Connect/list/revoke of Composio connections is intentionally reachable by
+// EITHER path — any valid bearer (verified or not) or an anon cookie —
+// unlike `/settings`, `/mcps`, `/tools`, which stay `requireAuth +
+// requireVerified` (see store/routes.ts). Email verification gates the
+// account's own data; it isn't a precondition for starting a third-party
+// OAuth handshake, and the OAuth provider authenticates itself on the
+// callback regardless of our verification state.
 export async function resolveActor<E extends { Bindings: Env }>(c: ActorContext<E>): Promise<Actor> {
   const authHeader = c.req.header('Authorization');
   const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
-  const secret = authSecret(c.env);
-  const claims = token ? await verifyAccessToken(secret, token) : null;
+  // verifyAccessToken already returns null (never throws) for any
+  // invalid/expired/garbage token — it wraps jwtVerify in its own
+  // try/catch. This is belt-and-suspenders: a bad bearer must fall through
+  // to the anon path, never bubble up as a 500 or get treated as a real
+  // identity, even if that invariant ever changes underneath us.
+  let claims: Awaited<ReturnType<typeof verifyAccessToken>> = null;
+  if (token) {
+    try {
+      claims = await verifyAccessToken(authSecret(c.env), token);
+    } catch {
+      claims = null;
+    }
+  }
   if (claims) return { userId: claims.sub, anon: false };
 
-  const existing = await readAnonCookie(c, secret);
+  const cookieSecret = anonCookieSecret(c.env);
+  const existing = await readAnonCookie(c, cookieSecret);
   if (existing) return { userId: existing, anon: true };
 
-  return { userId: await mintAnonCookie(c, secret), anon: true };
+  return { userId: await mintAnonCookie(c, cookieSecret), anon: true };
 }
 
 // Reads the current anon id without minting a new one. Used by the
@@ -75,7 +107,7 @@ export async function resolveActor<E extends { Bindings: Env }>(c: ActorContext<
 // re-key" — creating one there would be pointless since it's discarded
 // immediately after.
 export async function peekAnonId<E extends { Bindings: Env }>(c: ActorContext<E>): Promise<string | null> {
-  return readAnonCookie(c, authSecret(c.env));
+  return readAnonCookie(c, anonCookieSecret(c.env));
 }
 
 export function clearAnonCookie<E extends { Bindings: Env }>(c: ActorContext<E>): void {

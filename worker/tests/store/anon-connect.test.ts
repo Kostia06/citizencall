@@ -120,6 +120,22 @@ it('(d) a tampered anon cookie is treated as absent, never as another identity',
   expect(anonIdFromUrl(tampered.url)).not.toBe(goodAnonId);
 });
 
+// Hardening follow-up: resolveActor wraps verifyAccessToken in a try/catch
+// (belt-and-suspenders — verifyAccessToken already returns null rather than
+// throwing on garbage input). A malformed bearer must fall through to the
+// anon path — 200 with a fresh __Host-anon cookie — never a 500 and never
+// an adopted identity.
+it('a garbage bearer token falls through to a fresh anon session, not a 500', async () => {
+  const res = await app.request(
+    '/api/connections',
+    { headers: { Authorization: 'Bearer not.a.jwt' } },
+    env
+  );
+  expect(res.status).toBe(200);
+  expect(res.headers.get('Set-Cookie')).toMatch(/^__Host-anon=/);
+  expect(await res.json()).toEqual([]);
+});
+
 it('(e) GET /api/settings still 401s with only an anon cookie', async () => {
   const a = await connectAnon();
   const cookie = cookiePair(a.setCookie);
