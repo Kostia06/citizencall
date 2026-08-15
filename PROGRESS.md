@@ -25,8 +25,7 @@ before starting work; update it when you finish.
 
 ## Next up
 
-- [ ] Add `RESEND_API_KEY` (.env + wrangler secret) — 2FA emails go real with zero code change; until then dev fallback shows the code in the UI.
-- [ ] Deploy: buy Workers Paid, create prod D1 (paste id into `worker/wrangler.jsonc`), run `schema.sql`, `wrangler secret put` (AUTH_JWT_SECRET, FEATHERLESS/COMPOSIO/ELEVENLABS/RESEND), `wrangler deploy`.
+- [ ] Flip 2FA sender to auth@citizencall.dev once Resend verification completes (records live, propagating) + redeploy.
 - [ ] Hand-correct the 72–96 gold labels (run frontier baseline once, then edit) — SPEC §9.5.
 - [ ] Custom-MCP **call transport** (JSON-RPC client) — enabled MCPs already surface to the planner; calls currently emit `tool_skipped: mcp transport not implemented` behind the clean `McpTransport` interface.
 - [ ] Rate-limit `POST /api/stt` (anon-cookie hook is in place) — every call spends ElevenLabs credit.
@@ -75,6 +74,17 @@ before starting work; update it when you finish.
 - [x] 2026-08-15 — **Featherless-live bar by default** (`VITE_MOCK=true` = explicit mock; scripted fallback only when backend unreachable); Vite dev proxy `/api|/auth|/oauth` → :8787; fixed `/auth/*` missing from `run_worker_first` (405s), single-flight refresh (StrictMode rotation race), SSE close on `run_end`
 - [x] 2026-08-15 — **Full paginated catalog + global D1 cache**: worker walks all ~13 Composio pages (1,209 apps) and stores ONE shared `toolkit_catalog` row distributed to every user/isolate (fresh process: 25ms, zero Composio calls); stale row beats fallback
 - [x] 2026-08-15 — Worker suite **33 files / 166 tests green**; all waves live-verified in-browser and pushed (`feature/ui @ 09f5f9d`)
+
+- [x] 2026-08-15 — **Connection-aware pause**: run pauses on a needed-but-unconnected app with a "Connect X to continue" card (Connect/Skip, 5-min timeout, resume endpoint); planner recognizes ANY catalog toolkit mention + deterministic action-verb tool-call floor; execute validates toolkits against the live catalog (was hardcoded github/gmail)
+- [x] 2026-08-15 — **Semantic L3 plan cache** (Jaccard+trigram, toolkit-safety gate, 200-row bounded scan, vocab-keyed to prevent stale-plan hits) + answer bubble in transcript + fast path (trivial prompts ~1s, was 30s)
+- [x] 2026-08-15 — **Native iOS bar** (expo): keyboard/safe-area, blur, haptics, suggestions + ghost, mic → /api/stt; 34/34 jest, iOS export clean
+- [x] 2026-08-15 — **Identity persistence**: anon→user claiming (connections/settings/tools/mcps/routines/memories/runs) on login/signup/2FA — root cause of "connections reset"; real orb state live; bearer on runs; session-history drawer
+- [x] 2026-08-15 — **Memory system (#3)**: auto-written markdown memories (memory_saved event), [[links]] w/ cycle-safe resolver, memories injected into runs (cache-key-proven), /memory page CRUD
+- [x] 2026-08-15 — **Dark/light theme** (white→ink token remap, complete coverage), navbar redesign, only-connected orbs, routine buttons + RoutinesPanel
+- [x] 2026-08-15 — **Roster/benchmark real** (live D1 stats, per-kind ladder) + 9 more live-probed models (phi-4, Qwen2.5 3B/7B/14B, Mistral-Nemo, gpt-oss corrected)
+- [x] 2026-08-15 — **Cron routines**: user_routines CRUD, run-now, 15-min Workers cron sweeping due routines through the real pipeline
+- [x] 2026-08-15 — **DEPLOYED: https://citizencall.dev** (Workers custom domain + www; prod D1 + schemas + all secrets incl RESEND; global catalog cache; prod smoke: SPA+6 APIs+e2e run all green). 44 files / 256 worker tests green.
+- [x] 2026-08-15 — 2FA prefs-schema fix (suggestions/theme were 400ing the full-prefs Save); runs.user_id index; Resend domain citizencall.dev registered + DNS records live (verification propagating)
 
 ## Blocked
 
