@@ -43,10 +43,15 @@ it('user A cannot read user B settings (scoping)', async () => {
   expect((await res.json<any>()).contextPrompt).not.toBe('B-secret'); // A sees its own (default '')
 });
 
-it('connections/mcps/tools are scoped and require auth', async () => {
-  expect((await app.request('/api/connections', {}, env)).status).toBe(401);
+it('mcps/tools require auth; connections works anonymously (resolveActor) and stays scoped', async () => {
   expect((await app.request('/api/mcps', {}, env)).status).toBe(401);
   expect((await app.request('/api/tools', {}, env)).status).toBe(401);
+  // /api/connections swapped its gate for resolveActor (worker/src/auth/anon.ts) so
+  // an anonymous caller gets a cookie session instead of 401 — see
+  // tests/store/anon-connect.test.ts for the anon-cookie behavior itself.
+  const anonConnections = await app.request('/api/connections', {}, env);
+  expect(anonConnections.status).toBe(200);
+  expect(await anonConnections.json()).toEqual([]);
 
   const tA = await verifiedToken('u-routes-mcp-A');
   const created = await app.request('/api/mcps', { method: 'POST', ...auth(tA), body: JSON.stringify({ name: 'my-mcp' }) }, env);

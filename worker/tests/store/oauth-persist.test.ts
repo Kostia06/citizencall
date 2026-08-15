@@ -53,8 +53,21 @@ it('/oauth/done rejects a missing or invalid state', async () => {
   expect(bad.status).toBe(400);
 });
 
-it('POST /api/connect requires auth and ignores a userId in the body', async () => {
-  expect((await app.request('/api/connect', { method: 'POST', body: JSON.stringify({ toolkit: 'github' }) }, env)).status).toBe(401);
+// POST /api/connect no longer requires auth — resolveActor (worker/src/auth/anon.ts)
+// falls back to a signed __Host-anon cookie session for a caller with no
+// bearer token, so an anonymous request now succeeds instead of 401. It
+// still ignores any userId supplied in the body either way; see
+// tests/store/anon-connect.test.ts for the anon-cookie behavior itself.
+it('POST /api/connect works anonymously and always ignores a userId in the body', async () => {
+  const anonRes = await app.request(
+    '/api/connect',
+    { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ toolkit: 'github', userId: 'someone-else' }) },
+    env
+  );
+  expect(anonRes.status).toBe(200);
+  const anonBody = await anonRes.json<{ url: string; state: string }>();
+  expect(anonBody.url).toMatch(/user=anon_/);
+  expect(anonBody.url).not.toContain('user=someone-else');
 
   const t = await verifiedToken('u-oauth-2');
   const res = await app.request(

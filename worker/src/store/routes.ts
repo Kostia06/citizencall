@@ -11,9 +11,10 @@
 import { Hono, type Context } from 'hono';
 import type { Env } from '../env';
 import { requireAuth, requireVerified } from '../auth/middleware';
+import { clearAnonCookie, peekAnonId, resolveActor } from '../auth/anon';
 import { getSettings, putSettings } from './settings';
 import { validatePrefsPatch } from './prefs';
-import { listConnections, revokeConnection } from './connections';
+import { listConnections, reassignConnections, revokeConnection } from './connections';
 import { createMcp, deleteMcp, listMcps, updateMcp } from './mcps';
 import { listToolOverrides, setToolOverride } from './tools';
 
@@ -42,10 +43,28 @@ storeRoutes.put('/settings', ...gate, async (c) => {
   return c.json(await putSettings(c.env.DB, uid(c), v.value, now()));
 });
 
-storeRoutes.get('/connections', ...gate, async (c) => c.json(await listConnections(c.env.DB, uid(c))));
+// Anon-friendly (resolveActor, not the requireAuth/requireVerified `gate`):
+// an unauthenticated caller can see and revoke connections started under
+// their own `__Host-anon` session before they ever sign up. `/settings`,
+// `/mcps`, `/tools` below are unchanged and stay Bearer + verified-email
+// only.
+storeRoutes.get('/connections', async (c) => c.json(await listConnections(c.env.DB, (await resolveActor(c)).userId)));
 
-storeRoutes.delete('/connections/:toolkit', ...gate, async (c) => {
-  await revokeConnection(c.env.DB, uid(c), c.req.param('toolkit'));
+storeRoutes.delete('/connections/:toolkit', async (c) => {
+  const actor = await resolveActor(c);
+  await revokeConnection(c.env.DB, actor.userId, c.req.param('toolkit'));
+  return c.body(null, 204);
+});
+
+// Claim-on-login: re-keys whatever the caller connected anonymously onto
+// their now-authenticated account, then clears the anon cookie. A no-op
+// (still 204) when there's no anon cookie to claim.
+storeRoutes.post('/connections/claim', ...gate, async (c) => {
+  const anonId = await peekAnonId(c);
+  if (anonId) {
+    await reassignConnections(c.env.DB, anonId, uid(c));
+    clearAnonCookie(c);
+  }
   return c.body(null, 204);
 });
 

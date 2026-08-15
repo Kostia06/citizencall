@@ -8,7 +8,8 @@ import { getRoster, getRun } from './db';
 import { createConnectionLink, verifyState } from './providers/composio';
 import { policy } from './policy';
 import { authRoutes } from './auth/routes';
-import { requireAuth, requireVerified, type AuthVars } from './auth/middleware';
+import type { AuthVars } from './auth/middleware';
+import { resolveActor } from './auth/anon';
 import { storeRoutes } from './store/routes';
 import { upsertConnection } from './store/connections';
 import resultsFixture from '../../artifacts/results.example.json';
@@ -84,15 +85,17 @@ const connectRequestSchema = z.object({
   authConfigId: z.string().optional(),
 });
 
-// Bearer-gated: the user comes from the verified access token
-// (c.get('authUserId')), never from the request body — the same IDOR-safe
-// pattern as the rest of the per-user store (SPEC.md §5.3 / design doc §6).
-app.post('/api/connect', requireAuth, requireVerified, async (c) => {
+// Actor-resolved, never body-supplied: the user comes from a verified
+// access token OR a signed `__Host-anon` cookie (resolveActor), never from
+// the request body — the same IDOR-safe pattern as the rest of the per-user
+// store (SPEC.md §5.3 / design doc §6), extended to let an anonymous caller
+// start a connect before they've signed up.
+app.post('/api/connect', async (c) => {
   const body = await c.req.json().catch(() => null);
   const parsed = connectRequestSchema.safeParse(body);
   if (!parsed.success) return c.json({ error: 'invalid request', details: parsed.error.flatten() }, 400);
 
-  const userId = c.get('authUserId') as string;
+  const { userId } = await resolveActor(c);
   const { toolkit } = parsed.data;
   const authConfigId = parsed.data.authConfigId ?? toolkit.toUpperCase();
   const link = await createConnectionLink(c.env, userId, toolkit, authConfigId);
