@@ -160,6 +160,29 @@ export default function Settings() {
           <ButtonEditor buttons={draft.buttons} onChange={(buttons) => setDraft((d) => ({ ...d, buttons }))} />
         </SectionCard>
 
+        <SectionCard title="Suggestions" subtitle="Context-aware next-action ghost text in the command bar.">
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              role="switch"
+              aria-checked={draft.suggestions}
+              onClick={() => setDraft((d) => ({ ...d, suggestions: !d.suggestions }))}
+              className={`relative h-6 w-11 shrink-0 rounded-full transition-colors duration-200 ${
+                draft.suggestions ? 'bg-accent' : 'bg-white/10'
+              }`}
+            >
+              <span
+                className={`absolute top-0.5 h-5 w-5 rounded-full bg-white transition-transform duration-200 ${
+                  draft.suggestions ? 'translate-x-[22px]' : 'translate-x-0.5'
+                }`}
+              />
+            </button>
+            <span className="text-[13px] text-white/60">
+              Next-action suggestions: <span className="text-white">{draft.suggestions ? 'on' : 'off'}</span>
+            </span>
+          </div>
+        </SectionCard>
+
         <SectionCard title="Context prompt" subtitle="Prepended to every run this session.">
           <textarea
             value={draft.contextPrompt}

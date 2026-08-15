@@ -35,6 +35,7 @@ export default function Bar() {
   const { authedFetch, status } = useAuth();
   const [connections, setConnections] = useState<Connection[]>([]);
   const [contextPrompt, setContextPrompt] = useState('');
+  const [suggestionsEnabled, setSuggestionsEnabled] = useState(true);
   const runHandleRef = useRef<RunHandle | null>(null);
   const liveTimeoutRef = useRef<number | undefined>(undefined);
   const transcriptRef = useRef<HTMLDivElement>(null);
@@ -68,7 +69,10 @@ export default function Bar() {
     storeApi
       .getSettings(authedFetch)
       .then((prefs) => {
-        if (!cancelled) setContextPrompt(prefs.contextPrompt);
+        if (!cancelled) {
+          setContextPrompt(prefs.contextPrompt);
+          setSuggestionsEnabled(prefs.suggestions);
+        }
       })
       .catch(() => undefined);
     return () => {
@@ -173,6 +177,9 @@ export default function Bar() {
               onSubmit={handleSubmit}
               onFilesDropped={(files) => push(`${files.length} file${files.length === 1 ? '' : 's'} attached`)}
               onToast={push}
+              suggestionsEnabled={suggestionsEnabled}
+              recentPrompts={turns.slice(-5).map((t) => t.prompt)}
+              authedFetch={authedFetch}
             />
           </div>
           <div className="sm:pt-1.5">

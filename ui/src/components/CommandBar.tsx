@@ -4,9 +4,12 @@ import DropZone from './DropZone';
 import Mic from './Mic';
 import { layoutFlow, layoutFlowReduced, magneticSnappy } from '../lib/motion';
 import { useBurst } from '../lib/useBurst';
+import { storeApi, type AuthedFetch } from '../api';
 import type { RunAttachment } from '../types';
 
-const GHOST = "Summarize this week's repository changes and draft a PR description.";
+// Debounce for the idle-while-focused suggest fetch — cheap enough that
+// typing a few characters never fires a request, but a genuine pause does.
+const SUGGEST_IDLE_MS = 900;
 
 const SUGGESTIONS = [
   "Summarize this week's repository changes and draft a PR description.",
@@ -28,6 +31,13 @@ interface CommandBarProps {
   onSubmit(text: string, opts: { bypassCache: boolean; source: 'text' | 'voice'; attachments: Attachment[] }): void;
   onFilesDropped(files: File[]): void;
   onToast(message: string): void;
+  /** Settings toggle (§ Settings "Next-action suggestions") — when off, the
+   * bar never fetches or shows the context-aware suggestion. */
+  suggestionsEnabled: boolean;
+  /** Last few user prompts, most recent last — the "context" sent to
+   * storeApi.suggest(). */
+  recentPrompts: string[];
+  authedFetch: AuthedFetch;
 }
 
 let attachmentSeq = 0;
@@ -49,7 +59,16 @@ function fileToAttachment(file: File, kind: Attachment['kind']): Attachment {
 /** The pinned glass pill — SPEC.md §6. Owns its own input state so the mic
  * can stream words in live; only hands the final text (+ attachments) up on
  * submit. The textarea auto-grows up to MAX_LINES, then scrolls internally. */
-export default function CommandBar({ running, escalateTick, onSubmit, onFilesDropped, onToast }: CommandBarProps) {
+export default function CommandBar({
+  running,
+  escalateTick,
+  onSubmit,
+  onFilesDropped,
+  onToast,
+  suggestionsEnabled,
+  recentPrompts,
+  authedFetch,
+}: CommandBarProps) {
   const [value, setValue] = useState('');
   const [source, setSource] = useState<'text' | 'voice'>('text');
   const [focused, setFocused] = useState(false);
@@ -58,12 +77,21 @@ export default function CommandBar({ running, escalateTick, onSubmit, onFilesDro
   const [ghostAccepting, setGhostAccepting] = useState(false);
   const [clearing, setClearing] = useState(false);
   const [ringSpike, setRingSpike] = useState(false);
+  // The context-aware "next action" ghost suggestion — null when there's
+  // none to show (not fetched yet, dismissed, or the request failed/raced).
+  const [nextAction, setNextAction] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const maxHeightRef = useRef(168); // ~6 lines + vertical padding, refined on mount
   const [confirmPulsing, fireConfirmPulse] = useBurst(200);
   const [emberFlashing, fireEmberFlash] = useBurst(150);
   const [focusPulsing, fireFocusPulse] = useBurst(400);
   const reduceMotion = useReducedMotion();
+  // Bumped on every fetch so a stale response (superseded by newer input or
+  // a newer request) is ignored on arrival — a cheap stand-in for
+  // request cancellation, same idea as the trace stream's reconnect guard.
+  const suggestSeqRef = useRef(0);
+  const recentPromptsRef = useRef(recentPrompts);
+  recentPromptsRef.current = recentPrompts;
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -127,8 +155,52 @@ export default function CommandBar({ running, escalateTick, onSubmit, onFilesDro
 
   const showSuggestions = focused && !running && value.trim().length === 0;
   const filtered = SUGGESTIONS;
-  const ghostSuffix =
-    value.length > 0 && GHOST.toLowerCase().startsWith(value.toLowerCase()) ? GHOST.slice(value.length) : value.length === 0 ? GHOST : '';
+  // Only shown while the input is empty — this is a context-aware next
+  // ACTION, not a completion of whatever's been typed, so a partial prefix
+  // match (the old static-GHOST behavior) doesn't apply here.
+  const ghostSuffix = suggestionsEnabled && nextAction && value.length === 0 ? nextAction : '';
+
+  function fetchNextAction() {
+    if (!suggestionsEnabled) return;
+    const seq = ++suggestSeqRef.current;
+    storeApi
+      .suggest(authedFetch, recentPromptsRef.current)
+      .then(({ suggestion }) => {
+        // Stale (superseded by a newer fetch) or the user has since typed —
+        // drop it silently either way.
+        if (seq !== suggestSeqRef.current || !suggestion) return;
+        setNextAction(suggestion);
+      })
+      .catch(() => undefined); // fail silent — no suggestion shown
+  }
+
+  // Fetch right after a turn completes, so the ghost is ready the instant
+  // the bar clears — not gated on focus, since a completed run often leaves
+  // the bar unfocused.
+  const wasRunningRef = useRef(running);
+  useEffect(() => {
+    if (wasRunningRef.current && !running && suggestionsEnabled && value.trim().length === 0) {
+      fetchNextAction();
+    }
+    wasRunningRef.current = running;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [running, suggestionsEnabled]);
+
+  // Debounced idle fetch while focused and empty — covers "sat here doing
+  // nothing" without firing on every keystroke; cancelled (via the timer
+  // teardown) the moment any dependency changes, so new input never queues
+  // a stale request behind it.
+  useEffect(() => {
+    if (!suggestionsEnabled || running || !focused || value.trim().length > 0) return;
+    const id = window.setTimeout(fetchNextAction, SUGGEST_IDLE_MS);
+    return () => window.clearTimeout(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [suggestionsEnabled, running, focused, value]);
+
+  // Toggled off in Settings mid-session — clear whatever's showing.
+  useEffect(() => {
+    if (!suggestionsEnabled) setNextAction(null);
+  }, [suggestionsEnabled]);
 
   function runNow(text: string, bypassCache: boolean) {
     const trimmed = text.trim();
@@ -229,14 +301,17 @@ export default function CommandBar({ running, escalateTick, onSubmit, onFilesDro
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === 'Tab' && ghostSuffix) {
       e.preventDefault();
+      const accepted = ghostSuffix;
       setGhostAccepting(true);
       window.setTimeout(() => {
-        setValue(GHOST);
+        setValue(accepted);
+        setNextAction(null);
         setGhostAccepting(false);
       }, 120);
       return;
     }
     if (e.key === 'Escape') {
+      setNextAction(null);
       if (!value) {
         setHighlight(-1);
         return;
@@ -297,7 +372,14 @@ export default function CommandBar({ running, escalateTick, onSubmit, onFilesDro
                   value={value}
                   disabled={running}
                   rows={1}
-                  onChange={(e) => setValue(e.target.value)}
+                  onChange={(e) => {
+                    const next = e.target.value;
+                    setValue(next);
+                    // Typing dismisses the context suggestion outright (not
+                    // just hides it) — it was for the empty state, not a
+                    // completion of whatever gets typed next.
+                    if (next.length > 0 && nextAction) setNextAction(null);
+                  }}
                   onFocus={() => {
                     setFocused(true);
                     fireFocusPulse();

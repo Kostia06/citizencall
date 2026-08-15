@@ -353,4 +353,19 @@ export const storeApi = {
       () => mockStoreStore.disconnect(toolkit),
     );
   },
+
+  /** Context-aware "next action" suggestion for the command bar's ghost
+   * text — `context` is the last few user prompts, most recent last. Callers
+   * (CommandBar) treat any rejection as "no suggestion" and fail silent;
+   * `withMockFallback` already covers the no-backend case. */
+  async suggest(authedFetch: AuthedFetch, context: string[]): Promise<{ suggestion: string }> {
+    return withMockFallback(
+      async () => {
+        const res = await authedFetch('/api/suggest', { method: 'POST', body: JSON.stringify({ context }) });
+        if (!res.ok) throw new AuthError(await readJsonError(res), res.status);
+        return res.json();
+      },
+      () => mockStoreStore.suggest(context),
+    );
+  },
 };
