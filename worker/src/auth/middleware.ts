@@ -8,7 +8,12 @@ export const requireAuth = createMiddleware<{ Bindings: Env; Variables: AuthVars
   // Dev bypass: only when explicitly enabled (never in production).
   if (c.env.DEV_AUTH_BYPASS) {
     const devUser = c.req.header('X-Dev-User');
-    if (devUser) { c.set('authUserId', devUser); c.set('authSessionId', 'dev'); return next(); }
+    if (devUser) {
+      c.set('authUserId', devUser);
+      c.set('authSessionId', 'dev');
+      c.set('authEmailVerified', true);
+      return next();
+    }
   }
   const auth = c.req.header('Authorization');
   const token = auth?.startsWith('Bearer ') ? auth.slice(7) : null;

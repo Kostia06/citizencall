@@ -94,6 +94,14 @@ export async function revokeSession(db: D1Database, sessionId: string): Promise<
   await db.prepare(`UPDATE sessions SET revoked=1 WHERE id=?`).bind(sessionId).run();
 }
 
+// Scoped variant for caller-supplied session ids (e.g. DELETE /sessions/:id):
+// only revokes if the session actually belongs to userId, preventing one
+// user from revoking another user's session by guessing/enumerating ids.
+export async function revokeSessionForUser(db: D1Database, sessionId: string, userId: string): Promise<boolean> {
+  const res = await db.prepare(`UPDATE sessions SET revoked=1 WHERE id=? AND user_id=?`).bind(sessionId, userId).run();
+  return (res.meta.changes ?? 0) > 0;
+}
+
 export async function revokeAllForUser(db: D1Database, userId: string): Promise<void> {
   await db.prepare(`UPDATE sessions SET revoked=1 WHERE user_id=?`).bind(userId).run();
 }

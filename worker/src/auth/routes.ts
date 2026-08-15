@@ -3,7 +3,7 @@ import { setCookie } from 'hono/cookie';
 import type { Env } from '../env';
 import { checkPasswordPolicy, hashPassword, verifyPassword } from './password';
 import { signAccessToken } from './jwt';
-import { createSession, listSessions, revokeAllForUser, revokeSession, rotateSession } from './sessions';
+import { createSession, listSessions, revokeAllForUser, revokeSession, revokeSessionForUser, rotateSession } from './sessions';
 import {
   consumeEmailToken, createEmailToken, createUser, getUserByEmail,
   getUserById, setEmailVerified, updatePassword,
@@ -150,6 +150,7 @@ authRoutes.get('/sessions', requireAuth, async (c) => {
 });
 
 authRoutes.delete('/sessions/:id', requireAuth, async (c) => {
-  await revokeSession(c.env.DB, c.req.param('id'));
+  const revoked = await revokeSessionForUser(c.env.DB, c.req.param('id'), c.get('authUserId') as string);
+  if (!revoked) return c.json({ error: 'Not found.' }, 404);
   return c.body(null, 204);
 });
