@@ -4,24 +4,22 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import type { Env } from './env';
-import { getRoster, getRun } from './db';
+import { getRun } from './db';
+import { buildBenchmarkReport, buildRosterReport } from './reporting';
 import { createConnectionLink, verifyState } from './providers/composio';
 import { getToolkitCatalog } from './providers/composio-catalog';
 import { AuthConfigUnavailableError, resolveAuthConfigId } from './providers/composio-auth-configs';
 import { MAX_AUDIO_BYTES, SttUpstreamError, transcribeAudio } from './providers/elevenlabs';
-import { policy } from './policy';
 import { authRoutes } from './auth/routes';
 import type { AuthVars } from './auth/middleware';
 import { resolveActor } from './auth/anon';
 import { storeRoutes } from './store/routes';
-import { memoryRoutes } from './memory/routes';
 import { memoryRoutes } from './memory/routes';
 import { routineRoutes } from './routines/routes';
 import { scheduled } from './routines/scheduler';
 import { upsertConnection } from './store/connections';
 import { checkAndIncrement } from './auth/throttle';
 import { suggestNextAction } from './pipeline/suggest';
-import resultsFixture from '../../artifacts/results.example.json';
 import funnelFixture from '../../artifacts/funnel.example.json';
 
 export { RunDO } from './run.do';
@@ -35,7 +33,6 @@ app.route('/auth', authRoutes);
 // and cannot shadow the non-auth /api/* routes registered below
 // (/api/run, /api/roster, /api/benchmark, /api/funnel, /api/connect).
 app.route('/api', storeRoutes);
-app.route('/api', memoryRoutes); // /api/memories* — per-route resolveActor, cannot shadow the routes below
 app.route('/api', memoryRoutes); // /api/memories* — per-route resolveActor, cannot shadow the routes below
 // Routine CRUD + manual trigger — resolveActor-scoped, claims only /api/routines*.
 app.route('/api', routineRoutes);
@@ -100,15 +97,14 @@ app.get('/api/run/:id', async (c) => {
   return c.json(run);
 });
 
-app.get('/api/roster', async (c) => {
-  const roster = await getRoster(c.env.DB);
-  return c.json({ roster, policyVersion: policy.version });
-});
+// Live report: policy ladders + alternates + real catalog prices merged with
+// aggregate run/hop stats from D1 (zeros when no runs yet) — reporting.ts.
+app.get('/api/roster', async (c) => c.json(await buildRosterReport(c.env.DB)));
 
-// results.json / funnel.json are harness artifacts (SPEC.md §3). Falling
-// back to the committed example fixtures keeps these routes live before the
-// harness has produced real ones — same pattern as policy.ts.
-app.get('/api/benchmark', (c) => c.json(resultsFixture));
+// funnel.json is a harness artifact (SPEC.md §3). Falling back to the
+// committed example fixture keeps the route live before the harness has
+// produced a real one — same pattern as policy.ts.
+app.get('/api/benchmark', async (c) => c.json(await buildBenchmarkReport(c.env.DB)));
 app.get('/api/funnel', (c) => c.json(funnelFixture));
 
 const suggestRequestSchema = z.object({ context: z.array(z.string()).max(50) });
