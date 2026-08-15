@@ -1,0 +1,25 @@
+{
+  "generatedAt": "2026-08-14T00:00:00Z",
+  "baselines": {
+    "glm_only": { "label": "GLM-5.2 everything", "accuracy": 0.93, "costPer1k": 4.21 },
+    "glm_verify": { "label": "GLM-5.2 + verify/escalate", "accuracy": 0.95, "costPer1k": 4.55 },
+    "cheap_default": { "label": "Qwen3-4B everything", "accuracy": 0.79, "costPer1k": 0.88 },
+    "understudy": { "label": "Understudy router", "accuracy": 0.92, "costPer1k": 0.41 }
+  },
+  "perKind": [
+    {
+      "kind": "extract_fields",
+      "promoted": "Qwen/Qwen3-14B",
+      "accuracy": 0.91,
+      "ci": [0.62, 0.98],
+      "validity": 0.97,
+      "incumbent": "zai-org/GLM-5.2",
+      "incumbentAccuracy": 0.95,
+      "heldInAccuracy": 0.96,
+      "heldOutAccuracy": 0.91,
+      "costEffectiveRatio": 0.19,
+      "n": 12
+    }
+  ],
+  "note": "EXAMPLE fixture. Real numbers produced by harness/stats.py from sweep-log.jsonl."
+}

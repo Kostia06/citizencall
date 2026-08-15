@@ -1,0 +1,30 @@
+{
+  // Understudy Worker. SPEC.md §13.
+  // CRITICAL: run_worker_first keeps /api/* and /oauth/* from being swallowed by SPA fallback.
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "understudy",
+  "main": "src/index.ts",
+  "compatibility_date": "2025-08-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": { "enabled": true },
+  "assets": {
+    "directory": "../ui/dist",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*", "/oauth/*"]
+  },
+  "durable_objects": {
+    "bindings": [{ "name": "RUN", "class_name": "RunDO" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["RunDO"] }],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "understudy",
+      "database_id": "REPLACE_WITH_D1_ID"
+    }
+  ],
+  "vars": {
+    "DEMO_USERS": "demo_kos,demo_teammate"
+  }
+  // Secrets (set via `wrangler secret put`): FEATHERLESS_API_KEY, COMPOSIO_API_KEY
+}

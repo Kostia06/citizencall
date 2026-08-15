@@ -1,0 +1,24 @@
+{
+  "version": "v1-example",
+  "generatedAt": "2026-08-14T00:00:00Z",
+  "weights": { "quality": 1.0, "cost": 0.35 },
+  "ladders": {
+    "classify": ["Qwen/Qwen3-8B", "zai-org/GLM-5.2"],
+    "extract_fields": ["Qwen/Qwen3-14B", "zai-org/GLM-5.2"],
+    "summarize": ["Qwen/Qwen3-8B", "zai-org/GLM-5.2"],
+    "normalize": ["Qwen/Qwen3-0.6B"]
+  },
+  "quality": {
+    "Qwen/Qwen3-8B": { "classify": 0.88, "summarize": 0.83 },
+    "Qwen/Qwen3-14B": { "extract_fields": 0.91 },
+    "Qwen/Qwen3-0.6B": { "normalize": 0.86 },
+    "zai-org/GLM-5.2": { "classify": 0.94, "extract_fields": 0.95, "summarize": 0.9 }
+  },
+  "qualityCI": {
+    "Qwen/Qwen3-8B": { "classify": [0.62, 0.98], "summarize": [0.55, 0.95] },
+    "Qwen/Qwen3-14B": { "extract_fields": [0.62, 0.98] },
+    "Qwen/Qwen3-0.6B": { "normalize": [0.57, 0.96] }
+  },
+  "baselines": { "frontier": "zai-org/GLM-5.2", "cheapDefault": "Qwen/Qwen3-4B" },
+  "margin": { "classify": 0.15, "extract_fields": 0.15, "summarize": 0.15, "normalize": 0.15 }
+}

@@ -1,0 +1,16 @@
+{
+  "stages": [
+    { "label": "models catalogued", "count": 45190 },
+    { "label": "tool-use-capable", "count": 34504 },
+    { "label": "passed metadata prefilter", "count": null, "note": "N — fill from retrieve.py" },
+    { "label": "retrieved (8 × 3 kinds)", "count": 24 },
+    { "label": "reachable at sweep time", "count": null, "note": "M — report honestly" },
+    { "label": "survived round 1", "count": 12 },
+    { "label": "promoted", "count": 3 }
+  ],
+  "downloadDistribution": {
+    "reachable": [],
+    "unreachable": [],
+    "note": "Two histograms: our filter selects toward popular models; long-tail result is a lower bound."
+  }
+}
