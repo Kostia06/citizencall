@@ -26,16 +26,20 @@
   --color-surface: 28 28 30;
   --color-surface-raised: 36 36 38;
   --color-surface-sunken: 20 20 22;
-  /* Foreground "ink" scale — every text-white/*, border-white/*, bg-white/*
-     opacity tier in the app reads off this in spirit (see Orbs/TopNav/
-     ButtonEditor/RoutinesPanel, the files retheme through `ink`). White in
-     dark mode, near-black in light — NOT literal white, so a handful of
-     deliberately-white surfaces (logo backing tiles) use a separate static
-     `paper` token instead of `ink`, see tailwind.config. */
+  /* Foreground "ink" scale. `white` itself is remapped to this in
+     tailwind.config, so every existing text-white/*, border-white/*,
+     bg-white/* opacity tier app-wide reads off it automatically — white in
+     dark mode, near-black in light. NOT literal white; a handful of
+     deliberately-white surfaces (logo backing tiles, toggle knobs, text on
+     the constant accent chip) use the separate static `paper` token. */
   --color-ink: 255 255 255;
 
-  --mesh-top: #16182a;
-  --mesh-bottom: #000000;
+  /* Matches Background.tsx's canvas base gradient stops (MESH_COLORS[0] /
+     #050506) exactly, so the pre-canvas CSS gradient and the canvas that
+     fades in over it read as one continuous dark palette, not two
+     mismatched patches. */
+  --mesh-top: #0b0f2e;
+  --mesh-bottom: #050506;
 }
 
 [data-theme='light'] {
@@ -132,19 +136,25 @@ body {
 }
 
 /* ---- Command bar glass pill ---- */
+/* Themed via the same --color-surface/--color-ink tokens as the Tailwind
+   `surface`/`ink` utilities (index.css §Theme tokens) — this is raw CSS
+   (not a Tailwind class) so it needs its own [data-theme] awareness rather
+   than getting it for free from the `white` remap in tailwind.config. */
 .bar-pill {
-  background: rgba(28, 28, 30, 0.72);
+  background: rgb(var(--color-surface) / 0.72);
   backdrop-filter: blur(34px) saturate(180%);
   -webkit-backdrop-filter: blur(34px) saturate(180%);
   border-radius: 9999px;
   /* A plain semi-transparent border follows the pill radius. (border-image
      ignores border-radius and rendered a rectangle — the "weird line".) The
      asymmetric brighter-on-top look comes from the inset highlight below. */
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16);
+  border: 1px solid rgb(var(--color-ink) / 0.1);
+  box-shadow: inset 0 1px 0 rgb(var(--color-ink) / 0.16);
   transition:
     transform 0.25s cubic-bezier(0.22, 1, 0.36, 1),
-    box-shadow 0.25s ease;
+    box-shadow 0.25s ease,
+    background-color 0.3s ease,
+    border-color 0.3s ease;
 }
 
 .bar-pill.is-dragover {
@@ -189,7 +199,7 @@ body {
 }
 
 .ghost-text {
-  color: rgba(255, 255, 255, 0.28);
+  color: rgb(var(--color-ink) / 0.28);
   pointer-events: none;
 }
 

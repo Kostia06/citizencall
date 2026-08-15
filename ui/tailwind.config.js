@@ -19,16 +19,29 @@ export default {
           sunken: 'rgb(var(--color-surface-sunken) / <alpha-value>)',
         },
         void: 'rgb(var(--color-void) / <alpha-value>)',
-        // Foreground ink scale — white in dark, near-black in light. Use
-        // this (not `white`) for any new text/border/overlay opacity tier
-        // so it retheme; `white` itself is left alone since a few spots
-        // (logo backing tiles) rely on it being literally white.
+        // Foreground ink scale — white in dark, near-black in light.
         ink: {
           DEFAULT: 'rgb(var(--color-ink) / <alpha-value>)',
         },
+        // `white` itself is REMAPPED to the same ink scale. The app's
+        // entire dark-mode surface was written as `text-white/NN`,
+        // `border-white/NN`, `bg-white/[0.0N]` — hundreds of call sites
+        // across every route/component, most outside this slice's file
+        // ownership. Rather than hand-edit every file, every one of those
+        // classes now resolves through `--color-ink` automatically, so
+        // light mode "just works" app-wide without touching them. Any
+        // surface that must stay LITERALLY white regardless of theme
+        // (logo backing tiles, toggle-switch knobs, text sitting on the
+        // constant blue accent chip) uses the new static `paper` token
+        // instead — see the audit in the UI/UX task report for the
+        // handful of call sites (inside and outside this slice's owned
+        // files) that needed that swap.
+        white: 'rgb(var(--color-ink) / <alpha-value>)',
         // Static, non-themed white — for surfaces that must stay literally
         // white in both themes (e.g. logo backing tiles behind transparent
-        // PNGs), where `white`/`ink` opacity would otherwise invert them.
+        // PNGs, toggle-switch knobs, text on the constant accent chip),
+        // where the now-themed `white`/`ink` opacity would otherwise
+        // invert them.
         paper: '#ffffff',
         ember: {
           DEFAULT: '#FF8B5E',

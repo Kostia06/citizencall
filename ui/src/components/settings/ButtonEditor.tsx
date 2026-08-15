@@ -76,7 +76,9 @@ function ToolkitIcon({ app, className = 'h-4 w-4' }: { app: ToolkitApp; classNam
       aria-hidden
       loading="lazy"
       onError={() => setFailed(true)}
-      className={`rounded-sm bg-white/95 object-contain p-0.5 ${className}`}
+      // Deliberately literal white backing (not the themed `ink` scale) —
+      // toolkit PNGs assume a white tile regardless of app theme.
+      className={`rounded-sm bg-paper object-contain p-0.5 ${className}`}
     />
   );
 }
@@ -268,7 +270,7 @@ export default function ButtonEditor({
                   title={meta.name}
                   className={`flex flex-col items-center gap-1.5 rounded-lg border px-2 py-2.5 text-[10.5px] transition-colors ${
                     active
-                      ? 'border-accent/70 bg-accent/15 text-white shadow-glow-accent'
+                      ? 'border-accent/70 bg-accent/15 text-paper shadow-glow-accent'
                       : 'border-ink/10 bg-ink/[0.02] text-ink/50 hover:border-ink/25 hover:text-ink/80'
                   }`}
                 >
@@ -295,7 +297,7 @@ export default function ButtonEditor({
                       title={app.name}
                       className={`flex flex-col items-center gap-1.5 rounded-lg border px-2 py-2.5 text-[10.5px] transition-colors ${
                         active
-                          ? 'border-accent/70 bg-accent/15 text-white shadow-glow-accent'
+                          ? 'border-accent/70 bg-accent/15 text-paper shadow-glow-accent'
                           : 'border-ink/10 bg-ink/[0.02] text-ink/50 hover:border-ink/25 hover:text-ink/80'
                       }`}
                     >
@@ -326,7 +328,7 @@ export default function ButtonEditor({
                       title={routine.name}
                       className={`flex flex-col items-center gap-1.5 rounded-lg border px-2 py-2.5 text-[10.5px] transition-colors ${
                         active
-                          ? 'border-accent/70 bg-accent/15 text-white shadow-glow-accent'
+                          ? 'border-accent/70 bg-accent/15 text-paper shadow-glow-accent'
                           : 'border-ink/10 bg-ink/[0.02] text-ink/50 hover:border-ink/25 hover:text-ink/80'
                       }`}
                     >

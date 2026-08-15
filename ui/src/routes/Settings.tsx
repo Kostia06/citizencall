@@ -209,7 +209,7 @@ export default function Settings() {
               }`}
             >
               <span
-                className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white transition-transform duration-200 ${
+                className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-paper transition-transform duration-200 ${
                   draft.suggestions ? 'translate-x-5' : 'translate-x-0'
                 }`}
               />
