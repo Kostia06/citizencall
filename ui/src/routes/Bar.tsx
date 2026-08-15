@@ -7,7 +7,7 @@ import { ToastStack, useToasts } from '../components/Toast';
 import TopNav from '../components/TopNav';
 import HistoryDrawer from '../components/history/HistoryDrawer';
 import RestoredTurn, { type RestoredRun } from '../components/history/RestoredTurn';
-import { DEFAULT_PREFS, MOCK, startRun, storeApi, type Connection, type RunHandle, type SessionSummary, type UserPrefsButton } from '../api';
+import { DEFAULT_PREFS, MOCK, startRun, storeApi, type Connection, type Routine, type RunHandle, type SessionSummary, type UserPrefsButton } from '../api';
 import { conversationReducer, initialConversationState } from '../lib/traceReducer';
 import { layoutFlow, layoutFlowReduced } from '../lib/motion';
 import { useAuth } from '../auth/useAuth';
@@ -35,6 +35,7 @@ export default function Bar() {
   const { toasts, push } = useToasts();
   const { authedFetch, status, accessToken } = useAuth();
   const [connections, setConnections] = useState<Connection[]>([]);
+  const [routines, setRoutines] = useState<Routine[]>([]);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [liveSessions, setLiveSessions] = useState<SessionSummary[]>([]);
@@ -260,6 +261,31 @@ export default function Bar() {
     });
   }
 
+  // `routine:<id>` orb click — fires the routine's saved prompt through the
+  // exact same submit path as typing it. Routines list refreshes with auth
+  // (a login can claim/expose different routines).
+  useEffect(() => {
+    let cancelled = false;
+    storeApi
+      .listRoutines(authedFetch)
+      .then((list) => {
+        if (!cancelled) setRoutines(list);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [authedFetch, status]);
+
+  function handleRunRoutine(routineId: string) {
+    const routine = routines.find((r) => r.id === routineId);
+    if (!routine) {
+      push('That routine no longer exists — check Settings.');
+      return;
+    }
+    handleSubmit(routine.prompt, { bypassCache: false, source: 'text', attachments: [] });
+  }
+
   return (
     <div className="relative flex h-screen w-full flex-col overflow-hidden px-6">
       {/* pinned top nav */}
@@ -304,6 +330,14 @@ export default function Bar() {
               onToggleUser={() => setUserIdx((i) => (i + 1) % USERS.length)}
               onConnect={handleOrbConnect}
               onReorder={handleReorderButtons}
+              routines={routines}
+              onRunRoutine={handleRunRoutine}
+              onPollConnections={() => {
+                storeApi
+                  .listConnections(authedFetch)
+                  .then((list) => setConnections(list))
+                  .catch(() => undefined);
+              }}
             />
           </div>
           {/* History — opens the past-sessions drawer. Sits with the orbs so

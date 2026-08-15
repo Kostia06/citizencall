@@ -7,6 +7,10 @@
   "compatibility_date": "2025-08-01",
   "compatibility_flags": ["nodejs_compat"],
   "observability": { "enabled": true },
+  "routes": [
+    { "pattern": "citizencall.dev", "custom_domain": true },
+    { "pattern": "www.citizencall.dev", "custom_domain": true }
+  ],
   "assets": {
     "directory": "../ui/dist",
     "not_found_handling": "single-page-application",
@@ -27,7 +31,7 @@
   ],
   "vars": {
     "DEMO_USERS": "demo_kos,demo_teammate",
-    "APP_URL": "https://understudy.ilnkostia-dev.workers.dev"
+    "APP_URL": "https://citizencall.dev"
   },
   // Routine scheduler tick — the scheduled handler in src/index.ts sweeps
   // due user_routines every 15 minutes (see src/routines/scheduler.ts).

@@ -132,9 +132,14 @@ export async function runPipeline(
   const mentioned = await detectMentionedToolkits(env, norm.to);
 
   const planStarted = Date.now();
-  const { plan, cacheHit: planCacheHit, cacheKind } = await decompose(env, db, policy, norm.to, [
-    ...new Set([...mcpTokens, ...mentioned]),
-  ]);
+  const { plan, cacheHit: planCacheHit, cacheKind } = await decompose(
+    env,
+    db,
+    policy,
+    norm.to,
+    [...new Set([...mcpTokens, ...mentioned])],
+    mentioned
+  );
   record({ t: 'plan', plan, cacheHit: planCacheHit, ...(cacheKind ? { cacheKind } : {}), ms: Date.now() - planStarted });
   await insertSubTasks(db, body.runId, plan);
 

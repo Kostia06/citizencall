@@ -45,10 +45,16 @@ export async function claimAnonActor(db: D1Database, fromUserId: string, toUserI
   // sessions started before signup. `runs` lives in schema.sql (pipeline
   // schema), not the store schema — some test environments apply only the
   // auth+store schemas, so probe for the table instead of assuming it.
-  const runsTable = await db
-    .prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='runs'`)
-    .first<{ name: string }>();
-  if (runsTable) {
-    await db.prepare(`UPDATE runs SET user_id=? WHERE user_id=?`).bind(toUserId, fromUserId).run();
+  // Same probe-then-update for the lazily-provisioned tables other
+  // sub-systems own: routines (routines/store) and memories (memory/store) —
+  // both have uuid PKs, so a plain user_id re-parent is safe and idempotent.
+  for (const table of ['runs', 'user_routines', 'user_memories']) {
+    const exists = await db
+      .prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name=?`)
+      .bind(table)
+      .first<{ name: string }>();
+    if (exists) {
+      await db.prepare(`UPDATE ${table} SET user_id=? WHERE user_id=?`).bind(toUserId, fromUserId).run();
+    }
   }
 }

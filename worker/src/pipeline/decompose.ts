@@ -80,12 +80,19 @@ export interface DecomposeResult {
   cacheKind?: 'exact' | 'semantic';
 }
 
+// Action verbs that, combined with a MENTIONED catalog toolkit, guarantee a
+// tool call even when the planner model shrugs — "post a discord update"
+// must pause on the discord connection deterministically, not only when GLM
+// happens to set needsTools (observed live: it often doesn't).
+const ACTION_VERB = /\b(send|post|message|announce|create|reply|update|upload|schedule|share|publish)\b/i;
+
 export async function decompose(
   env: Env,
   db: D1Database,
   policy: Policy,
   normalizedText: string,
-  extraToolkits: string[] = []
+  extraToolkits: string[] = [],
+  mentionedToolkits: string[] = []
 ): Promise<DecomposeResult> {
   // A cached plan carries the sub-task ids of the run that minted it —
   // sub_tasks.id is a global PK, so EVERY cache hit (exact or semantic) must
@@ -93,7 +100,13 @@ export async function decompose(
   const cached = await getPlan(db, normalizedText);
   if (cached) return { plan: rekeyPlan(cached), cacheHit: true, cacheKind: 'exact' };
 
-  const key = normalizePlanKey(normalizedText);
+  // The toolkit vocabulary is part of the key: a plan minted when the
+  // planner couldn't see "discord" (pre-mention-detection, or before the
+  // user enabled an MCP) must not exact-hit the same prompt once it can —
+  // found live: a stale cached plan skipped the discord tool call entirely,
+  // so the connection-required pause never fired.
+  const vocab = [...extraToolkits].sort().join(',');
+  const key = normalizePlanKey(normalizedText) + (vocab ? `|tk:${vocab}` : '');
   const near = await findNearPlan(db, key);
   if (near) {
     // Promote the borrow to an exact row under the new key (provenance in
@@ -110,8 +123,24 @@ export async function decompose(
   const plan = isTrivialPrompt(normalizedText, extraToolkits)
     ? heuristicPlan(normalizedText)
     : ((await modelPlan(env, policy, normalizedText, extraToolkits)) ?? heuristicPlan(normalizedText));
+  ensureMentionedToolCall(plan, normalizedText, mentionedToolkits);
   await putPlanIndexed(db, key, plan);
   return { plan, cacheHit: false };
+}
+
+/** Deterministic floor under the planner model: an action-verb prompt that
+ * names a catalog toolkit ("post a discord update…") gets a tool call on its
+ * final sub-task even when the model left toolCall empty. Mentions only —
+ * MCP toolkits aren't forced (their presence isn't a mention). */
+function ensureMentionedToolCall(plan: Plan, text: string, mentionedToolkits: string[]): void {
+  if (mentionedToolkits.length === 0) return;
+  if (!ACTION_VERB.test(text)) return;
+  if (plan.subTasks.some((s) => s.toolCall)) return;
+  const last = plan.subTasks[plan.subTasks.length - 1];
+  const toolkit = mentionedToolkits[0];
+  if (!last || !toolkit) return;
+  last.needsTools = true;
+  last.toolCall = { toolkit, tool: 'call', args: {} };
 }
 
 function isTrivialPrompt(text: string, extraToolkits: string[]): boolean {

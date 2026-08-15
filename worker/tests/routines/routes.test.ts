@@ -167,7 +167,7 @@ it('POST /api/routines/:id/run starts a run through the RUN namespace and stamps
       },
     }),
   };
-  const envWithMock = { ...env, RUN: mockRun } as typeof env;
+  const envWithMock = { ...env, RUN: mockRun } as unknown as typeof env;
 
   const before = Date.now();
   const res = await app.request(`/api/routines/${id}/run`, { method: 'POST', ...auth(t) }, envWithMock);

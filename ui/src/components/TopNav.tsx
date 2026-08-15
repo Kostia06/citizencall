@@ -80,7 +80,7 @@ export default function TopNav() {
   return (
     <nav className="relative flex items-center justify-between text-[12px] text-ink/40">
       <Link to="/" className="shrink-0 font-semibold tracking-tight text-ink/70 transition-colors hover:text-ink">
-        Understudy
+        home
       </Link>
 
       {/* Wide layout — links, theme toggle, MOCK badge, auth, all inline. */}

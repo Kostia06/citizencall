@@ -58,3 +58,6 @@ CREATE TABLE IF NOT EXISTS twofa_challenges(id TEXT PRIMARY KEY, user_id TEXT NO
   attempts INTEGER NOT NULL DEFAULT 0, sends INTEGER NOT NULL DEFAULT 1,
   last_sent_at INTEGER NOT NULL, consumed_at INTEGER);
 CREATE INDEX IF NOT EXISTS idx_twofa_user ON twofa_challenges(user_id);
+
+-- /api/sessions lists an actor's runs — unindexed user_id scans got slow.
+CREATE INDEX IF NOT EXISTS idx_runs_user ON runs(user_id, created_at DESC);
