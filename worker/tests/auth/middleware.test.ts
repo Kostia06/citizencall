@@ -1,10 +1,15 @@
 import { env } from 'cloudflare:test';
 import { beforeAll, expect, it } from 'vitest';
 import { applyAuthSchema } from '../../src/db';
+import { ensureTwofaSchema } from '../../src/auth/twofa';
 import { signAccessToken } from '../../src/auth/jwt';
+import { twofaLogin } from '../support/twofa';
 import app from '../../src/index';
 
-beforeAll(async () => { await applyAuthSchema(env.DB); });
+beforeAll(async () => {
+  await applyAuthSchema(env.DB);
+  await ensureTwofaSchema(env.DB); // login is 2FA-gated by default now
+});
 const json = (b: unknown, h: Record<string, string> = {}) => ({ method: 'POST', headers: { 'Content-Type': 'application/json', ...h }, body: JSON.stringify(b) });
 
 it('me requires a valid bearer token', async () => {
@@ -15,8 +20,7 @@ it('me requires a valid bearer token', async () => {
 it('logout then refresh fails', async () => {
   const email = 'logout@example.com', password = 'a-perfectly-fine-passphrase';
   await app.request('/auth/signup', json({ email, password }), env);
-  const login = await app.request('/auth/login', json({ email, password, }, { 'X-Client': 'native' }), env);
-  const { accessToken, refreshToken } = await login.json<any>();
+  const { body: { accessToken, refreshToken } } = await twofaLogin(app, env, email, password, { 'X-Client': 'native' });
 
   const out = await app.request('/auth/logout', json({ refreshToken }, { 'X-Client': 'native', Authorization: `Bearer ${accessToken}` }), env);
   expect(out.status).toBe(204);
@@ -57,8 +61,8 @@ it('DELETE /sessions/:id cannot revoke another user\'s session (IDOR)', async ()
   const signupAndLogin = async (email: string) => {
     const password = 'a-perfectly-fine-passphrase';
     await app.request('/auth/signup', json({ email, password }), env);
-    const login = await app.request('/auth/login', json({ email, password }, { 'X-Client': 'native' }), env);
-    return login.json<any>();
+    const { body } = await twofaLogin(app, env, email, password, { 'X-Client': 'native' });
+    return body;
   };
 
   const a = await signupAndLogin('idor-a@example.com');

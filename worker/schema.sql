@@ -48,3 +48,13 @@ CREATE TABLE IF NOT EXISTS run_cache(cache_key TEXT PRIMARY KEY, user_id TEXT NO
   created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, hits INTEGER NOT NULL DEFAULT 0);
 CREATE INDEX IF NOT EXISTS idx_run_cache_user ON run_cache(user_id);
 CREATE INDEX IF NOT EXISTS idx_run_cache_exp ON run_cache(expires_at);
+
+-- 2FA email-OTP challenges (auth/twofa.ts; self-provisions lazily too).
+-- users.twofa_enabled INTEGER NOT NULL DEFAULT 1 is added by an idempotent
+-- ALTER in ensureTwofaSchema — the users table lives in schema.auth.sql, not
+-- here, so the column migration cannot be expressed in this file.
+CREATE TABLE IF NOT EXISTS twofa_challenges(id TEXT PRIMARY KEY, user_id TEXT NOT NULL,
+  code_hash TEXT NOT NULL, expires_at INTEGER NOT NULL,
+  attempts INTEGER NOT NULL DEFAULT 0, sends INTEGER NOT NULL DEFAULT 1,
+  last_sent_at INTEGER NOT NULL, consumed_at INTEGER);
+CREATE INDEX IF NOT EXISTS idx_twofa_user ON twofa_challenges(user_id);

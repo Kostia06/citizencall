@@ -19,3 +19,9 @@ export function sendVerifyEmail(env: Env, to: string, link: string): Promise<voi
 export function sendResetEmail(env: Env, to: string, link: string): Promise<void> {
   return send(env, to, 'Reset your Understudy password', `<p>Reset your password:</p><p><a href="${link}">${link}</a></p>`);
 }
+export function sendTwofaCodeEmail(env: Env, to: string, code: string): Promise<void> {
+  return send(
+    env, to, 'Your Understudy sign-in code',
+    `<p>Your sign-in code is:</p><p style="font-size:24px;font-weight:bold;letter-spacing:4px">${code}</p><p>It expires in 10 minutes. If you didn't try to sign in, you can ignore this email.</p>`
+  );
+}

@@ -8,10 +8,14 @@ import {
   consumeEmailToken, createEmailToken, createUser, getUserByEmail,
   getUserById, setEmailVerified, updatePassword,
 } from './users';
-import { sendResetEmail, sendVerifyEmail } from './email';
+import { sendResetEmail, sendTwofaCodeEmail, sendVerifyEmail } from './email';
 import { checkAndIncrement } from './throttle';
 import { requireAuth } from './middleware';
 import { authSecret } from './secret';
+import {
+  createChallenge, ensureTwofaSchema, isTwofaEnabled, resendChallenge,
+  shouldExposeDevCode, verifyChallenge,
+} from './twofa';
 
 type Vars = { authUserId?: string; authSessionId?: string; authEmailVerified?: boolean };
 export const authRoutes = new Hono<{ Bindings: Env; Variables: Vars }>();
@@ -98,7 +102,58 @@ authRoutes.post('/login', async (c) => {
   // Run a dummy hash on unknown email so timing does not reveal existence.
   const ok = user ? await verifyPassword(password, user.passwordHash) : await verifyPassword(password, 'scrypt$N=65536,r=8,p=1$AAAA$AAAA');
   if (!user || !ok) return c.json({ error: GENERIC_LOGIN_ERR }, 401);
+
+  await ensureTwofaSchema(c.env.DB);
+  if (await isTwofaEnabled(c.env.DB, user.id)) {
+    // Second factor required: no tokens yet, only an opaque challenge.
+    const { challengeId, code } = await createChallenge(c.env.DB, user.id, now());
+    await sendTwofaCodeEmail(c.env, user.email, code);
+    const body: Record<string, unknown> = { requires2fa: true, challengeId };
+    if (shouldExposeDevCode(c.env)) {
+      console.log(`[2fa] dev code for ${user.email}: ${code}`);
+      body.devCode = code;
+    }
+    return c.json(body);
+  }
   return issueTokens(c, user.id, { userAgent: c.req.header('User-Agent') ?? null, ip: clientIp(c) });
+});
+
+const GENERIC_2FA_ERR = 'Invalid or expired code.';
+
+authRoutes.post('/2fa/verify', async (c) => {
+  const throttle = await checkAndIncrement(c.env.DB, `2fa-verify:ip:${clientIp(c)}`, now(), { windowMs: 900000, max: 30 });
+  if (!throttle.allowed) return c.json({ error: 'Too many attempts.' }, 429);
+
+  const { challengeId, code } = await c.req.json().catch(() => ({}));
+  if (typeof challengeId !== 'string' || typeof code !== 'string') return c.json({ error: GENERIC_2FA_ERR }, 401);
+  await ensureTwofaSchema(c.env.DB);
+  const userId = await verifyChallenge(c.env.DB, challengeId, code, now());
+  if (!userId) return c.json({ error: GENERIC_2FA_ERR }, 401);
+  // Identical response shape to a successful (2fa-off) login.
+  return issueTokens(c, userId, { userAgent: c.req.header('User-Agent') ?? null, ip: clientIp(c) });
+});
+
+authRoutes.post('/2fa/resend', async (c) => {
+  const throttle = await checkAndIncrement(c.env.DB, `2fa-resend:ip:${clientIp(c)}`, now(), { windowMs: 3600000, max: 20 });
+  if (!throttle.allowed) return c.json({ error: 'Too many attempts.' }, 429);
+
+  const { challengeId } = await c.req.json().catch(() => ({}));
+  // Always the same generic body — never reveals whether the challenge
+  // exists, is rate-limited, or is dead (no enumeration).
+  const body: Record<string, unknown> = { ok: true, retryAfterSec: 30 };
+  if (typeof challengeId === 'string') {
+    await ensureTwofaSchema(c.env.DB);
+    const result = await resendChallenge(c.env.DB, challengeId, now());
+    if (result.status === 'ok') {
+      const user = await getUserById(c.env.DB, result.userId);
+      if (user) await sendTwofaCodeEmail(c.env, user.email, result.code);
+      if (shouldExposeDevCode(c.env)) {
+        console.log(`[2fa] dev code (resend): ${result.code}`);
+        body.devCode = result.code;
+      }
+    }
+  }
+  return c.json(body);
 });
 
 authRoutes.post('/refresh', async (c) => {

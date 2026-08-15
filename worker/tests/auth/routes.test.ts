@@ -1,32 +1,34 @@
 import { env } from 'cloudflare:test';
 import { beforeAll, expect, it } from 'vitest';
 import { applyAuthSchema, applyStoreSchema } from '../../src/db';
+import { ensureTwofaSchema } from '../../src/auth/twofa';
 import { createEmailToken, getUserByEmail } from '../../src/auth/users';
+import { twofaLogin } from '../support/twofa';
 import app from '../../src/index';
 
 beforeAll(async () => {
   await applyAuthSchema(env.DB);
   await applyStoreSchema(env.DB); // needed by the requireVerified /api/settings test
+  await ensureTwofaSchema(env.DB); // login is 2FA-gated by default now
 });
 
 const json = (body: unknown, headers: Record<string, string> = {}) => ({
   method: 'POST', headers: { 'Content-Type': 'application/json', ...headers }, body: JSON.stringify(body),
 });
 
-it('signup → login happy path (signup auto-verifies, no confirmation step)', async () => {
+it('signup → login happy path (login yields a 2FA challenge, verify yields tokens)', async () => {
   const email = 'flow@example.com';
   const password = 'a-perfectly-fine-passphrase';
-  let res = await app.request('/auth/signup', json({ email, password }), env);
+  const res = await app.request('/auth/signup', json({ email, password }), env);
   expect(res.status).toBe(201);
 
   const signedUp = await getUserByEmail(env.DB, email);
   expect(signedUp?.emailVerified).toBe(true);
 
-  res = await app.request('/auth/login', json({ email, password }), env);
-  expect(res.status).toBe(200);
-  const { accessToken, user } = await res.json<any>();
-  expect(user.email).toBe(email);
-  expect(typeof accessToken).toBe('string');
+  const { challenge, body } = await twofaLogin(app, env, email, password);
+  expect(typeof challenge.challengeId).toBe('string');
+  expect(body.user.email).toBe(email);
+  expect(typeof body.accessToken).toBe('string');
 });
 
 it('a fresh signup can immediately reach a requireVerified route (no confirmation gate)', async () => {
@@ -34,8 +36,7 @@ it('a fresh signup can immediately reach a requireVerified route (no confirmatio
   const password = 'a-perfectly-fine-passphrase';
   await app.request('/auth/signup', json({ email, password }), env);
 
-  const login = await app.request('/auth/login', json({ email, password }), env);
-  const { accessToken } = await login.json<any>();
+  const { body: { accessToken } } = await twofaLogin(app, env, email, password);
 
   const settings = await app.request('/api/settings', { headers: { Authorization: `Bearer ${accessToken}` } }, env);
   expect(settings.status).toBe(200);
@@ -88,36 +89,32 @@ it('signup on an already-existing email returns the identical generic response (
   expect(secondBody).toEqual({ ok: true });
 });
 
-it('login response does not leak the password hash', async () => {
+it('login flow does not leak the password hash', async () => {
   const email = 'nohash@example.com';
   const password = 'a-perfectly-fine-passphrase';
   await app.request('/auth/signup', json({ email, password }), env);
-  const res = await app.request('/auth/login', json({ email, password }), env);
-  expect(res.status).toBe(200);
-  const { user } = await res.json<any>();
-  expect(user.passwordHash).toBeUndefined();
+  const { challenge, body } = await twofaLogin(app, env, email, password);
+  expect(challenge.passwordHash).toBeUndefined();
+  expect(body.user.passwordHash).toBeUndefined();
 });
 
-it('native login returns refreshToken in the body and sets no cookie', async () => {
+it('native login flow returns refreshToken in the body and sets no cookie', async () => {
   const email = 'native-login@example.com';
   const password = 'a-perfectly-fine-passphrase';
   await app.request('/auth/signup', json({ email, password }), env);
-  const res = await app.request('/auth/login', json({ email, password }, { 'X-Client': 'native' }), env);
-  expect(res.status).toBe(200);
+  const { login, res, body } = await twofaLogin(app, env, email, password, { 'X-Client': 'native' });
+  expect(login.headers.get('Set-Cookie')).toBeNull();
   expect(res.headers.get('Set-Cookie')).toBeNull();
-  const body = await res.json<any>();
   expect(typeof body.refreshToken).toBe('string');
 });
 
-it('web login sets the __Host-refresh cookie and omits refreshToken from the body', async () => {
+it('web login flow sets the __Host-refresh cookie on verify and omits refreshToken from the body', async () => {
   const email = 'web-login@example.com';
   const password = 'a-perfectly-fine-passphrase';
   await app.request('/auth/signup', json({ email, password }), env);
-  const res = await app.request('/auth/login', json({ email, password }), env);
-  expect(res.status).toBe(200);
-  const cookie = res.headers.get('Set-Cookie');
-  expect(cookie).toMatch(/^__Host-refresh=/);
-  const body = await res.json<any>();
+  const { login, res, body } = await twofaLogin(app, env, email, password);
+  expect(login.headers.get('Set-Cookie')).toBeNull(); // challenge issues nothing
+  expect(res.headers.get('Set-Cookie')).toMatch(/^__Host-refresh=/);
   expect(body.refreshToken).toBeUndefined();
 });
 
@@ -125,8 +122,7 @@ it('refresh happy path (native): a new accessToken comes back for a valid refres
   const email = 'refresh-happy@example.com';
   const password = 'a-perfectly-fine-passphrase';
   await app.request('/auth/signup', json({ email, password }), env);
-  const login = await app.request('/auth/login', json({ email, password }, { 'X-Client': 'native' }), env);
-  const { refreshToken } = await login.json<any>();
+  const { body: { refreshToken } } = await twofaLogin(app, env, email, password, { 'X-Client': 'native' });
 
   const res = await app.request('/auth/refresh', json({ refreshToken }, { 'X-Client': 'native' }), env);
   expect(res.status).toBe(200);
@@ -141,8 +137,7 @@ it('password reset happy path: new password logs in and old sessions are revoked
   await app.request('/auth/signup', json({ email, password: oldPassword }), env);
 
   // Establish an old session whose refresh token must die on reset.
-  const oldLogin = await app.request('/auth/login', json({ email, password: oldPassword }, { 'X-Client': 'native' }), env);
-  const { refreshToken: oldRefreshToken } = await oldLogin.json<any>();
+  const { body: { refreshToken: oldRefreshToken } } = await twofaLogin(app, env, email, oldPassword, { 'X-Client': 'native' });
 
   const user = await getUserByEmail(env.DB, email);
   const resetToken = await createEmailToken(env.DB, { userId: user!.id, type: 'reset', now: Date.now(), ttlMs: 3600000 });
@@ -150,8 +145,8 @@ it('password reset happy path: new password logs in and old sessions are revoked
   const reset = await app.request('/auth/password/reset', json({ token: resetToken, password: newPassword }), env);
   expect(reset.status).toBe(200);
 
-  const newLogin = await app.request('/auth/login', json({ email, password: newPassword }), env);
-  expect(newLogin.status).toBe(200);
+  const { body: newLoginBody } = await twofaLogin(app, env, email, newPassword);
+  expect(typeof newLoginBody.accessToken).toBe('string');
 
   const oldRefresh = await app.request('/auth/refresh', json({ refreshToken: oldRefreshToken }, { 'X-Client': 'native' }), env);
   expect(oldRefresh.status).toBe(401);
