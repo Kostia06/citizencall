@@ -4,10 +4,13 @@ import { CATEGORIES, storeApi } from '../../api';
 import type { Connection, ToolkitApp } from '../../api';
 
 /** Icon-only connect tile — app name lives in `title`/`aria-label` plus a
- * CSS hover tooltip, never as a visible label (grid requirement). Tries the
- * Simple Icons brand mark first, falls back to the Clearbit logo if that
- * 404s, and finally falls back to a neutral initials monogram (no color) if
- * both image sources fail (offline demo, ad-blocker, unlisted brand). */
+ * CSS hover tooltip, never as a visible label (grid requirement). Walks an
+ * ordered list of image candidates on each `onError`: the Simple Icons brand
+ * mark (skipped for brands not in that catalog), then the Clearbit logo,
+ * then Google's favicon service keyed off the real domain — which resolves
+ * for essentially any live domain, so it's a guaranteed real icon rather
+ * than a placeholder. Only falls back to a neutral initials monogram (no
+ * color) if every image source fails (offline demo, ad-blocker). */
 function AppTile({
   app,
   connected,
@@ -21,7 +24,15 @@ function AppTile({
   onConnect(slug: string): void;
   onDisconnect(slug: string): void;
 }) {
-  const [iconStage, setIconStage] = useState<'icon' | 'logo' | 'fallback'>('icon');
+  const candidates = useMemo(
+    () =>
+      [app.icon, app.logo, `https://www.google.com/s2/favicons?domain=${encodeURIComponent(app.domain)}&sz=64`].filter(
+        Boolean,
+      ),
+    [app.icon, app.logo, app.domain],
+  );
+  const [stepIndex, setStepIndex] = useState(0);
+  const exhausted = stepIndex >= candidates.length;
 
   return (
     <div className="group relative">
@@ -37,7 +48,7 @@ function AppTile({
             : 'border-white/10 bg-white/[0.03] hover:border-white/25 hover:bg-white/[0.07]'
         }`}
       >
-        {iconStage === 'fallback' ? (
+        {exhausted ? (
           <span
             className="flex h-6 w-6 items-center justify-center rounded-md bg-white/10 text-[9px] font-bold text-white/70"
             aria-hidden
@@ -46,11 +57,12 @@ function AppTile({
           </span>
         ) : (
           <img
-            src={iconStage === 'icon' ? app.icon : app.logo}
+            src={candidates[stepIndex]}
             alt=""
             aria-hidden
             loading="lazy"
-            onError={() => setIconStage((stage) => (stage === 'icon' ? 'logo' : 'fallback'))}
+            data-fallback-step={stepIndex}
+            onError={() => setStepIndex((step) => step + 1)}
             className="h-6 w-6 rounded-sm bg-white/95 object-contain p-0.5"
           />
         )}
