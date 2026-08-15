@@ -47,16 +47,36 @@ export async function rotateSession(
   if (row) {
     if (row.revoked === 1 || row.expires_at < now) return 'invalid';
 
+    // Optimistic rotation: the read above isn't atomic with this write, so a
+    // concurrent caller presenting the SAME still-valid token (e.g. a mobile
+    // client retrying a refresh) can reach this point too. `INSERT OR IGNORE`
+    // means a duplicate retire from that race can never throw a PK-constraint
+    // error, and the `WHERE ... AND refresh_hash=?` guard means at most one of
+    // the racing UPDATEs actually advances the session.
     const next = generateToken();
     const nextHash = await hashToken(next);
-    await db.batch([
+    const results = await db.batch([
       db
-        .prepare(`INSERT INTO retired_hashes(hash,family_id,retired_at) VALUES(?,?,?)`)
+        .prepare(`INSERT OR IGNORE INTO retired_hashes(hash,family_id,retired_at) VALUES(?,?,?)`)
         .bind(hash, row.family_id, now),
       db
-        .prepare(`UPDATE sessions SET refresh_hash=?, last_used_at=?, expires_at=? WHERE id=?`)
-        .bind(nextHash, now, now + REFRESH_TTL_MS, row.id),
+        .prepare(
+          `UPDATE sessions SET refresh_hash=?, last_used_at=?, expires_at=?
+           WHERE id=? AND refresh_hash=? AND revoked=0`
+        )
+        .bind(nextHash, now, now + REFRESH_TTL_MS, row.id, hash),
     ]);
+    const updateResult = results[1];
+    const rowsChanged = updateResult?.meta.changes ?? 0;
+
+    if (rowsChanged === 0) {
+      // Lost the race: another rotation already advanced this session past
+      // `hash` between our read and our write, so the token we were just
+      // handed is already retired. That's a replay, even though it came from
+      // a legitimate concurrent caller rather than an attacker.
+      await db.prepare(`UPDATE sessions SET revoked=1 WHERE family_id=?`).bind(row.family_id).run();
+      return 'reused';
+    }
     return { sessionId: row.id, userId: row.user_id, refreshToken: next };
   }
 
