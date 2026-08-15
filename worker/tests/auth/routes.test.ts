@@ -1,26 +1,59 @@
 import { env } from 'cloudflare:test';
 import { beforeAll, expect, it } from 'vitest';
-import { applyAuthSchema } from '../../src/db';
+import { applyAuthSchema, applyStoreSchema } from '../../src/db';
 import { createEmailToken, getUserByEmail } from '../../src/auth/users';
 import app from '../../src/index';
 
-beforeAll(async () => { await applyAuthSchema(env.DB); });
+beforeAll(async () => {
+  await applyAuthSchema(env.DB);
+  await applyStoreSchema(env.DB); // needed by the requireVerified /api/settings test
+});
 
 const json = (body: unknown, headers: Record<string, string> = {}) => ({
   method: 'POST', headers: { 'Content-Type': 'application/json', ...headers }, body: JSON.stringify(body),
 });
 
-it('signup → login happy path (login allowed unverified)', async () => {
+it('signup → login happy path (signup auto-verifies, no confirmation step)', async () => {
   const email = 'flow@example.com';
   const password = 'a-perfectly-fine-passphrase';
   let res = await app.request('/auth/signup', json({ email, password }), env);
   expect(res.status).toBe(201);
+
+  const signedUp = await getUserByEmail(env.DB, email);
+  expect(signedUp?.emailVerified).toBe(true);
 
   res = await app.request('/auth/login', json({ email, password }), env);
   expect(res.status).toBe(200);
   const { accessToken, user } = await res.json<any>();
   expect(user.email).toBe(email);
   expect(typeof accessToken).toBe('string');
+});
+
+it('a fresh signup can immediately reach a requireVerified route (no confirmation gate)', async () => {
+  const email = 'instant-access@example.com';
+  const password = 'a-perfectly-fine-passphrase';
+  await app.request('/auth/signup', json({ email, password }), env);
+
+  const login = await app.request('/auth/login', json({ email, password }), env);
+  const { accessToken } = await login.json<any>();
+
+  const settings = await app.request('/api/settings', { headers: { Authorization: `Bearer ${accessToken}` } }, env);
+  expect(settings.status).toBe(200);
+});
+
+it('signup does not create a verify token or send a verification email', async () => {
+  const email = 'no-verify-email@example.com';
+  const password = 'a-perfectly-fine-passphrase';
+  await app.request('/auth/signup', json({ email, password }), env);
+
+  const user = await getUserByEmail(env.DB, email);
+  expect(user?.emailVerified).toBe(true);
+
+  const tokenRow = await env.DB
+    .prepare(`SELECT COUNT(*) AS n FROM email_tokens WHERE user_id=? AND type='verify'`)
+    .bind(user!.id)
+    .first<{ n: number }>();
+  expect(tokenRow?.n).toBe(0);
 });
 
 it('login gives a generic error for wrong password (no enumeration)', async () => {

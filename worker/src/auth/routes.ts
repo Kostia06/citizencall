@@ -50,12 +50,13 @@ authRoutes.post('/signup', async (c) => {
     // No enumeration: identical response body/status as the new-account path,
     // and a dummy hash so timing doesn't reveal the account already exists.
     await hashPassword(password);
-    await sendVerifyEmail(c.env, existing.email, `${c.env.APP_URL ?? ''}/login`);
     return c.json({ ok: true }, 201);
   }
   const user = await createUser(c.env.DB, { email, passwordHash: await hashPassword(password), now: now() });
-  const token = await createEmailToken(c.env.DB, { userId: user.id, type: 'verify', now: now(), ttlMs: 24 * 3600000 });
-  await sendVerifyEmail(c.env, user.email, `${c.env.APP_URL ?? ''}/verify?token=${token}`);
+  // No confirmation email: auto-verify on signup so a new account is
+  // immediately usable. requireVerified still gates every route below —
+  // this just makes real signups satisfy it right away.
+  await setEmailVerified(c.env.DB, user.id);
   return c.json({ ok: true }, 201);
 });
 
