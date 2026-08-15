@@ -15,6 +15,7 @@ import type { AuthVars } from './auth/middleware';
 import { resolveActor } from './auth/anon';
 import { storeRoutes } from './store/routes';
 import { memoryRoutes } from './memory/routes';
+import { memoryRoutes } from './memory/routes';
 import { routineRoutes } from './routines/routes';
 import { scheduled } from './routines/scheduler';
 import { upsertConnection } from './store/connections';
@@ -34,6 +35,7 @@ app.route('/auth', authRoutes);
 // and cannot shadow the non-auth /api/* routes registered below
 // (/api/run, /api/roster, /api/benchmark, /api/funnel, /api/connect).
 app.route('/api', storeRoutes);
+app.route('/api', memoryRoutes); // /api/memories* — per-route resolveActor, cannot shadow the routes below
 app.route('/api', memoryRoutes); // /api/memories* — per-route resolveActor, cannot shadow the routes below
 // Routine CRUD + manual trigger — resolveActor-scoped, claims only /api/routines*.
 app.route('/api', routineRoutes);

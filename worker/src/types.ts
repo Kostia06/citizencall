@@ -91,6 +91,10 @@ export type TraceEvent =
   | { t: 'tool_skipped'; toolkit: string; tool: string; reason: string }
   // The final sub-task's model output — the user-visible reply bubble.
   | { t: 'answer'; subTaskId: string; text: string }
+  // Agent auto-wrote a user memory after this run (memory/*, memory-hook.ts).
+  // Emitted before run_end (the stream closes on run_end) and never recorded
+  // into the run cache, so replays don't re-announce a stale save.
+  | { t: 'memory_saved'; memoryId: string; title: string }
   // Connection-required pause: the run is waiting for the user to connect a
   // toolkit (or skip). Status stays 'running'; run_resumed always follows.
   | { t: 'connection_required'; toolkit: string; subTaskId: string }

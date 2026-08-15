@@ -17,6 +17,8 @@ import { asTraceEvent } from './events';
 import { listEnabledMcpToolkits } from './mcp';
 import { finalizeRun, flushHops, flushToolCalls, insertRun, insertSubTasks } from '../db';
 import { loadUserContext } from '../store/context';
+import { buildMemoryContext } from '../memory/context';
+import { maybeAutoWriteMemory } from './memory-hook';
 import { normalizePlanKey } from '../cache/plan';
 import { getRunResult, putRunResult } from '../cache/runResult';
 
@@ -64,7 +66,11 @@ export async function runPipeline(
   // it shapes planning and every sub-task — and, because it changes the
   // normalized prompt, it is part of the run-cache key by construction.
   const userCtx = await loadUserContextSafe(db, body.userId);
-  const effectiveText = userCtx.contextPrompt ? `${userCtx.contextPrompt}\n\n${body.text}` : body.text;
+  // (memory, sub-project #3) Saved memories join the model input the same way
+  // the context prompt does — bounded ~1KB, cycle-safe (memory/context.ts),
+  // and part of the run-cache key by construction. '' ⇔ none ⇔ clean skip.
+  const memoryBlock = await buildMemoryContextSafe(db, body.userId, body.text);
+  const effectiveText = [userCtx.contextPrompt, memoryBlock, body.text].filter(Boolean).join('\n\n');
 
   const norm = await normalize(env, db, policy, effectiveText, body.source);
   if (body.source === 'voice') {
@@ -164,6 +170,18 @@ export async function runPipeline(
     cacheHitCount += result.hops.filter((h) => h.cacheHit !== 'none').length;
   }
 
+  // (memory, sub-project #3) Agent auto-write, before run_end because the UI
+  // closes the stream on run_end. Emitted via `emit` (NOT `record`) so the
+  // event never enters the cached replay stream; a cache-hit replay returns
+  // early above and therefore never reaches this hook at all. Errors degrade
+  // to "no memory" — the hook and this catch both refuse to fail the run.
+  const lastSubTaskId = plan.subTasks[plan.subTasks.length - 1]?.id;
+  const answerText = lastSubTaskId ? priorOutputs.get(lastSubTaskId)?.content ?? '' : '';
+  const savedMemory = await maybeAutoWriteMemory(env, db, { userId: body.userId, prompt: body.text, answer: answerText }).catch(
+    () => null
+  );
+  if (savedMemory) emit({ t: 'memory_saved', memoryId: savedMemory.id, title: savedMemory.title });
+
   const totalMs = Date.now() - startedAt;
   const baselineCostUsd = estimateBaselineCost(hops, policy, candidates);
   record(buildRunEndEvent(body.runId, hops, totalMs, baselineCostUsd));
@@ -207,6 +225,18 @@ async function loadUserContextSafe(
   } catch (err) {
     console.error(`loadUserContext failed for ${userId}; running without per-user context:`, err);
     return { contextPrompt: '' };
+  }
+}
+
+// (memory, sub-project #3) Same degradation contract as the store above: a
+// missing memory table or transient D1 error means "no memory context",
+// loudly, never a dead run.
+async function buildMemoryContextSafe(db: D1Database, userId: string, prompt: string): Promise<string> {
+  try {
+    return (await buildMemoryContext(db, userId, prompt)).block;
+  } catch (err) {
+    console.error(`buildMemoryContext failed for ${userId}; running without memory context:`, err);
+    return '';
   }
 }
 

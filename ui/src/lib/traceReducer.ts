@@ -35,6 +35,10 @@ export interface TraceState {
   lastToolCall?: { toolkit: string; tool: string; at: number };
   /** The final sub-task's model output — the user-visible reply bubble. */
   answerText?: string;
+  /** Set by `memory_saved` — the agent stored a memory after this run.
+   * Rendered (if at all) as a small "memory saved" note linking to /memory;
+   * ConversationTurn may ignore it, the default case already tolerated it. */
+  memorySaved?: { memoryId: string; title: string };
   connectionGate?: ConnectionGate;
   runEnd?: { totalCostUsd: number; totalMs: number; baselineCostUsd: number; savingsPct: number };
   error?: string;
@@ -159,6 +163,9 @@ export function traceReducer(state: TraceState, event: TraceEvent): TraceState {
 
     case 'answer':
       return { ...state, answerText: event.text };
+
+    case 'memory_saved':
+      return { ...state, memorySaved: { memoryId: event.memoryId, title: event.title } };
 
     case 'connection_required':
       return {

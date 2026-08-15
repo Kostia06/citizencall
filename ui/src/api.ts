@@ -1,4 +1,5 @@
-import type { BenchmarkResult, RosterEntry, RunAttachment, TraceEvent } from './types';
+import type { BenchmarkResult, RosterEntry, RunAttachment, TraceEvent, UserMemory, UserMemoryDetail } from './types';
+import { mockMemoryStore } from './components/memory/mockMemoryStore';
 import { mockBenchmark, mockFunnel, mockRoster } from './mock/fixtures';
 import { buildScenario } from './mock/scenario';
 import { mockAuthStore } from './auth/mockAuthStore';
@@ -576,6 +577,67 @@ export const storeApi = {
         if (!res.ok && res.status !== 204) throw new AuthError(await readJsonError(res), res.status);
       },
       () => mockStoreStore.setToolOverride(toolkit, tool, enabled),
+    );
+  },
+};
+
+// ---- /api/memories client — per-user memory system (roadmap sub-project
+// #3, worker memory/routes.ts). Anon-friendly on the worker side (the
+// signed anon cookie rides `credentials: 'include'` in authedFetch), so no
+// login gate here; `withMockFallback` keeps the /memory page demoable with
+// zero backend via the in-memory mock store.
+export const memoryApi = {
+  async list(authedFetch: AuthedFetch): Promise<UserMemory[]> {
+    return withMockFallback(
+      async () => {
+        const res = await authedFetch('/api/memories');
+        if (!res.ok) throw new AuthError(await readJsonError(res), res.status);
+        return res.json();
+      },
+      () => mockMemoryStore.list(),
+    );
+  },
+
+  async get(authedFetch: AuthedFetch, id: string): Promise<UserMemoryDetail> {
+    return withMockFallback(
+      async () => {
+        const res = await authedFetch(`/api/memories/${encodeURIComponent(id)}`);
+        if (!res.ok) throw new AuthError(await readJsonError(res), res.status);
+        return res.json();
+      },
+      () => mockMemoryStore.get(id),
+    );
+  },
+
+  async create(authedFetch: AuthedFetch, input: { title: string; contentMd: string }): Promise<UserMemory> {
+    return withMockFallback(
+      async () => {
+        const res = await authedFetch('/api/memories', { method: 'POST', body: JSON.stringify(input) });
+        if (!res.ok) throw new AuthError(await readJsonError(res), res.status);
+        return res.json();
+      },
+      () => mockMemoryStore.create(input),
+    );
+  },
+
+  async update(authedFetch: AuthedFetch, id: string, patch: { title?: string; contentMd?: string }): Promise<UserMemory> {
+    return withMockFallback(
+      async () => {
+        const res = await authedFetch(`/api/memories/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(patch) });
+        if (!res.ok) throw new AuthError(await readJsonError(res), res.status);
+        return res.json();
+      },
+      () => mockMemoryStore.update(id, patch),
+    );
+  },
+
+  async remove(authedFetch: AuthedFetch, id: string): Promise<void> {
+    return withMockFallback(
+      async () => {
+        const res = await authedFetch(`/api/memories/${encodeURIComponent(id)}`, { method: 'DELETE' });
+        if (!res.ok && res.status !== 204) throw new AuthError(await readJsonError(res), res.status);
+      },
+      () => mockMemoryStore.remove(id),
     );
   },
 };
