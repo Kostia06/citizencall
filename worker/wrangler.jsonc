@@ -24,7 +24,8 @@
     }
   ],
   "vars": {
-    "DEMO_USERS": "demo_kos,demo_teammate"
+    "DEMO_USERS": "demo_kos,demo_teammate",
+    "APP_URL": "http://localhost:5173"
   }
-  // Secrets (set via `wrangler secret put`): FEATHERLESS_API_KEY, COMPOSIO_API_KEY
+  // Secrets (set via `wrangler secret put`): AUTH_JWT_SECRET, RESEND_API_KEY
 }
