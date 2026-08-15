@@ -5,7 +5,9 @@ import ConversationTurn from '../components/ConversationTurn';
 import Orbs from '../components/Orbs';
 import { ToastStack, useToasts } from '../components/Toast';
 import TopNav from '../components/TopNav';
-import { DEFAULT_PREFS, MOCK, startRun, storeApi, type Connection, type RunHandle, type UserPrefsButton } from '../api';
+import HistoryDrawer from '../components/history/HistoryDrawer';
+import RestoredTurn, { type RestoredRun } from '../components/history/RestoredTurn';
+import { DEFAULT_PREFS, MOCK, startRun, storeApi, type Connection, type RunHandle, type SessionSummary, type UserPrefsButton } from '../api';
 import { conversationReducer, initialConversationState } from '../lib/traceReducer';
 import { layoutFlow, layoutFlowReduced } from '../lib/motion';
 import { useAuth } from '../auth/useAuth';
@@ -31,8 +33,15 @@ export default function Bar() {
   const [userIdx, setUserIdx] = useState(0);
   const [liveToolkit, setLiveToolkit] = useState<'github' | 'gmail' | null>(null);
   const { toasts, push } = useToasts();
-  const { authedFetch, status } = useAuth();
+  const { authedFetch, status, accessToken } = useAuth();
   const [connections, setConnections] = useState<Connection[]>([]);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [liveSessions, setLiveSessions] = useState<SessionSummary[]>([]);
+  /** Past runs re-opened from the history drawer, rendered read-only in the
+   * transcript. `afterTurnId` anchors each one after the live turn that was
+   * last when it was restored, so "go back and forth" keeps chat order. */
+  const [restored, setRestored] = useState<Array<{ key: string; afterTurnId: string | null; run: RestoredRun }>>([]);
   const [contextPrompt, setContextPrompt] = useState('');
   const [suggestionsEnabled, setSuggestionsEnabled] = useState(true);
   const [barButtons, setBarButtons] = useState<UserPrefsButton[]>(DEFAULT_PREFS.buttons);
@@ -45,6 +54,7 @@ export default function Bar() {
 
   const turns = conversation.turns;
   const hasTurns = turns.length > 0;
+  const hasContent = hasTurns || restored.length > 0;
   const lastTurn = turns[turns.length - 1];
   const running = lastTurn?.trace.status === 'running';
 
@@ -59,7 +69,15 @@ export default function Bar() {
   // the orbs, and the default context prompt to prepend to runs. Keybinding
   // remapping is deliberately NOT applied here — CommandBar owns its own
   // keyboard handling and remapping it cleanly is deferred, see report.
+  //
+  // Re-runs on auth `status` changes (not just mount): logging in or out
+  // changes WHOSE connections/settings the store returns (bearer vs anon
+  // cookie), and `authedFetch` is a stable ref that never retriggers this on
+  // its own. Skipped while the initial silent refresh is still 'loading' so
+  // the first fetch already carries the restored bearer instead of racing it
+  // as anon and then showing stale anon state.
   useEffect(() => {
+    if (status === 'loading') return;
     let cancelled = false;
     storeApi
       .listConnections(authedFetch)
@@ -80,7 +98,7 @@ export default function Bar() {
     return () => {
       cancelled = true;
     };
-  }, [authedFetch]);
+  }, [authedFetch, status]);
 
   useEffect(() => {
     const toolCall = lastTurn?.trace.lastToolCall;
@@ -99,7 +117,7 @@ export default function Bar() {
     const el = transcriptRef.current;
     if (!el || !stickToBottomRef.current) return;
     el.scrollTop = el.scrollHeight;
-  }, [conversation]);
+  }, [conversation, restored]);
 
   function handleTranscriptScroll() {
     const el = transcriptRef.current;
@@ -109,10 +127,12 @@ export default function Bar() {
   }
 
   const currentUser = USERS[userIdx];
-  // Preserves the existing "always connected" demo look in MOCK mode and
-  // for anonymous visitors; once authed against a live backend the orbs
-  // reflect real GET /api/connections state.
-  const mockConnectedFallback = MOCK || status !== 'authed';
+  // "Always connected" demo look is MOCK-ONLY. In live mode the orbs must
+  // reflect the REAL connection state for whoever is acting — including an
+  // anonymous `__Host-anon` session — or an anon visitor sees github/gmail
+  // lit up that they never connected, and their actual connections appear
+  // to "reset" the moment that pretense is compared with reality.
+  const mockConnectedFallback = MOCK;
   const connectedSlugs = (() => {
     const set = new Set(connections.filter((c) => c.status === 'active').map((c) => c.toolkit));
     if (mockConnectedFallback) {
@@ -150,6 +170,73 @@ export default function Bar() {
       .catch(() => push(`Could not start connecting ${slug}`));
   }
 
+  // ---- Chat history ("persistent sessions"). Live: GET /api/sessions is
+  // the actor's own persisted runs (works anonymously via the cookie
+  // session). MOCK: the in-memory list of THIS session's turns. Selecting
+  // one restores it read-only into the transcript as a RestoredTurn —
+  // prompt + compact summary card from the stored run row; full trace
+  // replay is intentionally not attempted.
+  function openHistory() {
+    setHistoryOpen(true);
+    if (MOCK) return;
+    setHistoryLoading(true);
+    storeApi
+      .listSessions(authedFetch)
+      .then(setLiveSessions)
+      .catch(() => push('Could not load history'))
+      .finally(() => setHistoryLoading(false));
+  }
+
+  const mockSessions: SessionSummary[] = [...turns]
+    .reverse()
+    .map((t) => ({
+      id: t.id,
+      requestText: t.prompt,
+      createdAt: 0,
+      totalCostUsd: t.trace.runEnd?.totalCostUsd ?? 0,
+      status: t.trace.status === 'idle' ? 'running' : t.trace.status,
+    }));
+  const sessions = MOCK ? mockSessions : liveSessions;
+
+  function appendRestored(run: RestoredRun) {
+    const afterTurnId = turns.length > 0 ? turns[turns.length - 1].id : null;
+    stickToBottomRef.current = true;
+    setRestored((prev) => [...prev, { key: `restored-${prev.length}-${run.id}`, afterTurnId, run }]);
+    setHistoryOpen(false);
+  }
+
+  function handleSelectSession(id: string) {
+    if (MOCK) {
+      const turn = turns.find((t) => t.id === id);
+      if (!turn) return;
+      appendRestored({
+        id,
+        requestText: turn.prompt,
+        source: turn.source,
+        createdAt: 0,
+        status: turn.trace.status === 'idle' ? 'running' : turn.trace.status,
+        totalCostUsd: turn.trace.runEnd?.totalCostUsd ?? 0,
+        totalMs: turn.trace.runEnd?.totalMs ?? null,
+        answerText: turn.trace.answerText,
+      });
+      return;
+    }
+    storeApi
+      .getRunDetail(id)
+      .then(({ run }) =>
+        appendRestored({
+          id: run.id,
+          requestText: run.request_text,
+          source: run.source === 'voice' ? 'voice' : 'text',
+          createdAt: run.created_at,
+          status: run.status,
+          totalCostUsd: run.total_cost_usd ?? 0,
+          totalMs: run.total_ms,
+        }),
+      )
+      .catch(() => push('Could not load that session'));
+  }
+
   function handleSubmit(
     text: string,
     opts: { bypassCache: boolean; source: 'text' | 'voice'; attachments: RunAttachment[] },
@@ -163,6 +250,7 @@ export default function Bar() {
     const sendText = contextPrompt.trim() ? `${contextPrompt.trim()}\n\n${text}` : text;
     runHandleRef.current = startRun({
       userId: currentUser,
+      accessToken,
       text: sendText,
       source: opts.source,
       noCache: opts.bypassCache,
@@ -189,7 +277,7 @@ export default function Bar() {
         layout
         transition={reduceMotion ? layoutFlowReduced : layoutFlow}
         className={`mx-auto flex w-full max-w-2xl shrink-0 flex-col ${
-          hasTurns ? 'pt-24 pb-4' : 'flex-1 items-center justify-center'
+          hasContent ? 'pt-24 pb-4' : 'flex-1 items-center justify-center'
         }`}
       >
         {/* orbs sit beside the bar on wide screens, BELOW it on narrow ones */}
@@ -218,27 +306,62 @@ export default function Bar() {
               onReorder={handleReorderButtons}
             />
           </div>
+          {/* History — opens the past-sessions drawer. Sits with the orbs so
+              the centered-bar layout is untouched. */}
+          <div className="sm:pt-1.5">
+            <button
+              type="button"
+              onClick={openHistory}
+              aria-label="Session history"
+              title="Session history"
+              className="flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-white/[0.04] text-white/45 transition-colors hover:bg-white/[0.08] hover:text-white/80"
+            >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-4 w-4" aria-hidden>
+                <circle cx="12" cy="12" r="9" />
+                <path d="M12 7v5l3 2" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </button>
+          </div>
         </div>
       </motion.div>
 
       {/* Transcript — its own vertically-scrollable region, so old turns
           scroll out of view while the bar above stays put. */}
-      {hasTurns && (
+      {hasContent && (
         <div
           ref={transcriptRef}
           onScroll={handleTranscriptScroll}
           className="transcript-scroll mx-auto min-h-0 w-full max-w-2xl flex-1 overflow-y-auto pb-8"
         >
+          {restored
+            .filter((r) => r.afterTurnId === null)
+            .map((r) => (
+              <RestoredTurn key={r.key} run={r.run} />
+            ))}
           {turns.map((turn) => (
-            <ConversationTurn
-              key={turn.id}
-              turn={turn}
-              animate={turn.id === lastTurn?.id && running}
-              authedFetch={authedFetch}
-            />
+            <div key={turn.id}>
+              <ConversationTurn
+                turn={turn}
+                animate={turn.id === lastTurn?.id && running}
+                authedFetch={authedFetch}
+              />
+              {restored
+                .filter((r) => r.afterTurnId === turn.id)
+                .map((r) => (
+                  <RestoredTurn key={r.key} run={r.run} />
+                ))}
+            </div>
           ))}
         </div>
       )}
+
+      <HistoryDrawer
+        open={historyOpen}
+        sessions={sessions}
+        loading={historyLoading}
+        onSelect={handleSelectSession}
+        onClose={() => setHistoryOpen(false)}
+      />
 
       <ToastStack toasts={toasts} />
     </div>
