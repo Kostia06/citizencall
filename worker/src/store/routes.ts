@@ -26,6 +26,14 @@ const uid = (c: StoreContext): string => c.get('authUserId') as string;
 const now = (): number => Date.now();
 const gate = [requireAuth, requireVerified] as const;
 
+// A malformed body (e.g. literal JSON `null`) parses successfully but isn't
+// an object, so property access below would throw instead of yielding a
+// clean 400. Coalesce anything that isn't a plain object to `{}`.
+async function jsonBody(c: StoreContext): Promise<Record<string, unknown>> {
+  const raw = await c.req.json().catch(() => ({}));
+  return raw && typeof raw === 'object' ? raw : {};
+}
+
 storeRoutes.get('/settings', ...gate, async (c) => c.json(await getSettings(c.env.DB, uid(c))));
 
 storeRoutes.put('/settings', ...gate, async (c) => {
@@ -44,13 +52,13 @@ storeRoutes.delete('/connections/:toolkit', ...gate, async (c) => {
 storeRoutes.get('/mcps', ...gate, async (c) => c.json(await listMcps(c.env.DB, uid(c))));
 
 storeRoutes.post('/mcps', ...gate, async (c) => {
-  const b = await c.req.json().catch(() => ({}));
+  const b = await jsonBody(c);
   if (typeof b.name !== 'string') return c.json({ error: 'name required' }, 400);
   return c.json(await createMcp(c.env.DB, { userId: uid(c), name: b.name, config: b.config, now: now() }), 201);
 });
 
 storeRoutes.patch('/mcps/:id', ...gate, async (c) => {
-  const b = await c.req.json().catch(() => ({}));
+  const b = await jsonBody(c);
   const ok = await updateMcp(c.env.DB, uid(c), c.req.param('id'), b);
   return ok ? c.body(null, 200) : c.json({ error: 'Not found.' }, 404);
 });
@@ -63,7 +71,7 @@ storeRoutes.delete('/mcps/:id', ...gate, async (c) => {
 storeRoutes.get('/tools', ...gate, async (c) => c.json(await listToolOverrides(c.env.DB, uid(c))));
 
 storeRoutes.patch('/tools', ...gate, async (c) => {
-  const b = await c.req.json().catch(() => ({}));
+  const b = await jsonBody(c);
   if (typeof b.toolkit !== 'string' || typeof b.tool !== 'string' || typeof b.enabled !== 'boolean') {
     return c.json({ error: 'toolkit, tool, enabled required' }, 400);
   }

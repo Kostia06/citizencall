@@ -65,6 +65,21 @@ it('connections/mcps/tools are scoped and require auth', async () => {
   expect(delByA.status).toBe(204);
 });
 
+// Regression: a literal JSON `null` body parses successfully (typeof null
+// is 'object'), so naive property access on the parsed body would throw and
+// surface as a 500 instead of the intended 400 for a missing field.
+it('POST /mcps with a null JSON body returns 400, not 500', async () => {
+  const t = await verifiedToken('u-routes-null-mcp');
+  const res = await app.request('/api/mcps', { method: 'POST', ...auth(t), body: 'null' }, env);
+  expect(res.status).toBe(400);
+});
+
+it('PATCH /tools with a null JSON body returns 400, not 500', async () => {
+  const t = await verifiedToken('u-routes-null-tools');
+  const res = await app.request('/api/tools', { method: 'PATCH', ...auth(t), body: 'null' }, env);
+  expect(res.status).toBe(400);
+});
+
 // R1 regression: mounting storeRoutes at /api must not shadow the existing,
 // non-auth /api/* routes registered directly on the main app.
 it('does not shadow pre-existing non-auth /api/* routes', async () => {
