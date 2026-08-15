@@ -20,12 +20,15 @@
     {
       "binding": "DB",
       "database_name": "understudy",
-      "database_id": "REPLACE_WITH_D1_ID"
+      "database_id": "13718207-6221-42f4-a512-06f8aa5a4021"
     }
   ],
   "vars": {
     "DEMO_USERS": "demo_kos,demo_teammate",
-    "APP_URL": "http://localhost:5173"
-  }
+    "APP_URL": "https://understudy.ilnkostia-dev.workers.dev"
+  },
+  // Routine scheduler tick — the scheduled handler in src/index.ts sweeps
+  // due user_routines every 15 minutes (see src/routines/scheduler.ts).
+  "triggers": { "crons": ["*/15 * * * *"] }
   // Secrets (set via `wrangler secret put`): AUTH_JWT_SECRET, RESEND_API_KEY
 }

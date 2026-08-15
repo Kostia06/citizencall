@@ -14,6 +14,9 @@ import { authRoutes } from './auth/routes';
 import type { AuthVars } from './auth/middleware';
 import { resolveActor } from './auth/anon';
 import { storeRoutes } from './store/routes';
+import { memoryRoutes } from './memory/routes';
+import { routineRoutes } from './routines/routes';
+import { scheduled } from './routines/scheduler';
 import { upsertConnection } from './store/connections';
 import { checkAndIncrement } from './auth/throttle';
 import { suggestNextAction } from './pipeline/suggest';
@@ -31,6 +34,9 @@ app.route('/auth', authRoutes);
 // and cannot shadow the non-auth /api/* routes registered below
 // (/api/run, /api/roster, /api/benchmark, /api/funnel, /api/connect).
 app.route('/api', storeRoutes);
+app.route('/api', memoryRoutes); // /api/memories* — per-route resolveActor, cannot shadow the routes below
+// Routine CRUD + manual trigger — resolveActor-scoped, claims only /api/routines*.
+app.route('/api', routineRoutes);
 
 const runRequestSchema = z.object({
   // Legacy display field — actor identity comes from resolveActor below, so
@@ -252,4 +258,7 @@ app.get('/oauth/done', async (c) => {
   return c.redirect(`/settings?${params.toString()}`, 302);
 });
 
-export default app;
+// The default export stays the Hono app (tests rely on app.request), with
+// the cron `scheduled` handler attached so the module-worker runtime finds
+// both default.fetch and default.scheduled on the same object.
+export default Object.assign(app, { scheduled });
