@@ -41,3 +41,10 @@ CREATE TABLE IF NOT EXISTS plan_cache(
 CREATE INDEX IF NOT EXISTS idx_hops_run ON hops(run_id);
 CREATE INDEX IF NOT EXISTS idx_runs_user ON runs(user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_cache_exp ON cache_entries(expires_at);
+
+-- Per-user run-result cache (pipeline/run.ts; self-provisions lazily too)
+CREATE TABLE IF NOT EXISTS run_cache(cache_key TEXT PRIMARY KEY, user_id TEXT NOT NULL,
+  policy_version TEXT NOT NULL, value_json TEXT NOT NULL,
+  created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, hits INTEGER NOT NULL DEFAULT 0);
+CREATE INDEX IF NOT EXISTS idx_run_cache_user ON run_cache(user_id);
+CREATE INDEX IF NOT EXISTS idx_run_cache_exp ON run_cache(expires_at);

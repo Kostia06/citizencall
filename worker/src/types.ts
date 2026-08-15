@@ -87,6 +87,8 @@ export type TraceEvent =
   | { t: 'hop_end'; hop: Hop }
   | { t: 'tool_call'; toolkit: string; tool: string; cacheHit: boolean; ms: number }
   | { t: 'escalate'; from: string; to: string; reason: Verdict }
+  | { t: 'cache_hit'; runId: string; cachedAt: number; ageMs: number }
+  | { t: 'tool_skipped'; toolkit: string; tool: string; reason: string }
   | {
       t: 'run_end';
       runId: string;

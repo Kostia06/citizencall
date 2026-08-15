@@ -33,7 +33,10 @@ app.route('/auth', authRoutes);
 app.route('/api', storeRoutes);
 
 const runRequestSchema = z.object({
-  userId: z.string().min(1),
+  // Legacy display field — actor identity comes from resolveActor below, so
+  // a caller can no longer name an arbitrary userId and read that user's run
+  // cache / context prompt / connections.
+  userId: z.string().min(1).optional(),
   text: z.string().min(1),
   source: z.enum(['text', 'voice']),
   noCache: z.boolean().optional(),
@@ -44,15 +47,21 @@ app.post('/api/run', async (c) => {
   const parsed = runRequestSchema.safeParse(body);
   if (!parsed.success) return c.json({ error: 'invalid request', details: parsed.error.flatten() }, 400);
 
+  // Same identity rule as /api/connect: authed bearer wins, else the signed
+  // anon cookie session. This is what scopes the run cache, the context
+  // prompt, and which Composio connections the run's tools execute against.
+  const { userId: actorId } = await resolveActor(c);
+
   const runId = crypto.randomUUID();
   const stub = c.env.RUN.get(c.env.RUN.idFromName(runId));
   await stub.fetch('https://run.do/start', {
     method: 'POST',
     body: JSON.stringify({
       runId,
-      userId: parsed.data.userId,
+      userId: actorId,
       text: parsed.data.text,
       source: parsed.data.source,
+      noCache: parsed.data.noCache ?? false,
     }),
   });
   return c.json({ runId });
