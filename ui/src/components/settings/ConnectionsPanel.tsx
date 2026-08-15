@@ -1,14 +1,96 @@
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import type { Connection } from '../../store/types';
+import { appColor, CATEGORIES, COLOR_SWATCHES, storeApi } from '../../api';
+import type { Connection, ToolkitApp } from '../../api';
 
-const TOOLKITS: Array<{ id: 'github' | 'gmail'; label: string }> = [
-  { id: 'github', label: 'GitHub' },
-  { id: 'gmail', label: 'Gmail' },
-];
+/** Icon-only connect tile — app name lives in `title`/`aria-label` plus a
+ * CSS hover tooltip, never as a visible label (grid requirement). Falls
+ * back to a colored initial avatar if the logo CDN request fails (offline
+ * demo, ad-blocker) — same hash-based color used by the color filter below. */
+function AppTile({
+  app,
+  connected,
+  pending,
+  onConnect,
+  onDisconnect,
+}: {
+  app: ToolkitApp;
+  connected: boolean;
+  pending: boolean;
+  onConnect(slug: string): void;
+  onDisconnect(slug: string): void;
+}) {
+  const [imgError, setImgError] = useState(false);
+  const color = appColor(app.slug);
 
-/** Connections section — web UI design spec §6. Connect/disconnect each
- * toolkit; a per-toolkit inline "log in to connect" prompt appears when the
- * call 401s (auth-gated endpoint) instead of a hard error. */
+  return (
+    <div className="group relative">
+      <button
+        type="button"
+        title={app.name}
+        aria-label={connected ? `${app.name} — connected. Click to disconnect.` : `Connect ${app.name}`}
+        disabled={pending}
+        onClick={() => (connected ? onDisconnect(app.slug) : onConnect(app.slug))}
+        className={`relative flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border transition-colors duration-200 disabled:opacity-40 ${
+          connected
+            ? 'border-accent/70 bg-accent/10 shadow-glow-accent'
+            : 'border-white/10 bg-white/[0.03] hover:border-white/25 hover:bg-white/[0.07]'
+        }`}
+      >
+        {imgError ? (
+          <span
+            className="flex h-6 w-6 items-center justify-center rounded-md text-[9px] font-bold text-black"
+            style={{ backgroundColor: color }}
+            aria-hidden
+          >
+            {app.name.slice(0, 2).toUpperCase()}
+          </span>
+        ) : (
+          <img
+            src={app.logo}
+            alt=""
+            aria-hidden
+            loading="lazy"
+            onError={() => setImgError(true)}
+            className="h-6 w-6 rounded-sm object-contain"
+          />
+        )}
+        {connected && (
+          <span className="absolute -bottom-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-accent text-[9px] font-bold leading-none text-black">
+            ✓
+          </span>
+        )}
+      </button>
+      <span className="pointer-events-none absolute left-1/2 top-full z-10 mt-1.5 -translate-x-1/2 whitespace-nowrap rounded-md border border-white/10 bg-surface-raised px-2 py-1 text-[11px] text-white opacity-0 shadow-lift transition-opacity duration-150 group-hover:opacity-100">
+        {app.name}
+      </span>
+    </div>
+  );
+}
+
+function FilterChip({ label, active, onClick }: { label: string; active: boolean; onClick(): void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`rounded-full border px-2.5 py-1 text-[11.5px] transition-colors duration-150 ${
+        active
+          ? 'border-accent/60 bg-accent/15 text-accent-bright'
+          : 'border-white/10 text-white/50 hover:border-white/25 hover:text-white/80'
+      }`}
+    >
+      {label}
+    </button>
+  );
+}
+
+/** Connections section — searchable icon-only grid of 100+ apps (web UI
+ * design spec §6, reworked). Loads the toolkit catalog via
+ * `storeApi.toolkits()` (bundled 100+ app list in MOCK mode — store/apps.ts
+ * — or a live `/api/toolkits` catalog), filters client-side by name/slug,
+ * category, and a hash-derived color swatch. Connect/disconnect wiring is
+ * unchanged from before — a per-toolkit inline "log in to connect" prompt
+ * still appears when the call 401s. */
 export default function ConnectionsPanel({
   connections,
   onConnect,
@@ -22,39 +104,131 @@ export default function ConnectionsPanel({
   pendingToolkit: string | null;
   loginRequiredFor: string | null;
 }) {
+  const [apps, setApps] = useState<ToolkitApp[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [query, setQuery] = useState('');
+  const [category, setCategory] = useState<string | null>(null);
+  const [color, setColor] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const { toolkits } = await storeApi.toolkits();
+      if (!cancelled) {
+        setApps(toolkits);
+        setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const connectedSlugs = useMemo(
+    () => new Set(connections.filter((c) => c.status === 'active').map((c) => c.toolkit)),
+    [connections],
+  );
+
+  const categories = useMemo(() => {
+    const fromApps = [...new Set(apps.map((a) => a.category))];
+    return fromApps.length ? fromApps.sort() : CATEGORIES;
+  }, [apps]);
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return apps.filter((app) => {
+      if (q && !app.name.toLowerCase().includes(q) && !app.slug.toLowerCase().includes(q)) return false;
+      if (category && app.category !== category) return false;
+      if (color && appColor(app.slug) !== color) return false;
+      return true;
+    });
+  }, [apps, query, category, color]);
+
+  const loginRequiredApp = loginRequiredFor ? apps.find((a) => a.slug === loginRequiredFor) : undefined;
+
   return (
-    <div className="flex flex-col gap-2.5">
-      {TOOLKITS.map(({ id, label }) => {
-        const connection = connections.find((c) => c.toolkit === id && c.status === 'active');
-        const connected = !!connection;
-        const isPending = pendingToolkit === id;
-        return (
-          <div key={id} className="flex flex-col gap-1.5">
-            <div className="flex items-center gap-3">
-              <span className="w-40 shrink-0 text-[13px] text-white/60">{label}</span>
-              <span className={`text-[12px] ${connected ? 'text-accent-bright' : 'text-white/35'}`}>
-                {connected ? 'Connected' : 'Not connected'}
-              </span>
-              <button
-                type="button"
-                disabled={isPending}
-                onClick={() => (connected ? onDisconnect(id) : onConnect(id))}
-                className="ml-auto rounded-lg border border-white/10 px-3 py-1.5 text-[12px] text-white/70 transition-colors hover:border-accent/40 hover:text-white disabled:opacity-40"
-              >
-                {isPending ? 'Working…' : connected ? 'Disconnect' : 'Connect'}
-              </button>
-            </div>
-            {loginRequiredFor === id && (
-              <p className="pl-[10.5rem] text-[12px] text-white/40">
-                <Link to="/login" className="text-accent-bright transition-colors hover:text-accent">
-                  Log in
-                </Link>{' '}
-                to connect {label}.
-              </p>
-            )}
-          </div>
-        );
-      })}
+    <div className="flex flex-col gap-3.5">
+      <div className="flex flex-wrap items-center gap-2.5">
+        <input
+          type="text"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search apps…"
+          aria-label="Search apps by name"
+          className="w-full max-w-xs rounded-lg border border-white/10 bg-surface-sunken px-3 py-1.5 text-[13px] text-white outline-none transition-colors placeholder:text-white/25 focus:border-accent/60"
+        />
+        <span className="text-[11.5px] text-white/35">
+          {loading
+            ? 'Loading…'
+            : `${filtered.length === apps.length ? apps.length : `${filtered.length} of ${apps.length}`} apps · ${connectedSlugs.size} connected`}
+        </span>
+      </div>
+
+      <div className="flex flex-wrap gap-1.5">
+        <FilterChip label="All" active={category === null} onClick={() => setCategory(null)} />
+        {categories.map((c) => (
+          <FilterChip key={c} label={c} active={category === c} onClick={() => setCategory(category === c ? null : c)} />
+        ))}
+      </div>
+
+      <div className="flex flex-wrap items-center gap-1.5">
+        <span className="mr-0.5 text-[11px] text-white/35">Color</span>
+        {COLOR_SWATCHES.map((s) => (
+          <button
+            key={s}
+            type="button"
+            title="Filter by color"
+            aria-label={`Filter apps by color swatch ${s}`}
+            aria-pressed={color === s}
+            onClick={() => setColor(color === s ? null : s)}
+            style={{ backgroundColor: s }}
+            className={`h-4 w-4 shrink-0 rounded-full border transition-transform duration-150 ${
+              color === s ? 'scale-125 border-white' : 'border-white/20 hover:scale-110'
+            }`}
+          />
+        ))}
+        {color && (
+          <button
+            type="button"
+            onClick={() => setColor(null)}
+            className="text-[11px] text-white/40 transition-colors hover:text-white/70"
+          >
+            clear
+          </button>
+        )}
+      </div>
+
+      {loading ? (
+        <div className="flex flex-wrap gap-2.5 py-1">
+          {Array.from({ length: 24 }).map((_, i) => (
+            <div key={i} className="h-11 w-11 shrink-0 animate-pulse rounded-xl border border-white/5 bg-white/[0.03]" />
+          ))}
+        </div>
+      ) : filtered.length === 0 ? (
+        <p className="py-4 text-[13px] text-white/35">No apps match your filters.</p>
+      ) : (
+        <div className="flex max-h-80 flex-wrap gap-2.5 overflow-y-auto py-1 pr-1">
+          {filtered.map((app) => (
+            <AppTile
+              key={app.slug}
+              app={app}
+              connected={connectedSlugs.has(app.slug)}
+              pending={pendingToolkit === app.slug}
+              onConnect={onConnect}
+              onDisconnect={onDisconnect}
+            />
+          ))}
+        </div>
+      )}
+
+      {loginRequiredFor && (
+        <p className="text-[12px] text-white/40">
+          <Link to="/login" className="text-accent-bright transition-colors hover:text-accent">
+            Log in
+          </Link>{' '}
+          to connect {loginRequiredApp?.name ?? loginRequiredFor}.
+        </p>
+      )}
     </div>
   );
 }

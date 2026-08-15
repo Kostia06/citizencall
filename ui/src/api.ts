@@ -5,9 +5,13 @@ import { mockAuthStore } from './auth/mockAuthStore';
 import type { AuthUser } from './auth/types';
 import { mockStoreStore } from './store/mockStore';
 import type { Connection, UserPrefs } from './store/types';
+import { APPS } from './store/apps';
+import type { ToolkitApp } from './store/apps';
 
 export { DEFAULT_PREFS } from './store/types';
 export type { Connection, UserPrefs, UserPrefsButton, FixedButtonAction } from './store/types';
+export type { ToolkitApp } from './store/apps';
+export { appColor, CATEGORIES, COLOR_SWATCHES } from './store/apps';
 
 // MOCK is on by default so the UI is fully demoable with zero backend —
 // flip VITE_MOCK=false to talk to a real Worker. See SPEC.md §13.
@@ -352,6 +356,24 @@ export const storeApi = {
       },
       () => mockStoreStore.disconnect(toolkit),
     );
+  },
+
+  /** Full connect-app catalog for the Connections grid — public (no auth
+   * needed to browse), so this hits the network directly rather than going
+   * through `authedFetch`/`withMockFallback`'s AuthError handling. Falls
+   * back to the bundled 100+ app catalog (`store/apps.ts`) in MOCK mode or
+   * whenever the live call fails, so the grid is always fully demoable. */
+  async toolkits(): Promise<{ toolkits: ToolkitApp[]; source: 'live' | 'mock' }> {
+    if (MOCK) return { toolkits: APPS, source: 'mock' };
+    try {
+      const res = await fetch(`${API_BASE}/api/toolkits`);
+      if (!res.ok) throw new Error(`GET /api/toolkits failed: ${res.status}`);
+      const body = (await res.json()) as { toolkits: ToolkitApp[]; source?: string };
+      return { toolkits: body.toolkits, source: body.source === 'mock' ? 'mock' : 'live' };
+    } catch (err) {
+      console.warn('[toolkits] backend unreachable, falling back to bundled app catalog', err);
+      return { toolkits: APPS, source: 'mock' };
+    }
   },
 
   /** Context-aware "next action" suggestion for the command bar's ghost
