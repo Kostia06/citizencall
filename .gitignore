@@ -11,9 +11,13 @@ __pycache__/
 venv/
 .env
 
-# Harness working artifacts (keep committed: *.example.json, funnel.json, results.json)
+# Harness working artifacts (keep committed: policy/results/funnel.json, sweep-log.jsonl)
 artifacts/catalog.json
 artifacts/candidates.json
+artifacts/warm_status.json
 harness/.cache/
+
+# Local tooling
+.claude/
 
 .DS_Store

@@ -1,0 +1,15 @@
+# Core
+numpy>=1.26
+scipy>=1.11
+requests>=2.31
+rank-bm25>=0.2.2
+python-dotenv>=1.0
+
+# Dev / test
+pytest>=8.0
+
+# Optional — dense-retrieval upgrade for retrieve.py. When not installed,
+# retrieve.py falls back to a deterministic numpy hashing-trick embedding, so
+# the pipeline runs fully offline without downloading a model. Uncomment for
+# closer-to-real semantic retrieval.
+# sentence-transformers>=2.7

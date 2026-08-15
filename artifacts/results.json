@@ -1,0 +1,190 @@
+{
+  "generatedAt": "2026-08-15T01:17:43.826050+00:00",
+  "perKind": [
+    {
+      "kind": "classify",
+      "promoted": "teknium/OpenHermes-2.5-Mistral-7B",
+      "accuracy": 1.0,
+      "ci": [
+        0.3424,
+        1.0
+      ],
+      "validity": 1.0,
+      "incumbent": "zai-org/GLM-5.2",
+      "heldInAccuracy": 1.0,
+      "heldOutAccuracy": 1.0,
+      "heldInToHeldOutDrop": 0.0,
+      "costEffective": 1e-06,
+      "eliminatedRound1And2": [
+        [
+          "google/gemma-2-9b-it",
+          "eliminated round 1 (paired diff vs leader)"
+        ],
+        [
+          "NousResearch/Hermes-3-Llama-3.1-8B",
+          "eliminated round 1 (paired diff vs leader)"
+        ],
+        [
+          "Qwen/Qwen3-8B",
+          "eliminated round 1 (paired diff vs leader)"
+        ],
+        [
+          "Qwen/Qwen3-4B-Base",
+          "eliminated round 1 (paired diff vs leader)"
+        ],
+        [
+          "Qwen/Qwen3-0.6B",
+          "eliminated round 2 (paired diff vs leader)"
+        ],
+        [
+          "mistralai/Mistral-7B-Instruct-v0.3",
+          "eliminated round 2 (paired diff vs leader)"
+        ],
+        [
+          "Qwen/Qwen3-14B",
+          "eliminated round 2 (paired diff vs leader)"
+        ]
+      ],
+      "n": 2
+    },
+    {
+      "kind": "extract_fields",
+      "promoted": null,
+      "accuracy": 0.6667,
+      "ci": [
+        0.0945,
+        0.9055
+      ],
+      "validity": 1.0,
+      "incumbent": "zai-org/GLM-5.2",
+      "heldInAccuracy": 1.0,
+      "heldOutAccuracy": 0.6667,
+      "heldInToHeldOutDrop": 0.3333,
+      "costEffective": 2e-06,
+      "eliminatedRound1And2": [
+        [
+          "Qwen/Qwen2.5-Coder-7B-Instruct",
+          "eliminated round 1 (paired diff vs leader)"
+        ],
+        [
+          "deepseek-ai/DeepSeek-V3-Lite",
+          "eliminated round 1 (paired diff vs leader)"
+        ],
+        [
+          "Qwen/Qwen3-8B",
+          "eliminated round 1 (paired diff vs leader)"
+        ],
+        [
+          "Qwen/Qwen3-4B-Base",
+          "eliminated round 1 (paired diff vs leader)"
+        ],
+        [
+          "ibm-granite/granite-3.1-8b-instruct",
+          "eliminated round 2 (paired diff vs leader)"
+        ],
+        [
+          "teknium/OpenHermes-2.5-Mistral-7B",
+          "eliminated round 2 (paired diff vs leader)"
+        ],
+        [
+          "Qwen/Qwen3-14B",
+          "eliminated round 2 (paired diff vs leader)"
+        ]
+      ],
+      "n": 2
+    },
+    {
+      "kind": "summarize",
+      "promoted": "Qwen/Qwen3-0.6B",
+      "accuracy": 0.5,
+      "ci": [
+        0.0945,
+        0.9055
+      ],
+      "validity": 1.0,
+      "incumbent": "zai-org/GLM-5.2",
+      "heldInAccuracy": 0.3333,
+      "heldOutAccuracy": 0.5,
+      "heldInToHeldOutDrop": -0.1667,
+      "costEffective": 2e-06,
+      "eliminatedRound1And2": [
+        [
+          "NousResearch/Hermes-3-Llama-3.1-8B",
+          "eliminated round 1 (paired diff vs leader)"
+        ],
+        [
+          "01-ai/Yi-1.5-9B-Chat",
+          "eliminated round 1 (paired diff vs leader)"
+        ],
+        [
+          "Qwen/Qwen3-4B-Base",
+          "eliminated round 1 (paired diff vs leader)"
+        ],
+        [
+          "Qwen/Qwen3-14B",
+          "eliminated round 1 (paired diff vs leader)"
+        ],
+        [
+          "mistralai/Mistral-7B-Instruct-v0.3",
+          "eliminated round 2 (paired diff vs leader)"
+        ],
+        [
+          "Qwen/Qwen3-8B",
+          "eliminated round 2 (paired diff vs leader)"
+        ],
+        [
+          "zai-org/GLM-4.7-Flash",
+          "eliminated round 2 (paired diff vs leader)"
+        ]
+      ],
+      "n": 2
+    },
+    {
+      "kind": "normalize",
+      "promoted": "meta-llama/Llama-3.1-8B-Instruct",
+      "accuracy": 1.0,
+      "ci": [
+        0.3424,
+        1.0
+      ],
+      "validity": 1.0,
+      "incumbent": "zai-org/GLM-5.2",
+      "heldInAccuracy": 1.0,
+      "heldOutAccuracy": 1.0,
+      "heldInToHeldOutDrop": 0.0,
+      "costEffective": 2e-06,
+      "eliminatedRound1And2": [
+        [
+          "meta-llama/Llama-3.1-8B",
+          "eliminated round 1 (paired diff vs leader)"
+        ],
+        [
+          "Qwen/Qwen3-1.7B",
+          "eliminated round 1 (paired diff vs leader)"
+        ],
+        [
+          "Qwen/Qwen3-0.6B",
+          "eliminated round 1 (paired diff vs leader)"
+        ],
+        [
+          "Qwen/Qwen3-4B-Base",
+          "eliminated round 1 (paired diff vs leader)"
+        ],
+        [
+          "Qwen/Qwen3-8B",
+          "eliminated round 2 (paired diff vs leader)"
+        ],
+        [
+          "TinyLlama/TinyLlama-1.1B-Chat",
+          "eliminated round 2 (paired diff vs leader)"
+        ],
+        [
+          "Qwen/Qwen3-14B",
+          "eliminated round 2 (paired diff vs leader)"
+        ]
+      ],
+      "n": 2
+    }
+  ],
+  "note": "Produced by harness/promote.py --offline using deterministic stub responses, not real Featherless calls. Run with --live snapshot/warmup + a real sweep for reportable numbers."
+}

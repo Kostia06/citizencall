@@ -1,0 +1,33 @@
+{
+  "stages": [
+    {
+      "label": "models catalogued",
+      "count": 30
+    },
+    {
+      "label": "tool-use-capable",
+      "count": 25
+    },
+    {
+      "label": "passed metadata prefilter",
+      "count": 100
+    },
+    {
+      "label": "retrieved (8 x kinds)",
+      "count": 32
+    },
+    {
+      "label": "reachable at sweep time",
+      "count": 20
+    },
+    {
+      "label": "survived round 1",
+      "count": 16
+    },
+    {
+      "label": "promoted",
+      "count": 3
+    }
+  ],
+  "note": "Offline-sample numbers, not the real 45,190/34,504 catalog crawl \u2014 those require `snapshot.py --live`. Download-distribution histogram requires hfDownloads on reachable vs unreachable candidates from a live warmup run; not computed on the offline stub path."
+}

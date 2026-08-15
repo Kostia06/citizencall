@@ -1,0 +1,76 @@
+{
+  "version": "v1-offline",
+  "generatedAt": "2026-08-15T01:17:43.826050+00:00",
+  "weights": {
+    "quality": 1.0,
+    "cost": 0.35
+  },
+  "ladders": {
+    "classify": [
+      "teknium/OpenHermes-2.5-Mistral-7B",
+      "zai-org/GLM-5.2"
+    ],
+    "extract_fields": [
+      "mistralai/Mistral-7B-Instruct-v0.3",
+      "zai-org/GLM-5.2"
+    ],
+    "summarize": [
+      "Qwen/Qwen3-0.6B",
+      "zai-org/GLM-5.2"
+    ],
+    "normalize": [
+      "meta-llama/Llama-3.1-8B-Instruct",
+      "zai-org/GLM-5.2"
+    ]
+  },
+  "quality": {
+    "teknium/OpenHermes-2.5-Mistral-7B": {
+      "classify": 1.0
+    },
+    "mistralai/Mistral-7B-Instruct-v0.3": {
+      "extract_fields": 0.6667
+    },
+    "Qwen/Qwen3-0.6B": {
+      "summarize": 0.5
+    },
+    "meta-llama/Llama-3.1-8B-Instruct": {
+      "normalize": 1.0
+    }
+  },
+  "qualityCI": {
+    "teknium/OpenHermes-2.5-Mistral-7B": {
+      "classify": [
+        0.3424,
+        1.0
+      ]
+    },
+    "mistralai/Mistral-7B-Instruct-v0.3": {
+      "extract_fields": [
+        0.0945,
+        0.9055
+      ]
+    },
+    "Qwen/Qwen3-0.6B": {
+      "summarize": [
+        0.0945,
+        0.9055
+      ]
+    },
+    "meta-llama/Llama-3.1-8B-Instruct": {
+      "normalize": [
+        0.3424,
+        1.0
+      ]
+    }
+  },
+  "baselines": {
+    "frontier": "zai-org/GLM-5.2",
+    "cheapDefault": "Qwen/Qwen3-4B"
+  },
+  "margin": {
+    "classify": 0.15,
+    "extract_fields": 0.15,
+    "summarize": 0.15,
+    "normalize": 0.15
+  }
+}
