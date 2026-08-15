@@ -4,12 +4,12 @@ import { buildScenario } from './mock/scenario';
 import { mockAuthStore } from './auth/mockAuthStore';
 import type { AuthUser } from './auth/types';
 import { mockStoreStore } from './store/mockStore';
-import type { Connection, UserPrefs } from './store/types';
+import type { Connection, ToolOverride, UserMcp, UserPrefs } from './store/types';
 import { APPS } from './store/apps';
 import type { ToolkitApp } from './store/apps';
 
 export { DEFAULT_PREFS } from './store/types';
-export type { Connection, UserPrefs, UserPrefsButton, FixedButtonAction } from './store/types';
+export type { Connection, UserPrefs, UserPrefsButton, FixedButtonAction, UserMcp, ToolOverride } from './store/types';
 export type { ToolkitApp } from './store/apps';
 export { CATEGORIES, TOP_CATEGORIES } from './store/apps';
 
@@ -379,6 +379,94 @@ export const storeApi = {
         return res.json();
       },
       () => mockStoreStore.suggest(context),
+    );
+  },
+
+  // ---- Custom MCPs (user_mcps) — Settings §"Custom MCPs". The live list
+  // route only ever returns id/name/enabled/createdAt (config_json — url/
+  // headers — isn't projected), so `url`/`headers` on a row from `listMcps`
+  // are only ever populated right after create/update, in this same session.
+  // CustomMcpsPanel keeps its own copy rather than re-fetching to avoid
+  // losing them on a background refresh.
+  async listMcps(authedFetch: AuthedFetch): Promise<UserMcp[]> {
+    return withMockFallback(
+      async () => {
+        const res = await authedFetch('/api/mcps');
+        if (!res.ok) throw new AuthError(await readJsonError(res), res.status);
+        return res.json();
+      },
+      () => mockStoreStore.listMcps(),
+    );
+  },
+
+  async createMcp(
+    authedFetch: AuthedFetch,
+    input: { name: string; url: string; headers?: Record<string, string> },
+  ): Promise<UserMcp> {
+    return withMockFallback(
+      async () => {
+        const res = await authedFetch('/api/mcps', {
+          method: 'POST',
+          body: JSON.stringify({ name: input.name, config: { url: input.url, headers: input.headers ?? {} } }),
+        });
+        if (!res.ok) throw new AuthError(await readJsonError(res), res.status);
+        const { id } = (await res.json()) as { id: string };
+        return { id, name: input.name, url: input.url, headers: input.headers, enabled: true, createdAt: Date.now() };
+      },
+      () => mockStoreStore.createMcp(input),
+    );
+  },
+
+  async updateMcp(
+    authedFetch: AuthedFetch,
+    id: string,
+    patch: { name?: string; url?: string; headers?: Record<string, string>; enabled?: boolean },
+  ): Promise<void> {
+    return withMockFallback(
+      async () => {
+        const body: Record<string, unknown> = {};
+        if (patch.name !== undefined) body.name = patch.name;
+        if (patch.enabled !== undefined) body.enabled = patch.enabled;
+        if (patch.url !== undefined) body.config = { url: patch.url, headers: patch.headers ?? {} };
+        const res = await authedFetch(`/api/mcps/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(body) });
+        if (!res.ok && res.status !== 204) throw new AuthError(await readJsonError(res), res.status);
+      },
+      async () => {
+        await mockStoreStore.updateMcp(id, patch);
+      },
+    );
+  },
+
+  async deleteMcp(authedFetch: AuthedFetch, id: string): Promise<void> {
+    return withMockFallback(
+      async () => {
+        const res = await authedFetch(`/api/mcps/${encodeURIComponent(id)}`, { method: 'DELETE' });
+        if (!res.ok && res.status !== 204) throw new AuthError(await readJsonError(res), res.status);
+      },
+      () => mockStoreStore.deleteMcp(id),
+    );
+  },
+
+  // ---- Per-app tool overrides (user_tools) — Settings §Connections tile
+  // customization panel.
+  async listToolOverrides(authedFetch: AuthedFetch): Promise<ToolOverride[]> {
+    return withMockFallback(
+      async () => {
+        const res = await authedFetch('/api/tools');
+        if (!res.ok) throw new AuthError(await readJsonError(res), res.status);
+        return res.json();
+      },
+      () => mockStoreStore.listToolOverrides(),
+    );
+  },
+
+  async setToolOverride(authedFetch: AuthedFetch, toolkit: string, tool: string, enabled: boolean): Promise<void> {
+    return withMockFallback(
+      async () => {
+        const res = await authedFetch('/api/tools', { method: 'PATCH', body: JSON.stringify({ toolkit, tool, enabled }) });
+        if (!res.ok && res.status !== 204) throw new AuthError(await readJsonError(res), res.status);
+      },
+      () => mockStoreStore.setToolOverride(toolkit, tool, enabled),
     );
   },
 };

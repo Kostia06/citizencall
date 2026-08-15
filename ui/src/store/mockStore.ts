@@ -3,10 +3,13 @@
 // or the real Worker being unreachable). State lives only for the page's
 // lifetime. See docs/superpowers/specs/2026-08-14-web-ui-design.md §4.
 import { DEFAULT_PREFS } from './types';
-import type { Connection, UserPrefs } from './types';
+import type { Connection, ToolOverride, UserMcp, UserPrefs } from './types';
 
 let prefs: UserPrefs = clone(DEFAULT_PREFS);
 const connections = new Map<string, Connection>();
+const mcps = new Map<string, UserMcp>();
+// keyed `${toolkit}:${tool}`
+const toolOverrides = new Map<string, ToolOverride>();
 
 function clone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
@@ -59,5 +62,41 @@ export const mockStoreStore = {
     const last = context[context.length - 1] ?? '';
     const rule = SUGGESTION_RULES.find((r) => r.pattern.test(last));
     return { suggestion: rule?.suggestion ?? DEFAULT_SUGGESTION };
+  },
+
+  async listMcps(): Promise<UserMcp[]> {
+    return [...mcps.values()].sort((a, b) => a.createdAt - b.createdAt).map(clone);
+  },
+  async createMcp(input: { name: string; url: string; headers?: Record<string, string> }): Promise<UserMcp> {
+    const mcp: UserMcp = {
+      id: crypto.randomUUID(),
+      name: input.name,
+      url: input.url,
+      headers: input.headers,
+      enabled: true,
+      createdAt: Date.now(),
+    };
+    mcps.set(mcp.id, mcp);
+    return clone(mcp);
+  },
+  async updateMcp(
+    id: string,
+    patch: { name?: string; url?: string; headers?: Record<string, string>; enabled?: boolean },
+  ): Promise<UserMcp | null> {
+    const existing = mcps.get(id);
+    if (!existing) return null;
+    const next: UserMcp = { ...existing, ...patch };
+    mcps.set(id, next);
+    return clone(next);
+  },
+  async deleteMcp(id: string): Promise<void> {
+    mcps.delete(id);
+  },
+
+  async listToolOverrides(): Promise<ToolOverride[]> {
+    return [...toolOverrides.values()].map(clone);
+  },
+  async setToolOverride(toolkit: string, tool: string, enabled: boolean): Promise<void> {
+    toolOverrides.set(`${toolkit}:${tool}`, { toolkit, tool, enabled });
   },
 };

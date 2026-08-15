@@ -57,3 +57,26 @@ export interface Connection {
   status: 'active' | 'revoked' | 'error';
   connectedAt: number;
 }
+
+/** A user-added custom MCP server — worker table `user_mcps` (id/name/
+ * enabled/createdAt persist; `url`/`headers` live inside `config_json` but
+ * the list route only ever returns id/name/enabled/createdAt, so a live
+ * (non-MOCK) reload can't recover them — callers keep their own optimistic
+ * copy after create/edit. See CustomMcpsPanel.tsx. */
+export interface UserMcp {
+  id: string;
+  name: string;
+  enabled: boolean;
+  createdAt: number;
+  url?: string;
+  headers?: Record<string, string>;
+}
+
+/** Per-user tool enable/disable override — worker table `user_tools`.
+ * `tool: '*'` is this UI's convention for "every tool in this toolkit" on
+ * toolkits with no known static tool list (ToolCustomizePanel.tsx). */
+export interface ToolOverride {
+  toolkit: string;
+  tool: string;
+  enabled: boolean;
+}
