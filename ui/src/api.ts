@@ -446,6 +446,13 @@ export const storeApi = {
       const res = await fetch(`${API_BASE}/api/toolkits`);
       if (!res.ok) throw new Error(`GET /api/toolkits failed: ${res.status}`);
       const body = (await res.json()) as { toolkits: ToolkitApp[]; source?: string };
+      // The worker serves a ~100-app fallback list when ITS live Composio
+      // fetch fails (and caches it for 15 min). The bundled catalog here IS
+      // the full real Composio list (1,201) and /api/connect works for any
+      // slug — so never show the user fewer apps than the bundle carries.
+      if (body.toolkits.length < APPS.length) {
+        return { toolkits: APPS, source: 'mock' };
+      }
       return { toolkits: body.toolkits, source: body.source === 'mock' ? 'mock' : 'live' };
     } catch (err) {
       console.warn('[toolkits] backend unreachable, falling back to bundled app catalog', err);

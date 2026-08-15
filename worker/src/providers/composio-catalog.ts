@@ -39,6 +39,7 @@ interface ComposioToolkitItem {
 
 interface ComposioToolkitsResponse {
   items: ComposioToolkitItem[];
+  next_cursor?: string | null;
 }
 
 function normalize(item: ComposioToolkitItem): Toolkit {
@@ -51,12 +52,24 @@ function normalize(item: ComposioToolkitItem): Toolkit {
 }
 
 async function fetchLiveCatalog(apiKey: string): Promise<Toolkit[]> {
-  const res = await fetch(`${COMPOSIO_API_BASE}/api/v3.1/toolkits?limit=${FETCH_LIMIT}`, {
-    headers: { 'x-api-key': apiKey },
-  });
-  if (!res.ok) throw new Error(`Composio toolkits ${res.status}: ${await res.text()}`);
-  const body = (await res.json()) as ComposioToolkitsResponse;
-  return body.items.map(normalize);
+  // Composio caps each page at 100 — walk next_cursor for the FULL catalog
+  // (~1,200 toolkits, ~13 pages). Bounded hard at 25 pages as a runaway
+  // guard; a partial walk still throws so the caller falls back rather than
+  // caching a silently-truncated list for 15 minutes.
+  const all: Toolkit[] = [];
+  let cursor: string | null = null;
+  for (let page = 0; page < 25; page++) {
+    const url =
+      `${COMPOSIO_API_BASE}/api/v3.1/toolkits?limit=${FETCH_LIMIT}` +
+      (cursor ? `&cursor=${encodeURIComponent(cursor)}` : '');
+    const res = await fetch(url, { headers: { 'x-api-key': apiKey } });
+    if (!res.ok) throw new Error(`Composio toolkits ${res.status}: ${await res.text()}`);
+    const body = (await res.json()) as ComposioToolkitsResponse;
+    all.push(...body.items.map(normalize));
+    cursor = body.next_cursor ?? null;
+    if (!cursor) return all;
+  }
+  return all; // 25 pages = 2,500 apps — more than the catalog holds today
 }
 
 export async function getToolkitCatalog(env: Env): Promise<ToolkitCatalog> {
