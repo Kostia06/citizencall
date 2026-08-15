@@ -86,6 +86,21 @@ export const storeApi = {
     );
   },
 
+  /** Context-aware "next action" suggestion for the command bar's ghost
+   * chip — `context` is the last few user prompts, most recent last. Mirrors
+   * ui/src/api.ts's `storeApi.suggest`. Callers (CommandBar) treat any
+   * rejection as "no suggestion" and fail silent. */
+  async suggest(authedFetch: AuthedFetch, context: string[]): Promise<{ suggestion: string }> {
+    return withMockFallback(
+      async () => {
+        const res = await authedFetch('/api/suggest', { method: 'POST', body: JSON.stringify({ context }) });
+        if (!res.ok) throw new AuthError(await readJsonError(res), res.status);
+        return res.json();
+      },
+      () => mockStoreStore.suggest(context),
+    );
+  },
+
   /** Public catalog browse — no auth needed. Falls back to the bundled
    * ~1,201-app Composio catalog in MOCK mode or whenever the live call
    * fails, mirroring ui/src/api.ts's `toolkits()`. */

@@ -15,6 +15,17 @@ function mergePrefs(base: UserPrefs, patch: Partial<UserPrefs>): UserPrefs {
   };
 }
 
+// Mirrors ui/src/store/mockStore.ts's SUGGESTION_RULES — canned
+// context-aware "next action" suggestions keyed off the most recent prompt,
+// so the demo still feels context-aware with zero backend.
+const SUGGESTION_RULES: { pattern: RegExp; suggestion: string }[] = [
+  { pattern: /pull request|\bpr\b/i, suggestion: 'Check CI status on those pull requests and flag any failures.' },
+  { pattern: /email|inbox|gmail/i, suggestion: 'Draft replies to the flagged emails from this week.' },
+  { pattern: /summar/i, suggestion: 'Post that summary as a comment on the tracking issue.' },
+  { pattern: /issue|bug/i, suggestion: 'Triage the newest open issues by severity.' },
+];
+const DEFAULT_SUGGESTION = 'Summarize what changed since your last run.';
+
 export const mockStoreStore = {
   async getSettings(): Promise<UserPrefs> {
     return { ...prefs };
@@ -32,5 +43,10 @@ export const mockStoreStore = {
   },
   async disconnect(toolkit: string): Promise<void> {
     connections.delete(toolkit);
+  },
+  async suggest(context: string[]): Promise<{ suggestion: string }> {
+    const last = context[context.length - 1] ?? '';
+    const rule = SUGGESTION_RULES.find((r) => r.pattern.test(last));
+    return { suggestion: rule?.suggestion ?? DEFAULT_SUGGESTION };
   },
 };

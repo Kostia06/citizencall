@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { RefreshControl, StyleSheet, Text, View } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import * as WebBrowser from 'expo-web-browser';
 import { Screen } from '../../src/components/ui/Screen';
@@ -21,11 +21,21 @@ export default function ConnectionsScreen() {
   const [category, setCategory] = useState<string | null>(null);
   const [connected, setConnected] = useState<Record<string, boolean>>({});
   const [busy, setBusy] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
 
   const refreshConnections = useCallback(async () => {
     const list = await storeApi.listConnections(authedFetch).catch(() => []);
     setConnected(Object.fromEntries(list.filter((c) => c.status === 'active').map((c) => [c.toolkit, true])));
   }, [authedFetch]);
+
+  const handlePullToRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await refreshConnections();
+    } finally {
+      setRefreshing(false);
+    }
+  }, [refreshConnections]);
 
   useEffect(() => {
     refreshConnections();
@@ -76,6 +86,9 @@ export default function ConnectionsScreen() {
         keyExtractor={(app) => app.slug}
         numColumns={3}
         contentContainerStyle={styles.grid}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={handlePullToRefresh} tintColor={colors.textTertiary} />
+        }
         renderItem={({ item }) => (
           <View style={styles.cell}>
             <AppTile app={item} connected={Boolean(connected[item.slug])} busy={busy === item.slug} onPress={() => handlePress(item)} />
