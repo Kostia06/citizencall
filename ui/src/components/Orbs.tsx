@@ -11,6 +11,12 @@ interface OrbsProps {
   policyVersion?: string;
   currentUser: string;
   onToggleUser(): void;
+  /** When supplied, the policy orb calls this instead of routing to /roster.
+   * The Electron overlay uses it to open the roster in the real browser —
+   * navigating a 720px panel to a full page would replace the search field
+   * and strand the user there. Browser routes leave this undefined and keep
+   * the plain <Link>. */
+  onOpenPolicy?(): void;
 }
 
 const HALO = 40; // px — cursor-proximity radius that triggers magnetism
@@ -120,8 +126,12 @@ export default function Orbs({
   policyVersion,
   currentUser,
   onToggleUser,
+  onOpenPolicy,
 }: OrbsProps) {
   const [userSpun, setUserSpun] = useState(false);
+  const policyOrbProps = onOpenPolicy
+    ? ({ as: 'button', onClick: onOpenPolicy } as const)
+    : ({ as: 'link', to: '/roster' } as const);
 
   return (
     <div className="flex items-center gap-3">
@@ -135,7 +145,7 @@ export default function Orbs({
         <GmailIcon />
       </Orb>
 
-      <Orb as="link" to="/roster" className={`${orbBase} text-white/70`} title="Policy — open roster">
+      <Orb {...policyOrbProps} className={`${orbBase} text-white/70`} title="Policy — open roster">
         <span className="text-lg leading-none">◆</span>
         {policyVersion && (
           <span className="absolute -bottom-1 -right-1 rounded-full bg-accent px-1.5 py-0.5 text-[9px] font-bold leading-none text-black">
