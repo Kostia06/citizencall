@@ -141,7 +141,9 @@ export default function Bar() {
     storeApi
       .connect(authedFetch, slug)
       .then(({ url }) => {
-        if (url && !MOCK) window.open(url, '_blank', 'noopener');
+        // Never open a stub-mode link (worker without a Composio key) — the
+        // domain doesn't exist; the connect is already faked server-side.
+        if (url && !MOCK && !url.includes('composio.stub')) window.open(url, '_blank', 'noopener');
         return storeApi.listConnections(authedFetch);
       })
       .then((list) => setConnections(list))

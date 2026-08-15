@@ -119,7 +119,14 @@ export default function Settings() {
     try {
       const { url } = await storeApi.connect(authedFetch, toolkit);
       await refreshConnections();
-      if (url && url !== '#') window.location.assign(url);
+      // `composio.stub` links come from a worker running WITHOUT its
+      // Composio key (stub mode) — never send a real browser there, it's a
+      // dead domain. Treat it as the demo connect it is.
+      if (url && url !== '#' && !url.includes('composio.stub')) {
+        window.location.assign(url);
+      } else if (url?.includes('composio.stub')) {
+        push(`${toolkit} connected (demo mode — backend has no Composio key)`);
+      }
     } catch (err) {
       if (err instanceof AuthError && err.status === 401) {
         setConnectLoginRequired(toolkit);
