@@ -123,3 +123,20 @@ it('password reset happy path: new password logs in and old sessions are revoked
   const oldRefresh = await app.request('/auth/refresh', json({ refreshToken: oldRefreshToken }, { 'X-Client': 'native' }), env);
   expect(oldRefresh.status).toBe(401);
 });
+
+it('resend-verification returns the identical generic body for an existing and a non-existent email (no enumeration)', async () => {
+  const email = 'resend-existing@example.com';
+  const password = 'a-perfectly-fine-passphrase';
+  await app.request('/auth/signup', json({ email, password }), env);
+
+  const existing = await app.request('/auth/resend-verification', json({ email }), env);
+  expect(existing.status).toBe(200);
+  const existingBody = await existing.json<any>();
+
+  const missing = await app.request('/auth/resend-verification', json({ email: 'nobody-resend@example.com' }), env);
+  expect(missing.status).toBe(200);
+  const missingBody = await missing.json<any>();
+
+  expect(existingBody).toEqual({ ok: true });
+  expect(missingBody).toEqual({ ok: true });
+});

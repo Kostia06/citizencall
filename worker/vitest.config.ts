@@ -16,7 +16,14 @@ export default defineWorkersConfig({
           compatibilityFlags: ['nodejs_compat'],
           d1Databases: ['DB'],
           durableObjects: { RUN: 'RunDO' },
-          bindings: { DEMO_USERS: 'demo_kos,demo_teammate' },
+          bindings: {
+            DEMO_USERS: 'demo_kos,demo_teammate',
+            // Fixed 32+ byte test secret. Required now that auth fails
+            // closed instead of falling back to a public 'dev-secret'
+            // constant. DEV_AUTH_BYPASS is intentionally NOT set here —
+            // the dev-bypass negative test relies on it being absent.
+            AUTH_JWT_SECRET: 'test-jwt-secret-value-at-least-32-bytes-long',
+          },
         },
       },
     },

@@ -11,6 +11,7 @@ import {
 import { sendResetEmail, sendVerifyEmail } from './email';
 import { checkAndIncrement } from './throttle';
 import { requireAuth } from './middleware';
+import { authSecret } from './secret';
 
 type Vars = { authUserId?: string; authSessionId?: string; authEmailVerified?: boolean };
 export const authRoutes = new Hono<{ Bindings: Env; Variables: Vars }>();
@@ -23,7 +24,7 @@ const clientIp = (c: any) => c.req.header('CF-Connecting-IP') ?? 'unknown';
 async function issueTokens(c: any, userId: string, sessionArgs: { userAgent: string | null; ip: string | null }) {
   const user = await getUserById(c.env.DB, userId);
   const { sessionId, refreshToken } = await createSession(c.env.DB, { userId, now: now(), ...sessionArgs });
-  const accessToken = await signAccessToken(c.env.AUTH_JWT_SECRET ?? 'dev-secret', {
+  const accessToken = await signAccessToken(authSecret(c.env), {
     sub: userId, sid: sessionId, emailVerified: user!.emailVerified,
   });
   if (!isNative(c)) {
@@ -70,6 +71,21 @@ authRoutes.post('/verify', async (c) => {
   return c.json({ ok: true });
 });
 
+authRoutes.post('/resend-verification', async (c) => {
+  const throttle = await checkAndIncrement(c.env.DB, `resend:ip:${clientIp(c)}`, now(), { windowMs: 3600000, max: 10 });
+  if (!throttle.allowed) return c.json({ error: 'Too many attempts.' }, 429);
+
+  const { email } = await c.req.json().catch(() => ({}));
+  if (typeof email === 'string') {
+    const user = await getUserByEmail(c.env.DB, email);
+    if (user && !user.emailVerified) {
+      const token = await createEmailToken(c.env.DB, { userId: user.id, type: 'verify', now: now(), ttlMs: 24 * 3600000 });
+      await sendVerifyEmail(c.env, user.email, `${c.env.APP_URL ?? ''}/verify?token=${token}`);
+    }
+  }
+  return c.json({ ok: true }); // always generic, no enumeration
+});
+
 authRoutes.post('/login', async (c) => {
   const { email, password } = await c.req.json().catch(() => ({}));
   if (typeof email !== 'string' || typeof password !== 'string') return c.json({ error: GENERIC_LOGIN_ERR }, 401);
@@ -92,7 +108,7 @@ authRoutes.post('/refresh', async (c) => {
   const result = await rotateSession(c.env.DB, token, now());
   if (result === 'invalid' || result === 'reused') return c.json({ error: 'Session expired.' }, 401);
   const user = await getUserById(c.env.DB, result.userId);
-  const accessToken = await signAccessToken(c.env.AUTH_JWT_SECRET ?? 'dev-secret', {
+  const accessToken = await signAccessToken(authSecret(c.env), {
     sub: result.userId, sid: result.sessionId, emailVerified: user!.emailVerified,
   });
   if (!isNative(c)) {

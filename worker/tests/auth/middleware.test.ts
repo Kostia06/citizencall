@@ -1,6 +1,7 @@
 import { env } from 'cloudflare:test';
 import { beforeAll, expect, it } from 'vitest';
 import { applyAuthSchema } from '../../src/db';
+import { signAccessToken } from '../../src/auth/jwt';
 import app from '../../src/index';
 
 beforeAll(async () => { await applyAuthSchema(env.DB); });
@@ -28,6 +29,27 @@ it('X-Dev-User header alone (no DEV_AUTH_BYPASS) does not bypass auth', async ()
   // bypass cannot be triggered by header alone in an environment where the
   // flag isn't explicitly enabled (i.e. production).
   const res = await app.request('/auth/me', { headers: { 'X-Dev-User': 'someone' } }, env);
+  expect(res.status).toBe(401);
+});
+
+it('DEV_AUTH_BYPASS="false" + X-Dev-User does not bypass auth', async () => {
+  // Guards against the truthiness footgun: the string "false" must not be
+  // treated as enabled. Only the exact string "true" may bypass.
+  const res = await app.request(
+    '/auth/me',
+    { headers: { 'X-Dev-User': 'someone' } },
+    { ...env, DEV_AUTH_BYPASS: 'false' }
+  );
+  expect(res.status).toBe(401);
+});
+
+it('a token signed with the old "dev-secret" fallback is rejected', async () => {
+  // Proves the public-constant fallback is gone: forging a token with the
+  // literal string that used to be the default secret must not work.
+  const forged = await signAccessToken('dev-secret', {
+    sub: 'forged-user', sid: 'forged-session', emailVerified: true,
+  });
+  const res = await app.request('/auth/me', { headers: { Authorization: `Bearer ${forged}` } }, env);
   expect(res.status).toBe(401);
 });
 
