@@ -36,7 +36,9 @@ before starting work; update it when you finish.
 - [ ] Measure `baselineCostUsd` offline per demo request (worker uses a live approximation) — SPEC §10.
 - [ ] Seed demo data: burner Gmail (5 emails) + repo with a week of commits — SPEC §16; per-app Composio auth-configs now auto-create, only the demo content is missing.
 - [ ] Film the demo in Chrome (voice), roster cold-open first — SPEC §15.
-- [ ] Merge `feature/ui` → `main` (everything above lives on `feature/ui`; `main` is at the wave-1 fast-forward).
+- [ ] Package the desktop overlay (`electron-builder`) — it currently loads the Vite dev server. A packaged build also needs a production load path: `BrowserRouter` doesn't survive `file://`, so either a custom protocol handler or `HashRouter`.
+- [ ] Desktop overlay has no tray icon and no Dock icon, so the only way to quit is the launching terminal.
+- [ ] Verify the desktop overlay visually + drive its controls — every check so far was through the browser at `/spotlight`; the Electron window itself has never been seen (no Screen Recording permission in the agent's terminal).
 
 ## Backlog
 
@@ -75,6 +77,15 @@ before starting work; update it when you finish.
 - [x] 2026-08-15 — **Featherless-live bar by default** (`VITE_MOCK=true` = explicit mock; scripted fallback only when backend unreachable); Vite dev proxy `/api|/auth|/oauth` → :8787; fixed `/auth/*` missing from `run_worker_first` (405s), single-flight refresh (StrictMode rotation race), SSE close on `run_end`
 - [x] 2026-08-15 — **Full paginated catalog + global D1 cache**: worker walks all ~13 Composio pages (1,209 apps) and stores ONE shared `toolkit_catalog` row distributed to every user/isolate (fresh process: 25ms, zero Composio calls); stale row beats fallback
 - [x] 2026-08-15 — Worker suite **33 files / 166 tests green**; all waves live-verified in-browser and pushed (`feature/ui @ 09f5f9d`)
+- [x] 2026-08-15 — **macOS Spotlight overlay** (`desktop/`, SPEC §3 `desktop/main.js`): frameless always-on-top panel showing only the bar, ⌥Space global hotkey (⌘Space is macOS's and unregisterable), sizes to content off the active display's work area, Esc/blur dismiss, no Dock icon. Shell around a new `/spotlight` route — reuses CommandBar/Orbs/ConversationTurn rather than reimplementing. Window draws no backdrop (native vibrancy + shadow both paint the window RECT, which boxed the floating pill); the pill carries its own translucency/shadow in CSS. `UNDERSTUDY_VIBRANCY=1` opts back in. Probes :5173–5177 and attaches only to the dev server titled `Understudy`.
+- [x] 2026-08-15 — `CommandBar` gains `variant="spotlight"` (suppresses placeholder copy, suggestion list, ghost next-action, and the suggest fetch); `Orbs` gains optional `onOpenRoute` so route orbs open in the real browser instead of navigating a 720px panel and stranding the user. Default variant unchanged — browser routes verified unregressed.
+- [x] 2026-08-15 — **Consolidated all branches into `main`** (`bf3278d`): `feature/ui` fast-forward (36), `progression` via `--allow-unrelated-histories` (orphan history, this file), `desktop-spotlight` merged with 3 conflicts resolved in favour of the chat rewrite — the branch's hardcoded four-orb component was dropped and `Spotlight.tsx` rewritten against `conversationReducer`/`ConversationTurn`/`useAuth`.
+
+### Known gaps in the above
+
+- **Voice does not work in the Electron shell** — SPEC §7.3. `webkitSpeechRecognition` throws `network` inside Electron (no Google Speech key shipped). Note the worker now has a real ElevenLabs `/api/stt` proxy, so routing the overlay's mic through that is the obvious fix; until then film voice in Chrome and the hotkey beat separately.
+- **`worker/` tests have not run in the agent's environment** — `pnpm install` is refused by the `minimumReleaseAge` supply-chain policy (`@cloudflare/workers-types` published inside the cutoff). The 166 green tests above are from the `feature/ui` author's run, not re-verified post-merge.
+- `/roster` renders empty without `wrangler dev` on :8787 (the Vite dev proxy 500s). Pre-existing; reproduced identically on `584e8ee`.
 
 ## Blocked
 
