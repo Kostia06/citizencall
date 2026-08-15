@@ -153,6 +153,13 @@ export async function runPipeline(
     );
     hops.push(...result.hops);
     toolCalls.push(...result.toolCalls);
+    // Surface the actual model reply in the transcript — the trace used to
+    // show only cost/verdict cards, so "say hi" answered invisibly. The
+    // LAST sub-task's output is the user-facing answer; earlier sub-tasks'
+    // outputs are intermediate and stay internal (dependency threading).
+    if (subTask === plan.subTasks[plan.subTasks.length - 1] && result.output.trim()) {
+      record({ t: 'answer', subTaskId: subTask.id, text: result.output.slice(0, 4000) });
+    }
     priorOutputs.set(subTask.id, { content: result.output, toolDerived: result.toolDerived });
     cacheHitCount += result.hops.filter((h) => h.cacheHit !== 'none').length;
   }

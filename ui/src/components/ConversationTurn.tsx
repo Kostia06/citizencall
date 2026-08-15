@@ -50,6 +50,21 @@ export default function ConversationTurn({
       {gate && (
         <ConnectionGateCard gate={gate} runId={turn.trace.runId} authedFetch={authedFetch} />
       )}
+      {turn.trace.answerText && (
+        <motion.div
+          initial={reduceMotion ? { opacity: 0 } : { opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={reduceMotion ? entranceStandardReduced : entranceStandard}
+          className="mx-auto mt-4 w-full max-w-2xl px-1"
+        >
+          {/* The actual reply — left-aligned assistant bubble, the thing the
+              user came for; the trace above is the receipts. */}
+          <div className="mb-1.5 text-[10px] uppercase tracking-wide text-white/25">understudy</div>
+          <div className="max-w-[92%] whitespace-pre-wrap rounded-2xl rounded-bl-md border border-accent/20 bg-accent/[0.05] px-4 py-3 text-[13.5px] leading-relaxed text-white/90">
+            {turn.trace.answerText}
+          </div>
+        </motion.div>
+      )}
     </motion.div>
   );
 }

@@ -102,9 +102,23 @@ export async function decompose(
     return { plan: rekeyPlan(near.plan), cacheHit: true, cacheKind: 'semantic' };
   }
 
-  const plan = (await modelPlan(env, policy, normalizedText, extraToolkits)) ?? heuristicPlan(normalizedText);
+  // FAST PATH — a short prompt with no tool signal doesn't deserve an
+  // 18-second frontier planning call ("say hi" measured 18.1s of planning
+  // for a 1-sub-task plan the heuristic produces identically in ~0ms).
+  // Anything tool-shaped (hint regexes, a mentioned/MCP toolkit name) still
+  // gets the real planner.
+  const plan = isTrivialPrompt(normalizedText, extraToolkits)
+    ? heuristicPlan(normalizedText)
+    : ((await modelPlan(env, policy, normalizedText, extraToolkits)) ?? heuristicPlan(normalizedText));
   await putPlanIndexed(db, key, plan);
   return { plan, cacheHit: false };
+}
+
+function isTrivialPrompt(text: string, extraToolkits: string[]): boolean {
+  if (text.length >= 140) return false;
+  if (TOOL_HINTS.some((h) => h.pattern.test(text))) return false;
+  const lower = text.toLowerCase();
+  return !extraToolkits.some((t) => lower.includes(t.toLowerCase()));
 }
 
 // Returns null (not throws) on any failure so the caller falls back to the

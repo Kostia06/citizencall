@@ -100,6 +100,7 @@ export type TraceEvent =
   | { t: 'escalate'; from: string; to: string; reason: Verdict }
   // Connection-required pause: the run is waiting for the user to connect a
   // toolkit (or skip). Status stays 'running'; run_resumed always follows.
+  | { t: 'answer'; subTaskId: string; text: string }
   | { t: 'connection_required'; toolkit: string; subTaskId: string }
   | { t: 'run_resumed'; toolkit: string; skipped: boolean }
   | {

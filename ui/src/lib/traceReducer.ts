@@ -33,6 +33,8 @@ export interface TraceState {
   subTaskOrder: string[];
   rungsBySubTask: Record<string, RungState[]>;
   lastToolCall?: { toolkit: string; tool: string; at: number };
+  /** The final sub-task's model output — the user-visible reply bubble. */
+  answerText?: string;
   connectionGate?: ConnectionGate;
   runEnd?: { totalCostUsd: number; totalMs: number; baselineCostUsd: number; savingsPct: number };
   error?: string;
@@ -154,6 +156,9 @@ export function traceReducer(state: TraceState, event: TraceEvent): TraceState {
         escalateTick: state.escalateTick + 1,
       };
     }
+
+    case 'answer':
+      return { ...state, answerText: event.text };
 
     case 'connection_required':
       return {
