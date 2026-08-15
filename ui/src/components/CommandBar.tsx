@@ -333,9 +333,18 @@ export default function CommandBar({
     if (e.key === 'Enter') {
       if (e.shiftKey) return; // newline — let the textarea handle it
       e.preventDefault();
+      // Selecting a suggestion FILLS the input so it can be seen/edited,
+      // rather than running immediately — a second Enter runs it.
+      if (showSuggestions && highlight >= 0) {
+        const picked = filtered[highlight];
+        if (picked !== undefined) {
+          setValue(picked);
+          setHighlight(-1);
+        }
+        return;
+      }
       const bypassCache = e.metaKey || e.ctrlKey;
-      const text = showSuggestions && highlight >= 0 ? filtered[highlight] : value;
-      if (text !== undefined) runNow(text, bypassCache);
+      if (value.trim().length > 0) runNow(value, bypassCache);
     }
   }
 
@@ -448,7 +457,11 @@ export default function CommandBar({
                   key={s}
                   type="button"
                   onMouseDown={(e) => e.preventDefault()}
-                  onClick={() => runNow(s, false)}
+                  onClick={() => {
+                    setValue(s);
+                    setHighlight(-1);
+                    textareaRef.current?.focus();
+                  }}
                   onMouseEnter={() => setHighlight(i)}
                   className={`relative block w-full truncate px-4 py-2.5 text-left text-[13px] transition-colors ${
                     i === highlight ? 'text-white' : 'text-white/55 hover:bg-white/5'
