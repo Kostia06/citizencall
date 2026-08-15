@@ -18,7 +18,13 @@ import { callFeatherless } from '../providers/featherless';
 import type { Plan, Policy, SubTask, TaskKind } from '../types';
 
 const MAX_SUBTASKS = 4;
-const MAX_TOKENS = 384;
+// The planner runs on the frontier baseline, which is a reasoning model
+// (GLM-5.2): it emits a `reasoning` block before `content`, and a tight cap
+// yields finish_reason=length with EMPTY content — measured live 2026-08-15
+// (256 → empty; ~1000 reasoning tokens observed on a short prompt). A cut-off
+// planner falls back to the heuristic, but the headroom makes the real
+// planner actually run. max_tokens is a cap; cost follows actual usage.
+const MAX_TOKENS = 2048;
 
 const TOOL_HINTS: ReadonlyArray<{ pattern: RegExp; toolkit: string; tool: string }> = [
   { pattern: /\b(commit|repo|repository|pull request|\bpr\b)\b/i, toolkit: 'github', tool: 'list_commits' },

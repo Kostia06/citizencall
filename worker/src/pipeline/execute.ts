@@ -82,6 +82,20 @@ const SYSTEM_PROMPT_BY_KIND: Record<TaskKind, string> = {
   normalize: 'Clean up this messy transcript into one clear instruction.',
 };
 
+// The frontier generalist (GLM-5.2) is a REASONING model: it spends its
+// budget on a `reasoning` block before any `content` appears. Measured live
+// (2026-08-15): at max_tokens=256 it returns finish_reason=length with EMPTY
+// content (fail_empty); at 1024 it finishes reasoning and answers, but a live
+// run measured 1005 completion tokens — too close to the cap. 2048 buys real
+// margin; max_tokens is a cap, cost is actual usage, so the headroom only
+// pays for tokens actually produced.
+const REASONING_HEADROOM_TOKENS = 2048;
+
+function maxTokensFor(policy: Policy, model: ModelCandidate, kind: TaskKind): number {
+  const base = MAX_TOKENS_BY_KIND[kind];
+  return model.id === policy.baselines.frontier ? Math.max(base, REASONING_HEADROOM_TOKENS) : base;
+}
+
 // Bounds on context blocks spliced into the user message — max_tokens is the
 // biggest cost lever (SPEC.md §9.6) and prompt size is the other half of it.
 const MAX_TOOL_CONTEXT_CHARS = 4000;
@@ -312,7 +326,7 @@ async function runModel(
   toolOutcome: ToolOutcome | undefined
 ): Promise<{ hop: Hop; content: string; toolDerived: boolean }> {
   const started = Date.now();
-  const maxTokens = MAX_TOKENS_BY_KIND[subTask.kind];
+  const maxTokens = maxTokensFor(ctx.policy, model, subTask.kind);
   const { blocks, toolDerived } = contextBlocks(ctx, subTask, toolOutcome);
   const messages = buildMessages(subTask, blocks);
   const cacheParams = {
