@@ -21,7 +21,15 @@ from evaluate import run_candidate
 from grade import grade
 from halving import CandidateRoundResult, SweepOutcome, run_sweep
 from scheduler import FeatherlessClient, UnitSemaphore
-from stats import CandidateStats, cost_effective, held_in_to_held_out_drop, promote_decision, wilson_interval
+from stats import (
+    MIN_PROMOTE_ACCURACY,
+    MIN_PROMOTE_VALIDITY,
+    CandidateStats,
+    cost_effective,
+    held_in_to_held_out_drop,
+    promote_decision,
+    wilson_interval,
+)
 
 TASK_KINDS: list[TaskKind] = ["classify", "extract_fields", "summarize", "normalize"]
 DELTA_KIND = 0.15  # set BY sample size at n=12 — SPEC.md §9.4, not tuned per kind
@@ -90,6 +98,21 @@ def _evaluate_and_grade(
     return {"scores": scores, "validity": validity, "meanCost": mean_cost}
 
 
+def _promotion_blocked_reason(candidate: CandidateStats, decision_detail: dict[str, Any]) -> str:
+    """Human-readable reason a finalist was NOT promoted, checked in the same
+    priority order promote_decision applies the floor (negative control and
+    the absolute floor are incumbent-independent, so they're reported first)."""
+    if candidate.is_base_non_instruct:
+        return "negative control (isBaseNonInstruct) is never promotable"
+    if not decision_detail["floorOk"]:
+        if candidate.accuracy < MIN_PROMOTE_ACCURACY:
+            return f"held-out accuracy {candidate.accuracy:.4f} below MIN_PROMOTE_ACCURACY={MIN_PROMOTE_ACCURACY}"
+        return f"validity {decision_detail['candidateValidity']:.4f} below MIN_PROMOTE_VALIDITY={MIN_PROMOTE_VALIDITY}"
+    if not decision_detail["accuracyOk"]:
+        return "held-out accuracy not within delta_kind of incumbent"
+    return "cost_effective not <= 0.5x incumbent cost_effective"
+
+
 def _candidate_models(candidates_by_kind: dict, catalog_by_id: dict[str, dict], kind: TaskKind) -> list[dict]:
     ids = candidates_by_kind.get(kind, {}).get("retrieved", [])
     return [catalog_by_id[mid] for mid in ids if mid in catalog_by_id]
@@ -156,10 +179,12 @@ def run_pipeline(units: int = DEFAULT_UNITS, offline: bool = True) -> dict[str, 
             # real escalation-target price without running it, so this is a
             # documented approximation, not a measured number.
             cost_escalation=final["meanCost"] * 2,
+            is_base_non_instruct=bool(finalist_model.get("isBaseNonInstruct")),
         )
 
         frontier_model = catalog_by_id.get(FRONTIER_MODEL_ID)
         promoted = False
+        blocked_reason: str | None = None
         if frontier_model:
             incumbent_final = _evaluate_and_grade(kind, frontier_model, held_out, sem, client)
             inc_scores = incumbent_final["scores"]
@@ -171,7 +196,15 @@ def run_pipeline(units: int = DEFAULT_UNITS, offline: bool = True) -> dict[str, 
                 escalation_rate=1.0 - incumbent_final["validity"],
                 cost_escalation=incumbent_final["meanCost"] * 2,
             )
-            promoted, _decision_detail = promote_decision(cand_stats, inc_stats, DELTA_KIND)
+            promoted, decision_detail = promote_decision(cand_stats, inc_stats, DELTA_KIND)
+            if not promoted:
+                # Record WHY honestly instead of silently leaving `promoted: null`
+                # — this is the credibility fix: a reader should be able to see
+                # "no candidate cleared the quality floor" rather than have to
+                # infer it (SPEC.md §9.4).
+                blocked_reason = _promotion_blocked_reason(cand_stats, decision_detail)
+        else:
+            blocked_reason = "no frontier incumbent in catalog to compare against"
 
         ladders[kind] = [finalist_model["id"], FRONTIER_MODEL_ID] if frontier_model else [finalist_model["id"]]
         quality.setdefault(finalist_model["id"], {})[kind] = round(held_out_acc, 4)
@@ -183,6 +216,7 @@ def run_pipeline(units: int = DEFAULT_UNITS, offline: bool = True) -> dict[str, 
             {
                 "kind": kind,
                 "promoted": finalist_model["id"] if promoted else None,
+                "promotionBlockedReason": blocked_reason,
                 "accuracy": round(held_out_acc, 4),
                 "ci": [round(ci[0], 4), round(ci[1], 4)],
                 "validity": round(final["validity"], 4),

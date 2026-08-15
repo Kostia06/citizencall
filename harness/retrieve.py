@@ -56,7 +56,26 @@ def _card_text(m: ModelCandidate) -> str:
     return f"{m['id']} {m.get('modelClass', '')} {m.get('cardText', '')}"
 
 
+MIN_HF_DOWNLOADS = 1  # junk/low-signal screen — see prefilter() docstring
+
+
 def prefilter(catalog: list[ModelCandidate], kind: str) -> list[ModelCandidate]:
+    """SPEC.md §9.2 prefilter, plus two low-signal screens added after a LIVE
+    sweep let junk through:
+
+    - `paramsB > 0`: a live snapshot exposed candidates with paramsB==0, which
+      means the size was never parsed from the model id/config, not that the
+      model genuinely has zero parameters. Retrieval ranks these fine (BM25/
+      dense don't look at paramsB), but concurrency-cost estimation
+      (`concurrency_cost_for`) and cost-effectiveness are both silently wrong
+      for them, so they must never reach the sweep.
+    - `hfDownloads >= MIN_HF_DOWNLOADS`: zero recorded downloads means no
+      external adoption signal at all — in practice this is broken/mirror/
+      private catalog metadata, not a legitimate candidate worth spending
+      sweep budget on. Deliberately a low bar (>=1, not a popularity
+      threshold) so this doesn't become a de facto "only popular models"
+      filter — that's not the goal, screening out zero-signal junk is.
+    """
     spec = KIND_SPECS[kind]
     return [
         m
@@ -67,7 +86,8 @@ def prefilter(catalog: list[ModelCandidate], kind: str) -> list[ModelCandidate]:
         # confirmed downstream by warmup.py / call-time 400s, so 'unknown' passes.
         and m.get("availability") in ("warm", "loading", "unknown")
         and m.get("availableOnPlan")
-        and m.get("paramsB", 0) <= PREFILTER_MAX_PARAMS_B
+        and 0 < m.get("paramsB", 0) <= PREFILTER_MAX_PARAMS_B
+        and m.get("hfDownloads", 0) >= MIN_HF_DOWNLOADS
     ]
 
 
