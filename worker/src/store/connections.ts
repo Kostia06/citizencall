@@ -23,26 +23,6 @@ export async function getConnectedAccountId(db: D1Database, userId: string, tool
   return r?.connected_account_id ?? null;
 }
 
-// Re-keys an anon session's connections onto a real account on login/signup
-// (claim-on-login). `(user_id, toolkit)` is the primary key, so a plain
-// `UPDATE ... SET user_id=?` would throw a unique-constraint error if the
-// target account already has a connection for the same toolkit; upserting
-// each row instead (anon's connection wins — it's the one just completed)
-// and then dropping the now-empty anon rows keeps this safe to call even
-// when the two sets overlap.
-export async function reassignConnections(db: D1Database, fromUserId: string, toUserId: string): Promise<void> {
-  const { results } = await db
-    .prepare(`SELECT toolkit,connected_account_id,status,connected_at FROM user_connections WHERE user_id=?`)
-    .bind(fromUserId)
-    .all<{ toolkit: string; connected_account_id: string; status: string; connected_at: number }>();
-  if (results.length === 0) return;
-
-  const upsert = db.prepare(
-    `INSERT INTO user_connections(user_id,toolkit,connected_account_id,status,connected_at) VALUES(?,?,?,?,?)
-     ON CONFLICT(user_id,toolkit) DO UPDATE SET connected_account_id=excluded.connected_account_id, status=excluded.status, connected_at=excluded.connected_at`
-  );
-  await db.batch([
-    ...results.map((r) => upsert.bind(toUserId, r.toolkit, r.connected_account_id, r.status, r.connected_at)),
-    db.prepare(`DELETE FROM user_connections WHERE user_id=?`).bind(fromUserId),
-  ]);
-}
+// Claim-on-login moved to ./claim.ts (claimAnonActor), which re-parents ALL
+// of an anon session's store rows — not just connections — with a
+// keep-the-user's-row conflict policy.

@@ -12,6 +12,8 @@ import { sendResetEmail, sendTwofaCodeEmail, sendVerifyEmail } from './email';
 import { checkAndIncrement } from './throttle';
 import { requireAuth } from './middleware';
 import { authSecret } from './secret';
+import { clearAnonCookie, peekAnonId } from './anon';
+import { claimAnonActor } from '../store/claim';
 import {
   createChallenge, ensureTwofaSchema, isTwofaEnabled, resendChallenge,
   shouldExposeDevCode, verifyChallenge,
@@ -25,8 +27,23 @@ const now = () => Date.now();
 const isNative = (c: any) => c.req.header('X-Client') === 'native';
 const clientIp = (c: any) => c.req.header('CF-Connecting-IP') ?? 'unknown';
 
+// Claim-on-login (both the 2fa-off login path and 2fa/verify funnel through
+// issueTokens): if a signed `__Host-anon` cookie rides along on the request,
+// everything that anonymous session accumulated (connections, settings,
+// MCPs, tool overrides, run history) is re-parented onto the account that
+// just authenticated, and the anon cookie is cleared. Without this, whatever
+// a visitor connected before signing in silently vanished at login — the
+// rows stayed under the orphaned anon id forever.
+async function claimAnonSession(c: any, userId: string): Promise<void> {
+  const anonId = await peekAnonId(c);
+  if (!anonId) return;
+  await claimAnonActor(c.env.DB, anonId, userId);
+  clearAnonCookie(c);
+}
+
 async function issueTokens(c: any, userId: string, sessionArgs: { userAgent: string | null; ip: string | null }) {
   const user = await getUserById(c.env.DB, userId);
+  await claimAnonSession(c, userId);
   const { sessionId, refreshToken } = await createSession(c.env.DB, { userId, now: now(), ...sessionArgs });
   const accessToken = await signAccessToken(authSecret(c.env), {
     sub: userId, sid: sessionId, emailVerified: user!.emailVerified,
@@ -61,6 +78,11 @@ authRoutes.post('/signup', async (c) => {
   // immediately usable. requireVerified still gates every route below —
   // this just makes real signups satisfy it right away.
   await setEmailVerified(c.env.DB, user.id);
+  // Claim here too (not only at login): the caller just proved ownership of
+  // this brand-new account by creating it, so their anon session's rows can
+  // safely follow. NOT done on the duplicate-email path above — that caller
+  // hasn't authenticated as the existing account.
+  await claimAnonSession(c, user.id);
   return c.json({ ok: true }, 201);
 });
 

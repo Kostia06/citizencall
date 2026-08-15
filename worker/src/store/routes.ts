@@ -15,7 +15,8 @@ import { requireAuth, requireVerified } from '../auth/middleware';
 import { clearAnonCookie, peekAnonId, resolveActor } from '../auth/anon';
 import { getSettings, putSettings } from './settings';
 import { validatePrefsPatch } from './prefs';
-import { listConnections, reassignConnections, revokeConnection } from './connections';
+import { listConnections, revokeConnection } from './connections';
+import { claimAnonActor } from './claim';
 import { createMcp, deleteMcp, getMcp, listMcps, updateMcp } from './mcps';
 import { listToolOverrides, setToolOverride } from './tools';
 
@@ -57,16 +58,44 @@ storeRoutes.delete('/connections/:toolkit', async (c) => {
   return c.body(null, 204);
 });
 
-// Claim-on-login: re-keys whatever the caller connected anonymously onto
-// their now-authenticated account, then clears the anon cookie. A no-op
-// (still 204) when there's no anon cookie to claim.
+// Claim-on-login: re-keys whatever the caller accumulated anonymously
+// (connections, settings, MCPs, tool overrides, run history) onto their
+// now-authenticated account, then clears the anon cookie. A no-op (still
+// 204) when there's no anon cookie to claim. The auth routes also run this
+// server-side on login/signup/2fa-verify, so this endpoint is a fallback
+// for clients that authenticate out-of-band.
 storeRoutes.post('/connections/claim', ...gate, async (c) => {
   const anonId = await peekAnonId(c);
   if (anonId) {
-    await reassignConnections(c.env.DB, anonId, uid(c));
+    await claimAnonActor(c.env.DB, anonId, uid(c));
     clearAnonCookie(c);
   }
   return c.body(null, 204);
+});
+
+// The actor's recent runs, newest first — chat history for the main screen.
+// Anon-friendly on purpose (resolveActor, same identity rule as /api/run):
+// an anonymous browser's history is scoped to its signed `__Host-anon`
+// cookie, a logged-in user's to their bearer id. Only the caller's own rows
+// are ever selected, so one actor can never page through another's runs.
+storeRoutes.get('/sessions', async (c) => {
+  const actor = await resolveActor(c);
+  const { results } = await c.env.DB
+    .prepare(
+      `SELECT id, request_text, created_at, total_cost_usd, status
+       FROM runs WHERE user_id=? ORDER BY created_at DESC LIMIT 50`
+    )
+    .bind(actor.userId)
+    .all<{ id: string; request_text: string; created_at: number; total_cost_usd: number | null; status: string }>();
+  return c.json(
+    results.map((r) => ({
+      id: r.id,
+      requestText: r.request_text,
+      createdAt: r.created_at,
+      totalCostUsd: r.total_cost_usd ?? 0,
+      status: r.status,
+    }))
+  );
 });
 
 // Custom MCP entry validation: name required, url must be http(s), headers
