@@ -1,4 +1,4 @@
-import type { BenchmarkResult, RosterEntry, TraceEvent } from './types';
+import type { BenchmarkResult, RosterEntry, RunAttachment, TraceEvent } from './types';
 import { mockBenchmark, mockFunnel, mockRoster } from './mock/fixtures';
 import { buildScenario } from './mock/scenario';
 
@@ -18,6 +18,7 @@ export interface StartRunOpts {
   text: string;
   source: 'text' | 'voice';
   noCache?: boolean;
+  attachments?: RunAttachment[];
   onEvent(event: TraceEvent): void;
   onError?(err: unknown): void;
 }
@@ -33,7 +34,13 @@ export function startRun(opts: StartRunOpts): RunHandle {
 
 function startMockRun(opts: StartRunOpts): RunHandle {
   const runId = `mock-${Date.now().toString(36)}`;
-  const steps = buildScenario({ runId, userId: opts.userId, text: opts.text, source: opts.source });
+  const steps = buildScenario({
+    runId,
+    userId: opts.userId,
+    text: opts.text,
+    source: opts.source,
+    attachments: opts.attachments,
+  });
   const timers: number[] = [];
   let elapsed = 0;
 
@@ -78,6 +85,7 @@ function startLiveRun(opts: StartRunOpts): RunHandle {
           text: opts.text,
           source: opts.source,
           noCache: opts.noCache,
+          attachments: opts.attachments ?? [],
         }),
       });
       if (!res.ok) throw new Error(`POST /api/run failed: ${res.status}`);

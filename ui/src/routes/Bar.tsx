@@ -6,6 +6,7 @@ import TracePipeline from '../components/TracePipeline';
 import { ToastStack, useToasts } from '../components/Toast';
 import { MOCK, startRun, type RunHandle } from '../api';
 import { initialTraceState, traceReducer } from '../lib/traceReducer';
+import type { RunAttachment } from '../types';
 
 const USERS = ['demo_kos', 'demo_teammate'];
 
@@ -37,13 +38,17 @@ export default function Bar() {
   const currentUser = USERS[userIdx];
   const running = trace.status === 'running';
 
-  function handleSubmit(text: string, opts: { bypassCache: boolean; source: 'text' | 'voice' }) {
+  function handleSubmit(
+    text: string,
+    opts: { bypassCache: boolean; source: 'text' | 'voice'; attachments: RunAttachment[] },
+  ) {
     runHandleRef.current?.close();
     runHandleRef.current = startRun({
       userId: currentUser,
       text,
       source: opts.source,
       noCache: opts.bypassCache,
+      attachments: opts.attachments,
       onEvent: dispatch,
       onError: () => push('Run stream dropped — reconnecting…'),
     });

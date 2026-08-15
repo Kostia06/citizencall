@@ -116,6 +116,14 @@ body {
   pointer-events: none;
 }
 
+/* Auto-growing command input — CommandBar.tsx. Height is measured off
+   scrollHeight in JS and applied as an inline style; this transition is what
+   makes that grow/shrink read as a spring-ish reflow instead of a snap.
+   Collapses under prefers-reduced-motion via the blanket rule below. */
+.bar-textarea {
+  transition: height 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
 .crossfade-out {
   animation: fade-crossfade-out 0.4s ease forwards;
 }

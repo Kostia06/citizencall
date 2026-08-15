@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState } from 'react';
+import { useLayoutEffect, useEffect, useRef, useState } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
 import DropZone from './DropZone';
 import Mic from './Mic';
-import { magneticSnappy } from '../lib/motion';
+import { layoutFlow, layoutFlowReduced, magneticSnappy } from '../lib/motion';
 import { useBurst } from '../lib/useBurst';
+import type { RunAttachment } from '../types';
 
 const GHOST = "Summarize this week's repository changes and draft a PR description.";
 
@@ -13,34 +14,52 @@ const SUGGESTIONS = [
   'Extract action items from unread emails from the last 3 days.',
 ];
 
-export interface DroppedFile {
-  id: string;
-  name: string;
-  size: number;
-}
+// Auto-grow ceiling — DESIGN.md's body token is 15px/1.5, so ~6 lines caps
+// the pill before it scrolls internally instead of eating the page.
+const MAX_LINES = 6;
+
+export type Attachment = RunAttachment;
 
 interface CommandBarProps {
   running: boolean;
   /** Bumped once per `escalate` trace event — spikes the conic border's
    * spin speed for 400ms. DESIGN.md §5 Command bar. */
   escalateTick: number;
-  onSubmit(text: string, opts: { bypassCache: boolean; source: 'text' | 'voice' }): void;
+  onSubmit(text: string, opts: { bypassCache: boolean; source: 'text' | 'voice'; attachments: Attachment[] }): void;
   onFilesDropped(files: File[]): void;
   onToast(message: string): void;
 }
 
-/** The pinned 60px glass pill — SPEC.md §6. Owns its own input state so the
- * mic can stream words in live; only hands the final text up on submit. */
+let attachmentSeq = 0;
+function nextAttachmentId(kind: string): string {
+  attachmentSeq += 1;
+  return `${kind}-${Date.now().toString(36)}-${attachmentSeq}`;
+}
+
+function fileToAttachment(file: File, kind: Attachment['kind']): Attachment {
+  return {
+    id: nextAttachmentId(kind),
+    name: file.name || (kind === 'clipboard-image' ? `clipboard-image-${attachmentSeq}.png` : 'clipboard file'),
+    kind,
+    size: file.size,
+    mimeType: file.type || undefined,
+  };
+}
+
+/** The pinned glass pill — SPEC.md §6. Owns its own input state so the mic
+ * can stream words in live; only hands the final text (+ attachments) up on
+ * submit. The textarea auto-grows up to MAX_LINES, then scrolls internally. */
 export default function CommandBar({ running, escalateTick, onSubmit, onFilesDropped, onToast }: CommandBarProps) {
   const [value, setValue] = useState('');
   const [source, setSource] = useState<'text' | 'voice'>('text');
   const [focused, setFocused] = useState(false);
   const [highlight, setHighlight] = useState(-1);
-  const [files, setFiles] = useState<DroppedFile[]>([]);
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [ghostAccepting, setGhostAccepting] = useState(false);
   const [clearing, setClearing] = useState(false);
   const [ringSpike, setRingSpike] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const maxHeightRef = useRef(132); // ~6 lines @ 22px, refined on mount
   const [confirmPulsing, fireConfirmPulse] = useBurst(200);
   const [emberFlashing, fireEmberFlash] = useBurst(150);
   const [focusPulsing, fireFocusPulse] = useBurst(400);
@@ -50,7 +69,7 @@ export default function CommandBar({ running, escalateTick, onSubmit, onFilesDro
     const onKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault();
-        inputRef.current?.focus();
+        textareaRef.current?.focus();
       }
     };
     window.addEventListener('keydown', onKeyDown);
@@ -66,6 +85,27 @@ export default function CommandBar({ running, escalateTick, onSubmit, onFilesDro
     return () => window.clearTimeout(id);
   }, [escalateTick]);
 
+  // Measure the real line-height once mounted so the 6-line cap tracks the
+  // actual rendered font instead of a guessed constant.
+  useLayoutEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    const lineHeight = parseFloat(getComputedStyle(el).lineHeight);
+    if (Number.isFinite(lineHeight) && lineHeight > 0) maxHeightRef.current = lineHeight * MAX_LINES;
+  }, []);
+
+  // Auto-grow: collapse then re-measure scrollHeight so we never overshoot,
+  // clamp to MAX_LINES. The `.bar-textarea` CSS transition (index.css) is
+  // what turns this into a smooth reflow rather than a snap.
+  useLayoutEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = '0px';
+    const next = Math.min(el.scrollHeight, maxHeightRef.current);
+    el.style.height = `${next}px`;
+    el.style.overflowY = el.scrollHeight > maxHeightRef.current ? 'auto' : 'hidden';
+  }, [value]);
+
   const showSuggestions = focused && !running && value.trim().length === 0;
   const filtered = SUGGESTIONS;
   const ghostSuffix =
@@ -76,11 +116,92 @@ export default function CommandBar({ running, escalateTick, onSubmit, onFilesDro
     if (!trimmed || running) return;
     fireConfirmPulse();
     if (bypassCache) fireEmberFlash();
-    onSubmit(trimmed, { bypassCache, source });
+    onSubmit(trimmed, { bypassCache, source, attachments });
     setSource('text');
   }
 
-  function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+  function insertAtCursor(text: string) {
+    const el = textareaRef.current;
+    if (!el) {
+      setValue((v) => v + text);
+      return;
+    }
+    const start = el.selectionStart ?? value.length;
+    const end = el.selectionEnd ?? value.length;
+    const next = value.slice(0, start) + text + value.slice(end);
+    setValue(next);
+    requestAnimationFrame(() => {
+      el.focus();
+      const pos = start + text.length;
+      el.setSelectionRange(pos, pos);
+    });
+  }
+
+  function addAttachments(next: Attachment[]) {
+    if (next.length === 0) return;
+    setAttachments((prev) => [...prev, ...next]);
+  }
+
+  async function handleClipboardButton() {
+    if (running) return;
+    const clipboard = navigator.clipboard as (Clipboard & { read?(): Promise<ClipboardItem[]> }) | undefined;
+    try {
+      if (clipboard?.read) {
+        const items = await clipboard.read();
+        const newAttachments: Attachment[] = [];
+        let insertedText = false;
+        for (const item of items) {
+          for (const type of item.types) {
+            if (type.startsWith('image/')) {
+              const blob = await item.getType(type);
+              newAttachments.push({
+                id: nextAttachmentId('clipboard-image'),
+                name: `clipboard-image-${newAttachments.length + 1}.${type.split('/')[1] ?? 'png'}`,
+                kind: 'clipboard-image',
+                size: blob.size,
+                mimeType: type,
+              });
+            } else if (type === 'text/plain' && !insertedText) {
+              const blob = await item.getType(type);
+              const text = (await blob.text()).trim();
+              if (text) {
+                insertAtCursor(text);
+                insertedText = true;
+              }
+            }
+          }
+        }
+        addAttachments(newAttachments);
+        if (!insertedText && newAttachments.length === 0) onToast('Clipboard is empty');
+      } else if (clipboard?.readText) {
+        const text = (await clipboard.readText()).trim();
+        if (text) insertAtCursor(text);
+        else onToast('Clipboard is empty');
+      } else {
+        onToast('Clipboard access unavailable in this browser');
+      }
+    } catch (err) {
+      const name = err instanceof DOMException ? err.name : '';
+      onToast(name === 'NotAllowedError' ? 'Clipboard permission denied' : 'Could not read clipboard');
+    }
+  }
+
+  function handlePaste(e: React.ClipboardEvent<HTMLTextAreaElement>) {
+    const items = e.clipboardData?.items;
+    if (!items || items.length === 0) return;
+    const fileItems = Array.from(items).filter((it) => it.kind === 'file');
+    if (fileItems.length === 0) return; // plain text — let the browser paste it normally
+    e.preventDefault();
+    const newAttachments = fileItems
+      .map((it) => it.getAsFile())
+      .filter((f): f is File => f !== null)
+      .map((f) => fileToAttachment(f, f.type.startsWith('image/') ? 'clipboard-image' : 'file'));
+    if (newAttachments.length === 0) return;
+    addAttachments(newAttachments);
+    onToast(`${newAttachments.length} item${newAttachments.length === 1 ? '' : 's'} attached from clipboard`);
+  }
+
+  function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === 'Tab' && ghostSuffix) {
       e.preventDefault();
       setGhostAccepting(true);
@@ -110,40 +231,44 @@ export default function CommandBar({ running, escalateTick, onSubmit, onFilesDro
       return;
     }
     if (e.key === 'Enter') {
+      if (e.shiftKey) return; // newline — let the textarea handle it
       e.preventDefault();
+      const bypassCache = e.metaKey || e.ctrlKey;
       const text = showSuggestions && highlight >= 0 ? filtered[highlight] : value;
-      runNow(text, e.shiftKey);
+      if (text !== undefined) runNow(text, bypassCache);
     }
   }
 
   return (
     <DropZone
       onFiles={(dropped) => {
-        setFiles((prev) => [
-          ...prev,
-          ...dropped.map((f) => ({ id: `${f.name}-${f.size}-${Date.now()}`, name: f.name, size: f.size })),
-        ]);
+        addAttachments(dropped.map((f) => fileToAttachment(f, 'file')));
         onFilesDropped(dropped);
       }}
     >
       {({ isDragOver }) => (
         <div className="w-full">
-          <div
+          <motion.div
+            layout={!reduceMotion}
+            transition={reduceMotion ? layoutFlowReduced : layoutFlow}
             className={`bar-shell ${running ? 'is-running' : ''}`}
             style={ringSpike ? ({ '--ring-duration': '1.2s' } as React.CSSProperties) : undefined}
           >
-            <div
-              className={`bar-pill relative flex h-[60px] items-center gap-2 px-3 animate-bar-in ${
+            <motion.div
+              layout={!reduceMotion}
+              transition={reduceMotion ? layoutFlowReduced : layoutFlow}
+              className={`bar-pill relative flex min-h-[60px] items-center gap-1.5 px-3 py-2.5 animate-bar-in ${
                 isDragOver ? 'is-dragover' : ''
               } ${confirmPulsing ? 'animate-confirm-pulse' : ''} ${emberFlashing ? 'animate-ember-edge-flash' : ''} ${
                 focusPulsing ? 'animate-focus-glow-pulse' : ''
               }`}
             >
               <div className="relative flex-1">
-                <input
-                  ref={inputRef}
+                <textarea
+                  ref={textareaRef}
                   value={value}
                   disabled={running}
+                  rows={1}
                   onChange={(e) => setValue(e.target.value)}
                   onFocus={() => {
                     setFocused(true);
@@ -151,15 +276,15 @@ export default function CommandBar({ running, escalateTick, onSubmit, onFilesDro
                   }}
                   onBlur={() => window.setTimeout(() => setFocused(false), 120)}
                   onKeyDown={handleKeyDown}
-                  placeholder={value ? '' : ''}
+                  onPaste={handlePaste}
                   spellCheck={false}
                   aria-label="Command"
-                  className={`relative z-10 w-full origin-left bg-transparent text-[15px] text-white placeholder:text-white/25 outline-none transition-[transform,opacity] duration-100 ease-out disabled:opacity-50 ${
+                  className={`bar-textarea relative z-10 block w-full origin-left resize-none overflow-hidden bg-transparent text-[15px] leading-[1.5] text-white placeholder:text-white/25 outline-none transition-[transform,opacity] duration-100 ease-out disabled:opacity-50 ${
                     clearing ? 'scale-95 opacity-0' : 'scale-100 opacity-100'
                   }`}
                 />
                 {ghostSuffix && (
-                  <div className="pointer-events-none absolute inset-0 flex items-center whitespace-pre text-[15px]">
+                  <div className="pointer-events-none absolute inset-0 top-0 flex items-start whitespace-pre-wrap text-[15px] leading-[1.5]">
                     <span className="invisible">{value}</span>
                     <span
                       className={`ghost-text transition-colors duration-[120ms] ${
@@ -171,6 +296,23 @@ export default function CommandBar({ running, escalateTick, onSubmit, onFilesDro
                   </div>
                 )}
               </div>
+
+              <button
+                type="button"
+                disabled={running}
+                aria-label="Paste from clipboard"
+                onClick={handleClipboardButton}
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[#8E8E93] transition-colors hover:text-white disabled:opacity-30"
+              >
+                <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden>
+                  <rect x="7" y="3.5" width="10" height="4" rx="1.2" />
+                  <path
+                    d="M7 5.5H5.5a1.5 1.5 0 0 0-1.5 1.5v12.5a1.5 1.5 0 0 0 1.5 1.5h13a1.5 1.5 0 0 0 1.5-1.5V7a1.5 1.5 0 0 0-1.5-1.5H17"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                </svg>
+              </button>
 
               <Mic
                 disabled={running}
@@ -184,8 +326,8 @@ export default function CommandBar({ running, escalateTick, onSubmit, onFilesDro
                 }}
                 onToast={onToast}
               />
-            </div>
-          </div>
+            </motion.div>
+          </motion.div>
 
           {showSuggestions && (
             <div className="relative mx-1 mt-2 overflow-hidden rounded-2xl border border-white/10 bg-surface-raised/95 backdrop-blur-xl">
@@ -213,18 +355,19 @@ export default function CommandBar({ running, escalateTick, onSubmit, onFilesDro
             </div>
           )}
 
-          {files.length > 0 && (
+          {attachments.length > 0 && (
             <div className="mt-2 flex flex-wrap gap-2">
-              {files.map((f) => (
+              {attachments.map((a) => (
                 <span
-                  key={f.id}
+                  key={a.id}
                   className="animate-chip-pop flex items-center gap-1.5 rounded-full border border-accent/30 bg-accent/10 px-3 py-1 text-[12px] text-accent-bright"
                 >
-                  {f.name}
+                  <AttachmentIcon kind={a.kind} mimeType={a.mimeType} />
+                  <span className="max-w-[180px] truncate">{a.name}</span>
                   <button
                     type="button"
-                    aria-label={`Remove ${f.name}`}
-                    onClick={() => setFiles((prev) => prev.filter((x) => x.id !== f.id))}
+                    aria-label={`Remove ${a.name}`}
+                    onClick={() => setAttachments((prev) => prev.filter((x) => x.id !== a.id))}
                     className="text-accent-bright/60 hover:text-accent-bright"
                   >
                     ×
@@ -236,5 +379,35 @@ export default function CommandBar({ running, escalateTick, onSubmit, onFilesDro
         </div>
       )}
     </DropZone>
+  );
+}
+
+function AttachmentIcon({ kind, mimeType }: { kind: Attachment['kind']; mimeType?: string }) {
+  const isImage = kind === 'clipboard-image' || mimeType?.startsWith('image/');
+  if (isImage) {
+    return (
+      <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+        <rect x="3" y="4" width="18" height="16" rx="2" />
+        <circle cx="8.5" cy="9.5" r="1.5" />
+        <path d="M21 16l-5.5-5.5a1.5 1.5 0 0 0-2.12 0L3 20" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    );
+  }
+  if (kind === 'clipboard-text') {
+    return (
+      <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+        <rect x="6" y="3.5" width="12" height="4" rx="1" />
+        <path
+          d="M6 5.5H5a1.5 1.5 0 0 0-1.5 1.5v13A1.5 1.5 0 0 0 5 21.5h14a1.5 1.5 0 0 0 1.5-1.5V7A1.5 1.5 0 0 0 19 5.5h-1"
+          strokeLinecap="round"
+        />
+      </svg>
+    );
+  }
+  return (
+    <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+      <path d="M14 3H6.5A1.5 1.5 0 0 0 5 4.5v15A1.5 1.5 0 0 0 6.5 21h11a1.5 1.5 0 0 0 1.5-1.5V8l-5-5Z" strokeLinejoin="round" />
+      <path d="M14 3v5h5" strokeLinejoin="round" />
+    </svg>
   );
 }
