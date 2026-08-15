@@ -28,15 +28,19 @@ export async function hashPassword(plain: string): Promise<string> {
 }
 
 export async function verifyPassword(plain: string, encoded: string): Promise<boolean> {
-  const parts = encoded.split('$');
-  if (parts.length !== 4 || parts[0] !== 'scrypt') return false;
-  const m = parts[1]?.match(/N=(\d+),r=(\d+),p=(\d+)/);
-  if (!m || !m[1] || !m[2] || !m[3]) return false;
-  const params = { N: +m[1], r: +m[2], p: +m[3], dkLen: 32 };
-  const salt = fromB64url(parts[2]!);
-  const expected = fromB64url(parts[3]!);
-  const actual = scrypt(new TextEncoder().encode(plain), salt, params);
-  return constantTimeEqual(actual, expected);
+  try {
+    const parts = encoded.split('$');
+    if (parts.length !== 4 || parts[0] !== 'scrypt') return false;
+    const m = parts[1]?.match(/N=(\d+),r=(\d+),p=(\d+)/);
+    if (!m || !m[1] || !m[2] || !m[3]) return false;
+    const params = { N: +m[1], r: +m[2], p: +m[3], dkLen: 32 };
+    const salt = fromB64url(parts[2]!);
+    const expected = fromB64url(parts[3]!);
+    const actual = scrypt(new TextEncoder().encode(plain), salt, params);
+    return constantTimeEqual(actual, expected);
+  } catch {
+    return false;
+  }
 }
 
 export function checkPasswordPolicy(plain: string): { ok: true } | { ok: false; reason: string } {

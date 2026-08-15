@@ -17,3 +17,11 @@ it('rejects short and common passwords', () => {
   expect(checkPasswordPolicy('password1234').ok).toBe(false); // in blocklist
   expect(checkPasswordPolicy('a-perfectly-fine-passphrase').ok).toBe(true);
 });
+
+it('fails closed on malformed encoded string (not base64)', async () => {
+  expect(await verifyPassword('anything', 'not-a-valid-encoded-string')).toBe(false);
+});
+
+it('fails closed on corrupted hash (invalid base64 segments)', async () => {
+  expect(await verifyPassword('x', 'scrypt$N=65536,r=8,p=1$@@@invalid@@@$key')).toBe(false);
+});
