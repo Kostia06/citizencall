@@ -10,12 +10,26 @@ export default {
           bright: '#8FB0FF',
           glow: 'rgba(91,140,255,0.45)',
         },
+        // surface/void/ink read off CSS custom properties (index.css) so
+        // they retheme under `[data-theme='light']` with no class changes
+        // at call sites — bg-surface/60, text-ink/70 etc. all keep working.
         surface: {
-          DEFAULT: '#1c1c1e',
-          raised: '#242426',
-          sunken: '#141416',
+          DEFAULT: 'rgb(var(--color-surface) / <alpha-value>)',
+          raised: 'rgb(var(--color-surface-raised) / <alpha-value>)',
+          sunken: 'rgb(var(--color-surface-sunken) / <alpha-value>)',
         },
-        void: '#050506',
+        void: 'rgb(var(--color-void) / <alpha-value>)',
+        // Foreground ink scale — white in dark, near-black in light. Use
+        // this (not `white`) for any new text/border/overlay opacity tier
+        // so it retheme; `white` itself is left alone since a few spots
+        // (logo backing tiles) rely on it being literally white.
+        ink: {
+          DEFAULT: 'rgb(var(--color-ink) / <alpha-value>)',
+        },
+        // Static, non-themed white — for surfaces that must stay literally
+        // white in both themes (e.g. logo backing tiles behind transparent
+        // PNGs), where `white`/`ink` opacity would otherwise invert them.
+        paper: '#ffffff',
         ember: {
           DEFAULT: '#FF8B5E',
           glow: 'rgba(255,139,94,0.4)',

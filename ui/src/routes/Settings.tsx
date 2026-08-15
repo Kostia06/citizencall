@@ -6,20 +6,22 @@ import KeybindingEditor from '../components/settings/KeybindingEditor';
 import ButtonEditor from '../components/settings/ButtonEditor';
 import ConnectionsPanel from '../components/settings/ConnectionsPanel';
 import CustomMcpsPanel from '../components/settings/CustomMcpsPanel';
+import RoutinesPanel from '../components/settings/RoutinesPanel';
 import TopNav from '../components/TopNav';
 import { ToastStack, useToasts } from '../components/Toast';
 import { AuthError, DEFAULT_PREFS, MOCK, storeApi } from '../api';
-import type { Connection, UserPrefs } from '../api';
+import type { Connection, Routine, UserPrefs } from '../api';
 import { useAuth } from '../auth/useAuth';
 import { entranceStandard, entranceStandardReduced } from '../lib/motion';
+import { syncThemeFromPrefs } from '../lib/theme';
 
 type SaveState = 'idle' | 'saving' | 'saved' | 'needs-login' | 'error';
 
 function SectionCard({ title, subtitle, children }: { title: string; subtitle?: string; children: ReactNode }) {
   return (
-    <div className="rounded-2xl border border-white/10 bg-surface/60 p-6 backdrop-blur-xl">
-      <h2 className="text-[15px] font-semibold text-white">{title}</h2>
-      {subtitle && <p className="mt-1 text-[12.5px] text-white/40">{subtitle}</p>}
+    <div className="rounded-2xl border border-ink/10 bg-surface/60 p-6 backdrop-blur-xl">
+      <h2 className="text-[15px] font-semibold text-ink">{title}</h2>
+      {subtitle && <p className="mt-1 text-[12.5px] text-ink/40">{subtitle}</p>}
       <div className="mt-4">{children}</div>
     </div>
   );
@@ -43,6 +45,10 @@ export default function Settings() {
   const [connections, setConnections] = useState<Connection[]>([]);
   const [connectPending, setConnectPending] = useState<string | null>(null);
   const [connectLoginRequired, setConnectLoginRequired] = useState<string | null>(null);
+  // Mirrored from RoutinesPanel (which owns the actual CRUD/loading state)
+  // so ButtonEditor's "Routines" picker group stays live as routines are
+  // added/edited/deleted, without a second independent fetch of the same list.
+  const [routines, setRoutines] = useState<Routine[]>([]);
 
   const refreshConnections = useCallback(async () => {
     try {
@@ -59,7 +65,13 @@ export default function Settings() {
     (async () => {
       try {
         const prefs = await storeApi.getSettings(authedFetch);
-        if (!cancelled) setDraft(prefs);
+        if (!cancelled) {
+          setDraft(prefs);
+          // Dark/light plumbing: adopt the account's saved theme into this
+          // browser (no-ops if the user already made an explicit local
+          // choice) — the toggle itself lives in TopNav, not here.
+          syncThemeFromPrefs(prefs.theme);
+        }
       } catch {
         if (!cancelled) setDraft(DEFAULT_PREFS);
       } finally {
@@ -163,8 +175,8 @@ export default function Settings() {
         className="mx-auto mt-10 flex max-w-2xl flex-col gap-5"
       >
         <div>
-          <h1 className="text-xl font-semibold text-white">Settings</h1>
-          <p className="mt-1 text-[13px] text-white/40">
+          <h1 className="text-xl font-semibold text-ink">Settings</h1>
+          <p className="mt-1 text-[13px] text-ink/40">
             {loaded ? 'Keybindings, bar buttons, and the default context prompt.' : 'Loading…'}
           </p>
         </div>
@@ -181,6 +193,7 @@ export default function Settings() {
             buttons={draft.buttons}
             onChange={(buttons) => setDraft((d) => ({ ...d, buttons }))}
             connections={connections}
+            routines={routines}
           />
         </SectionCard>
 
@@ -192,7 +205,7 @@ export default function Settings() {
               aria-checked={draft.suggestions}
               onClick={() => setDraft((d) => ({ ...d, suggestions: !d.suggestions }))}
               className={`relative h-6 w-11 shrink-0 rounded-full transition-colors duration-200 ${
-                draft.suggestions ? 'bg-accent' : 'bg-white/10'
+                draft.suggestions ? 'bg-accent' : 'bg-ink/10'
               }`}
             >
               <span
@@ -201,8 +214,8 @@ export default function Settings() {
                 }`}
               />
             </button>
-            <span className="text-[13px] text-white/60">
-              Next-action suggestions: <span className="text-white">{draft.suggestions ? 'on' : 'off'}</span>
+            <span className="text-[13px] text-ink/60">
+              Next-action suggestions: <span className="text-ink">{draft.suggestions ? 'on' : 'off'}</span>
             </span>
           </div>
         </SectionCard>
@@ -213,7 +226,7 @@ export default function Settings() {
             onChange={(e) => setDraft((d) => ({ ...d, contextPrompt: e.target.value }))}
             rows={4}
             placeholder="e.g. Always check the roster policy before merging."
-            className="w-full resize-none rounded-lg border border-white/10 bg-surface-sunken px-3.5 py-2.5 text-[13px] text-white outline-none transition-colors placeholder:text-white/25 focus:border-accent/60"
+            className="w-full resize-none rounded-lg border border-ink/10 bg-surface-sunken px-3.5 py-2.5 text-[13px] text-ink outline-none transition-colors placeholder:text-ink/25 focus:border-accent/60"
           />
         </SectionCard>
 
@@ -235,6 +248,13 @@ export default function Settings() {
           <CustomMcpsPanel authedFetch={authedFetch} />
         </SectionCard>
 
+        <SectionCard
+          title="Routines"
+          subtitle="Saved prompts you can run on demand or bind to a bar button — optionally on a schedule."
+        >
+          <RoutinesPanel authedFetch={authedFetch} onRoutinesChange={setRoutines} />
+        </SectionCard>
+
         <div className="flex items-center gap-3">
           <button
             type="button"
@@ -247,7 +267,7 @@ export default function Settings() {
           {saveState === 'saved' && <span className="text-[13px] text-accent-bright">Saved.</span>}
           {saveState === 'error' && <span className="text-[13px] text-red-400">Couldn't save — try again.</span>}
           {saveState === 'needs-login' && (
-            <span className="text-[13px] text-white/50">
+            <span className="text-[13px] text-ink/50">
               Edits kept for this session —{' '}
               <Link to="/login" className="text-accent-bright transition-colors hover:text-accent">
                 log in
@@ -256,7 +276,7 @@ export default function Settings() {
             </span>
           )}
           {!MOCK && status !== 'authed' && saveState === 'idle' && (
-            <span className="text-[13px] text-white/30">Anonymous — edits apply to this session only.</span>
+            <span className="text-[13px] text-ink/30">Anonymous — edits apply to this session only.</span>
           )}
         </div>
       </motion.div>

@@ -1,10 +1,16 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { PointerEvent as ReactPointerEvent, ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { Reorder, motion, useDragControls, useMotionValue, useReducedMotion, useSpring } from 'framer-motion';
 import { magneticSnappy } from '../lib/motion';
 import { APPS } from '../store/apps';
-import type { UserPrefsButton } from '../api';
+import type { Routine, UserPrefsButton } from '../api';
+
+// Poll window after an orb-initiated connect — the Composio OAuth flow
+// completes in a new tab/window with no callback into this one, so this is
+// how the orb notices without a manual reload. "Only-real" orbs slice.
+const CONNECT_POLL_INTERVAL_MS = 3000;
+const CONNECT_POLL_WINDOW_MS = 2 * 60 * 1000;
 
 interface OrbsProps {
   /** The bar buttons in saved order — prefs.buttons (settings §Buttons). */
@@ -19,6 +25,17 @@ interface OrbsProps {
   onConnect(slug: string): void;
   /** Hold-drag reorder — fires with the full new order; parent persists it. */
   onReorder(next: UserPrefsButton[]): void;
+  /** The user's routines, for resolving a `routine:<id>` button's icon/name.
+   * Empty/omitted degrades to showing the raw id. */
+  routines?: Routine[];
+  /** Fires a routine's prompt through the bar — `routine:<id>` orb click. */
+  onRunRoutine?(routineId: string): void;
+  /** Re-fetches connections — called on an interval after an orb-initiated
+   * connect so a completed OAuth flow (new tab, no callback into this one)
+   * lights the orb up without a manual reload. Polling and its cleanup live
+   * entirely here; omit to disable (e.g. anonymous/MOCK callers that don't
+   * need it). */
+  onPollConnections?(): void;
 }
 
 const HALO = 40; // px — cursor-proximity radius that triggers magnetism
@@ -119,7 +136,7 @@ function Orb({
 }
 
 const orbBase =
-  'relative flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/[0.04] cursor-pointer select-none hover:bg-white/[0.07] transition-colors duration-200';
+  'relative flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-ink/10 bg-ink/[0.04] cursor-pointer select-none hover:bg-ink/[0.07] transition-colors duration-200';
 
 /** Which toolkit a button action binds to, if any — `connect:github`/`connect:gmail`
  * (legacy fixed actions) and `toolkit:<slug>` (bound from the settings arranger)
@@ -129,6 +146,11 @@ function actionToolkit(action: string): string | null {
   if (action === 'connect:gmail') return 'gmail';
   if (action.startsWith('toolkit:')) return action.slice('toolkit:'.length);
   return null;
+}
+
+/** `routine:<id>` -> the routine id, or null for every other action. */
+function actionRoutine(action: string): string | null {
+  return action.startsWith('routine:') ? action.slice('routine:'.length) : null;
 }
 
 function ToolkitLogo({ slug }: { slug: string }) {
@@ -141,7 +163,9 @@ function ToolkitLogo({ slug }: { slug: string }) {
       alt=""
       aria-hidden
       onError={() => setFailed(true)}
-      className="h-5 w-5 rounded-sm bg-white/95 object-contain p-0.5"
+      // Deliberately literal white backing (not the themed `ink` scale) —
+      // toolkit PNGs assume a white tile regardless of app theme.
+      className="h-5 w-5 rounded-sm bg-paper object-contain p-0.5"
     />
   );
 }
@@ -189,9 +213,13 @@ function OrbSlot({
 }
 
 /** The bar orbs — SPEC.md §6, now driven by prefs.buttons: saved order,
- * per-button actions (fixed or `toolkit:<slug>` from the settings arranger),
- * and hold-drag reordering persisted by the parent. They carry demo weight,
- * not decoration. */
+ * per-button actions (fixed, `toolkit:<slug>` from the settings arranger, or
+ * `routine:<id>`), and hold-drag reordering persisted by the parent. Only
+ * REAL, actionable orbs render: a toolkit-bound orb for an app the user
+ * hasn't connected is dropped entirely rather than shown dimmed as a
+ * "connect me" prompt (that's ConnectionsPanel's job now) — non-toolkit
+ * actions (roster, user, run, routines…) always render. They carry demo
+ * weight, not decoration. */
 export default function Orbs({
   buttons,
   connectedSlugs,
@@ -201,21 +229,73 @@ export default function Orbs({
   onToggleUser,
   onConnect,
   onReorder,
+  routines = [],
+  onRunRoutine,
+  onPollConnections,
 }: OrbsProps) {
   const [userSpun, setUserSpun] = useState(false);
+  const pollTimers = useRef<{ interval?: number; timeout?: number }>({});
+
+  useEffect(() => {
+    return () => {
+      if (pollTimers.current.interval) window.clearInterval(pollTimers.current.interval);
+      if (pollTimers.current.timeout) window.clearTimeout(pollTimers.current.timeout);
+    };
+  }, []);
+
+  function stopConnectPoll() {
+    if (pollTimers.current.interval) window.clearInterval(pollTimers.current.interval);
+    if (pollTimers.current.timeout) window.clearTimeout(pollTimers.current.timeout);
+    pollTimers.current = {};
+  }
+
+  /** Starts (or restarts) the 3s poll for up to 2 minutes after a connect
+   * click — self-clearing, and re-triggering just refreshes the window
+   * rather than stacking intervals. */
+  function startConnectPoll() {
+    if (!onPollConnections) return;
+    stopConnectPoll();
+    pollTimers.current.interval = window.setInterval(onPollConnections, CONNECT_POLL_INTERVAL_MS);
+    pollTimers.current.timeout = window.setTimeout(stopConnectPoll, CONNECT_POLL_WINDOW_MS);
+  }
+
+  const visibleButtons = buttons.filter((btn) => {
+    const slug = actionToolkit(btn.action);
+    return !slug || connectedSlugs.has(slug);
+  });
+
+  /** Reordering only ever drags the VISIBLE orbs, so `onReorder` must not
+   * receive that shorter list as the new saved order — that would silently
+   * drop every hidden (unconnected-toolkit) button from prefs.buttons.
+   * Hidden buttons are appended back, order preserved among themselves; once
+   * their toolkit connects they reappear (at the end) rather than vanish. */
+  function handleReorder(nextVisible: UserPrefsButton[]) {
+    if (nextVisible.length === buttons.length) {
+      onReorder(nextVisible);
+      return;
+    }
+    const visibleIds = new Set(nextVisible.map((b) => b.id));
+    const hidden = buttons.filter((b) => !visibleIds.has(b.id));
+    onReorder([...nextVisible, ...hidden]);
+  }
 
   function renderOrb(btn: UserPrefsButton) {
     const slug = actionToolkit(btn.action);
     if (slug) {
+      // visibleButtons already guarantees `connected` here, but the check
+      // stays defensive in case connectedSlugs updates mid-render.
       const connected = connectedSlugs.has(slug);
       const name = btn.label ?? (APPS.find((a) => a.slug === slug)?.name || slug);
       return (
         <Orb
           as="button"
-          className={`${orbBase} ${connected ? 'text-white' : 'text-white/35'}`}
+          className={`${orbBase} ${connected ? 'text-ink' : 'text-ink/35'}`}
           title={connected ? `${name} connected` : `Connect ${name}`}
           onClick={() => {
-            if (!connected) onConnect(slug);
+            if (!connected) {
+              onConnect(slug);
+              startConnectPoll();
+            }
           }}
         >
           {liveToolkit === slug && <PulseRings />}
@@ -223,10 +303,27 @@ export default function Orbs({
         </Orb>
       );
     }
+
+    const routineId = actionRoutine(btn.action);
+    if (routineId) {
+      const routine = routines.find((r) => r.id === routineId);
+      const name = btn.label ?? routine?.name ?? 'Routine';
+      return (
+        <Orb
+          as="button"
+          className={`${orbBase} text-ink/70`}
+          title={routine ? `Run "${name}"` : `${name} (routine not found)`}
+          onClick={() => onRunRoutine?.(routineId)}
+        >
+          <span className="text-lg leading-none">⟳</span>
+        </Orb>
+      );
+    }
+
     switch (btn.action) {
       case 'open:roster':
         return (
-          <Orb as="link" to="/roster" className={`${orbBase} text-white/70`} title={btn.label ?? 'Policy — open roster'}>
+          <Orb as="link" to="/roster" className={`${orbBase} text-ink/70`} title={btn.label ?? 'Policy — open roster'}>
             <span className="text-lg leading-none">◆</span>
             {policyVersion && (
               <span className="absolute -bottom-1 -right-1 rounded-full bg-accent px-1.5 py-0.5 text-[9px] font-bold leading-none text-black">
@@ -239,7 +336,7 @@ export default function Orbs({
         return (
           <Orb
             as="button"
-            className={`${orbBase} text-white/70`}
+            className={`${orbBase} text-ink/70`}
             title={btn.label ?? `Signed in as ${currentUser} — click to switch`}
             onClick={() => {
               setUserSpun((s) => !s);
@@ -256,25 +353,25 @@ export default function Orbs({
         );
       case 'run':
         return (
-          <Orb className={`${orbBase} text-white/70`} title={btn.label ?? 'Run (Enter in the bar)'}>
+          <Orb className={`${orbBase} text-ink/70`} title={btn.label ?? 'Run (Enter in the bar)'}>
             <span className="text-[15px] leading-none">▶</span>
           </Orb>
         );
       case 'bypassCache':
         return (
-          <Orb className={`${orbBase} text-white/70`} title={btn.label ?? 'Bypass cache (⌘⏎ in the bar)'}>
+          <Orb className={`${orbBase} text-ink/70`} title={btn.label ?? 'Bypass cache (⌘⏎ in the bar)'}>
             <span className="text-lg leading-none">⚡</span>
           </Orb>
         );
       case 'suggest':
         return (
-          <Orb className={`${orbBase} text-white/70`} title={btn.label ?? 'Next-action suggestions'}>
+          <Orb className={`${orbBase} text-ink/70`} title={btn.label ?? 'Next-action suggestions'}>
             <span className="text-lg leading-none">✦</span>
           </Orb>
         );
       default:
         return (
-          <Orb className={`${orbBase} text-white/40`} title={btn.label ?? btn.action}>
+          <Orb className={`${orbBase} text-ink/40`} title={btn.label ?? btn.action}>
             <span className="text-[13px] leading-none">⬡</span>
           </Orb>
         );
@@ -282,8 +379,8 @@ export default function Orbs({
   }
 
   return (
-    <Reorder.Group as="div" axis="x" values={buttons} onReorder={onReorder} className="flex items-center gap-3">
-      {buttons.map((btn) => (
+    <Reorder.Group as="div" axis="x" values={visibleButtons} onReorder={handleReorder} className="flex items-center gap-3">
+      {visibleButtons.map((btn) => (
         <OrbSlot key={btn.id} button={btn}>
           {renderOrb(btn)}
         </OrbSlot>

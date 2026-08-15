@@ -10,9 +10,61 @@
   initial-value: 0deg;
 }
 
+/* ---- Theme tokens — dark/light mode slice ----
+   `--color-*` are raw "R G B" channel triples (no commas) so Tailwind's
+   `rgb(var(--x) / <alpha-value>)` pattern can layer opacity modifiers
+   (bg-surface/60, text-ink/70, …) on top, same as every other color in
+   tailwind.config. Accent is intentionally NOT themed — spec: "accent stays
+   the single accent" — so it's a plain custom property, not a channel triple.
+   `--mesh-*` feed Background.tsx's canvas gradient (imported via
+   getComputedStyle rather than duplicated there). */
 :root {
   color-scheme: dark;
   --accent: #5b8cff;
+
+  --color-void: 5 5 6;
+  --color-surface: 28 28 30;
+  --color-surface-raised: 36 36 38;
+  --color-surface-sunken: 20 20 22;
+  /* Foreground "ink" scale — every text-white/*, border-white/*, bg-white/*
+     opacity tier in the app reads off this in spirit (see Orbs/TopNav/
+     ButtonEditor/RoutinesPanel, the files retheme through `ink`). White in
+     dark mode, near-black in light — NOT literal white, so a handful of
+     deliberately-white surfaces (logo backing tiles) use a separate static
+     `paper` token instead of `ink`, see tailwind.config. */
+  --color-ink: 255 255 255;
+
+  --mesh-top: #16182a;
+  --mesh-bottom: #000000;
+}
+
+[data-theme='light'] {
+  color-scheme: light;
+
+  --color-void: 246 247 250;
+  --color-surface: 255 255 255;
+  --color-surface-raised: 255 255 255;
+  --color-surface-sunken: 240 241 246;
+  --color-ink: 12 14 22;
+
+  --mesh-top: #eef1fb;
+  --mesh-bottom: #dbe1f5;
+}
+
+/* Pre-JS fallback only — theme.ts sets `data-theme` synchronously on
+   import (before React ever paints), so this rule is purely a safety net
+   for the sliver of time before the module executes on a slow connection. */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) {
+    color-scheme: light;
+    --color-void: 246 247 250;
+    --color-surface: 255 255 255;
+    --color-surface-raised: 255 255 255;
+    --color-surface-sunken: 240 241 246;
+    --color-ink: 12 14 22;
+    --mesh-top: #eef1fb;
+    --mesh-bottom: #dbe1f5;
+  }
 }
 
 html,
@@ -22,7 +74,8 @@ body,
 }
 
 body {
-  background: radial-gradient(ellipse 80% 60% at 50% -10%, #16182a 0%, #000 55%) fixed;
+  background: radial-gradient(ellipse 80% 60% at 50% -10%, var(--mesh-top) 0%, var(--mesh-bottom) 55%) fixed;
+  transition: background-color 0.3s ease;
 }
 
 /* ---- Living background canvas — DESIGN.md §4 ---- */
