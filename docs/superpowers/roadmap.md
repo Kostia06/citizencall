@@ -2,8 +2,9 @@
 
 Decomposition (each sub-project gets its own spec → plan → implementation):
 
-1. **Auth + identity foundation** (IN PROGRESS — spec + plan approved, executing on `feature/ui`). Workers + D1, email+password, JWT + rotating refresh, `requireAuth`. Everything below keys off `users.id`.
-2. **Per-user store** — Composio connections, enabled tools/MCPs, prefs (keybindings, button config, default per-session context prompt). Schema + CRUD API, keyed on `users.id`.
+1. **Auth + identity foundation** ✅ DONE (feature/ui). Workers + D1, email+password (scrypt), JWT + rotating refresh w/ reuse-detection, `requireAuth`/`requireVerified`, fail-closed secret. Everything below keys off `users.id`.
+2. **Per-user store** ✅ DONE (feature/ui). Composio connections, MCPs, tool overrides, prefs (keybindings/buttons/contextPrompt); owner-scoped `/api/*` CRUD; `/oauth/done` persistence.
+   - **FOLLOW-UP (deferred from store final review):** the store is not yet consumed by the run pipeline — `isToolEnabled`/`getConnectedAccountId`/`loadUserContext` have no callers, so disabling a tool or revoking a connection has NO runtime effect yet, and the default context prompt isn't prepended to runs. Wire `runTool` (worker/src/pipeline/execute.ts) to check tool-enablement + connection status, and `/api/run` to prepend `contextPrompt`. Belongs to the run-auth / #4 integration.
 3. **Per-user memory system** (NEW — see below).
 4. **Web UI** — signup/login, centered auto-growing search bar, customizable buttons + keybinding editor, drag-drop attachments + clipboard read, settings for connections/tools/memory.
 5. **Expo search bar** — consumes the same token API (owner handles native).
