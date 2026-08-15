@@ -28,16 +28,27 @@ function useContentHeight() {
  * live off TraceState; every sub-section only renders once its event has
  * arrived, so the reveal paces itself with the run. `className` lets a
  * turn in the chat transcript (ConversationTurn.tsx) use tighter spacing
- * than the default standalone layout. */
+ * than the default standalone layout.
+ *
+ * `animate` gates every `layout` prop in this tree. framer-motion
+ * re-measures the bounding box of EVERY `layout` element on screen whenever
+ * ANY of them changes size — so with one TracePipeline per chat turn, a
+ * `layout` block on a completed turn keeps paying that re-measure cost on
+ * every new event in the CURRENT turn, and the cost compounds turn over
+ * turn. Only the active (currently-running, last) turn passes `animate`;
+ * once a turn finishes it renders statically and stops being measured. */
 export default function TracePipeline({
   state,
   className = 'mx-auto mt-6 w-full max-w-2xl pb-24',
+  animate = true,
 }: {
   state: TraceState;
   className?: string;
+  animate?: boolean;
 }) {
   const [contentRef, contentHeight] = useContentHeight();
   const reduceMotion = useReducedMotion();
+  const layoutOn = animate && !reduceMotion;
 
   if (state.status === 'idle') return null;
 
@@ -58,10 +69,15 @@ export default function TracePipeline({
         </motion.div>
       </div>
 
-      <motion.div layout={!reduceMotion} transition={layoutFlow} ref={contentRef} className="space-y-5 pl-5">
+      <motion.div layout={layoutOn} transition={layoutFlow} ref={contentRef} className="space-y-5 pl-5">
         <AnimatePresence>
           {state.normalize && (
-            <motion.div key="normalize" layout={!reduceMotion} transition={layoutFlow}>
+            <motion.div
+              key="normalize"
+              initial={reduceMotion ? { opacity: 0 } : { opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={reduceMotion ? layoutFlowReduced : layoutFlow}
+            >
               <NormalizeBlock normalize={state.normalize} />
             </motion.div>
           )}
@@ -69,8 +85,9 @@ export default function TracePipeline({
           {state.plan && (
             <motion.div
               key="plan-summary"
-              layout={!reduceMotion}
-              transition={layoutFlow}
+              initial={reduceMotion ? { opacity: 0 } : { opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={reduceMotion ? layoutFlowReduced : layoutFlow}
               className="flex items-center justify-between px-1 text-[11px] text-white/40"
             >
               <span>
@@ -89,7 +106,13 @@ export default function TracePipeline({
             const rungs = state.rungsBySubTask[subTask.id] ?? [];
             if (rungs.length === 0) return null;
             return (
-              <motion.div key={subTask.id} layout={!reduceMotion} transition={layoutFlow} className="space-y-2">
+              <motion.div
+                key={subTask.id}
+                initial={reduceMotion ? { opacity: 0 } : { opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={reduceMotion ? layoutFlowReduced : layoutFlow}
+                className="space-y-2"
+              >
                 <div className="flex items-center gap-2 px-1">
                   <span className="rounded-full bg-white/8 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-white/50">
                     {KIND_LABEL[subTask.kind] ?? subTask.kind}
@@ -116,7 +139,12 @@ export default function TracePipeline({
           })}
 
           {state.runEnd && (
-            <motion.div key="run-end" layout={!reduceMotion} transition={layoutFlow}>
+            <motion.div
+              key="run-end"
+              initial={reduceMotion ? { opacity: 0 } : { opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={reduceMotion ? layoutFlowReduced : layoutFlow}
+            >
               <RunEndSummary runEnd={state.runEnd} />
             </motion.div>
           )}

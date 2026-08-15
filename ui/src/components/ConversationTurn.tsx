@@ -8,8 +8,14 @@ import type { Turn } from '../lib/traceReducer';
  * and never remounts — TracePipeline reads live off the turn's own
  * TraceState as events stream in, so re-renders (not remounts) drive the
  * trace forward. DESIGN.md's entrance-standard spring plays once when the
- * turn is appended to the transcript. */
-export default function ConversationTurn({ turn }: { turn: Turn }) {
+ * turn is appended to the transcript.
+ *
+ * `animate` is true only for the currently-running turn (see Bar.tsx) — it
+ * gates TracePipeline's `layout` animations so a finished turn stops paying
+ * framer-motion's re-measure cost on every event in the turn still running.
+ * Finished turns also get `content-visibility: auto` so ones scrolled out
+ * of view skip layout/paint entirely. */
+export default function ConversationTurn({ turn, animate = false }: { turn: Turn; animate?: boolean }) {
   const reduceMotion = useReducedMotion();
 
   return (
@@ -17,7 +23,7 @@ export default function ConversationTurn({ turn }: { turn: Turn }) {
       initial={reduceMotion ? { opacity: 0 } : { opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
       transition={reduceMotion ? entranceStandardReduced : entranceStandard}
-      className="mb-8"
+      className={`mb-8 ${animate ? '' : 'turn-frozen'}`}
     >
       <div className="mb-1.5 flex justify-end px-1 text-[10px] uppercase tracking-wide text-white/25">
         {turn.source === 'voice' ? 'you · voice' : 'you'}
@@ -27,7 +33,7 @@ export default function ConversationTurn({ turn }: { turn: Turn }) {
           {turn.prompt}
         </div>
       </div>
-      <TracePipeline state={turn.trace} className="mx-auto mt-4 w-full max-w-2xl" />
+      <TracePipeline state={turn.trace} className="mx-auto mt-4 w-full max-w-2xl" animate={animate} />
     </motion.div>
   );
 }

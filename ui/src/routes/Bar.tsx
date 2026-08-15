@@ -194,10 +194,10 @@ export default function Bar() {
         <div
           ref={transcriptRef}
           onScroll={handleTranscriptScroll}
-          className="mx-auto min-h-0 w-full max-w-2xl flex-1 overflow-y-auto pb-8"
+          className="transcript-scroll mx-auto min-h-0 w-full max-w-2xl flex-1 overflow-y-auto pb-8"
         >
           {turns.map((turn) => (
-            <ConversationTurn key={turn.id} turn={turn} />
+            <ConversationTurn key={turn.id} turn={turn} animate={turn.id === lastTurn?.id && running} />
           ))}
         </div>
       )}
