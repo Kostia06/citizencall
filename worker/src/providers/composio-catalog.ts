@@ -1,13 +1,19 @@
 // GET /api/toolkits — normalized Composio app/toolkit catalog for the UI's
 // "connect an app" picker. Live Composio-backed when COMPOSIO_API_KEY is
-// set; a bundled static list of 100+ popular apps otherwise (or if the live
-// fetch fails), so the picker is never empty and never needs a key.
+// set; a bundled static list of 100+ popular apps otherwise, so the picker
+// is never empty and never needs a key.
 //
 // Confirmed against the live API (2026-08): GET /api/v3.1/toolkits?limit=100
 // with header x-api-key returns { items: [{ slug, name, meta: { logo,
-// categories: [{id,name}] } }], next_cursor, total_pages, total_items }.
-// There are 1200+ toolkits total; we only pull the first page — plenty for a
-// picker, and paging further isn't worth the extra round-trips.
+// categories: [{id,name}] } }], next_cursor, total_pages, total_items };
+// ~1,200 toolkits over ~13 cursor pages.
+//
+// Cache layers (fast → durable):
+//   L0 module memory (per isolate, 15 min) → L1 D1 `toolkit_catalog` row
+//   (GLOBAL — one 13-page walk populates the catalog for every user and
+//   survives isolate/dev-server restarts; 24h freshness, and a STALE row
+//   still beats the 100-app fallback when Composio is down) → live walk →
+//   bundled fallback only when D1 is empty AND the live walk fails.
 import type { Env } from '../env';
 
 export interface Toolkit {
@@ -24,12 +30,48 @@ export interface ToolkitCatalog {
 
 const COMPOSIO_API_BASE = 'https://backend.composio.dev';
 const FETCH_LIMIT = 100; // Composio's page size cap, confirmed live
-const CACHE_TTL_MS = 15 * 60 * 1000;
+const CACHE_TTL_MS = 15 * 60 * 1000; // L0 memory
+const D1_TTL_MS = 24 * 60 * 60 * 1000; // L1 global — the catalog moves slowly
 
-// Module-level cache: a Worker isolate persists across requests for a
+// L0: module-level cache — a Worker isolate persists across requests for a
 // while (same pattern noted in policy.ts for the candidate roster), so this
-// pays the Composio round-trip once instead of on every GET /api/toolkits.
+// pays even the D1 read once instead of on every GET /api/toolkits.
 let cached: { catalog: ToolkitCatalog; expiresAt: number } | null = null;
+
+// L1: one global D1 row shared by every user/isolate — same lazy-provision
+// pattern as the run cache (cache/schema.ts): no wiring needed, idempotent
+// CREATE on first use.
+let d1SchemaReady = false;
+async function ensureCatalogSchema(db: D1Database): Promise<void> {
+  if (d1SchemaReady) return;
+  await db.exec(
+    'CREATE TABLE IF NOT EXISTS toolkit_catalog(id INTEGER PRIMARY KEY CHECK (id = 1), value_json TEXT NOT NULL, fetched_at INTEGER NOT NULL)'
+  );
+  d1SchemaReady = true;
+}
+
+async function readCatalogRow(db: D1Database): Promise<{ toolkits: Toolkit[]; fetchedAt: number } | null> {
+  await ensureCatalogSchema(db);
+  const row = await db
+    .prepare('SELECT value_json, fetched_at FROM toolkit_catalog WHERE id = 1')
+    .first<{ value_json: string; fetched_at: number }>();
+  if (!row) return null;
+  try {
+    return { toolkits: JSON.parse(row.value_json) as Toolkit[], fetchedAt: row.fetched_at };
+  } catch {
+    return null; // corrupt row — treat as absent, next live walk overwrites it
+  }
+}
+
+async function writeCatalogRow(db: D1Database, toolkits: Toolkit[], now: number): Promise<void> {
+  await ensureCatalogSchema(db);
+  await db
+    .prepare(
+      'INSERT INTO toolkit_catalog (id, value_json, fetched_at) VALUES (1, ?1, ?2) ON CONFLICT(id) DO UPDATE SET value_json = ?1, fetched_at = ?2'
+    )
+    .bind(JSON.stringify(toolkits), now)
+    .run();
+}
 
 interface ComposioToolkitItem {
   slug: string;
@@ -76,16 +118,51 @@ export async function getToolkitCatalog(env: Env): Promise<ToolkitCatalog> {
   const now = Date.now();
   if (cached && cached.expiresAt > now) return cached.catalog;
 
+  // L1 — the globally shared D1 row: fresh enough serves everyone without
+  // touching Composio at all.
+  let staleRow: { toolkits: Toolkit[]; fetchedAt: number } | null = null;
+  try {
+    const row = await readCatalogRow(env.DB);
+    if (row) {
+      if (now - row.fetchedAt < D1_TTL_MS) {
+        const catalog: ToolkitCatalog = { toolkits: row.toolkits, source: 'composio' };
+        cached = { catalog, expiresAt: now + CACHE_TTL_MS };
+        return catalog;
+      }
+      staleRow = row; // keep as a better-than-fallback safety net below
+    }
+  } catch {
+    // D1 hiccup — proceed to the live walk; the picker must never 500.
+  }
+
   if (env.COMPOSIO_API_KEY) {
     try {
       const toolkits = await fetchLiveCatalog(env.COMPOSIO_API_KEY);
       const catalog: ToolkitCatalog = { toolkits, source: 'composio' };
       cached = { catalog, expiresAt: now + CACHE_TTL_MS };
+      // Distribute: persist for every other isolate/user. Failure to write
+      // is non-fatal — this request already has its answer.
+      try {
+        await writeCatalogRow(env.DB, toolkits, now);
+      } catch {
+        /* non-fatal */
+      }
       return catalog;
     } catch {
-      // Fall through to the static list — a Composio outage (or a bad key)
-      // must never take down the connect picker.
+      // Composio outage (or bad key): a STALE global row is still the full
+      // real catalog — far better than the 100-app fallback.
+      if (staleRow) {
+        const catalog: ToolkitCatalog = { toolkits: staleRow.toolkits, source: 'composio' };
+        cached = { catalog, expiresAt: now + CACHE_TTL_MS };
+        return catalog;
+      }
     }
+  } else if (staleRow) {
+    // No key on this deployment but a previous keyed run populated the
+    // global row — keep distributing it.
+    const catalog: ToolkitCatalog = { toolkits: staleRow.toolkits, source: 'composio' };
+    cached = { catalog, expiresAt: now + CACHE_TTL_MS };
+    return catalog;
   }
 
   const catalog: ToolkitCatalog = { toolkits: FALLBACK_TOOLKITS, source: 'fallback' };

@@ -33,9 +33,13 @@ it('/oauth/done persists a completed Composio callback into user_connections', a
   const state = await createState(env, { userId: 'u-oauth-1', toolkit: 'github' });
   const url = `/oauth/done?state=${encodeURIComponent(state)}&status=success&connected_account_id=ca_123`;
   const res = await app.request(url, {}, env);
-  expect(res.status).toBe(200);
-  const body = await res.json<{ userId: string; toolkit: string; status: string; connectedAccountId: string }>();
-  expect(body).toEqual({ userId: 'u-oauth-1', toolkit: 'github', status: 'success', connectedAccountId: 'ca_123' });
+  // The callback now bounces the browser back into the SPA (settings page)
+  // instead of dead-ending on a JSON receipt.
+  expect(res.status).toBe(302);
+  const location = res.headers.get('location') ?? '';
+  expect(location).toContain('/settings');
+  expect(location).toContain('connected=github');
+  expect(location).toContain('status=success');
 
   // The owning user now sees the connection as active via the bearer-gated
   // store route.

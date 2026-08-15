@@ -86,7 +86,7 @@ it('(c) GET /connections with the anon cookie lists only that anon session\'s co
     {},
     env
   );
-  expect(done.status).toBe(200);
+  expect(done.status).toBe(302); // callback now redirects the browser into /settings
 
   const listA = await app.request('/api/connections', { headers: { Cookie: cookieA } }, env);
   expect(listA.status).toBe(200);
