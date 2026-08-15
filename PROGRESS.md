@@ -81,11 +81,15 @@ before starting work; update it when you finish.
 - [x] 2026-08-15 — `CommandBar` gains `variant="spotlight"` (suppresses placeholder copy, suggestion list, ghost next-action, and the suggest fetch); `Orbs` gains optional `onOpenRoute` so route orbs open in the real browser instead of navigating a 720px panel and stranding the user. Default variant unchanged — browser routes verified unregressed.
 - [x] 2026-08-15 — **Consolidated all branches into `main`** (`bf3278d`): `feature/ui` fast-forward (36), `progression` via `--allow-unrelated-histories` (orphan history, this file), `desktop-spotlight` merged with 3 conflicts resolved in favour of the chat rewrite — the branch's hardcoded four-orb component was dropped and `Spotlight.tsx` rewritten against `conversationReducer`/`ConversationTurn`/`useAuth`.
 
+- [x] 2026-08-15 — **Full local stack verified post-merge** with real keys in `worker/.dev.vars` (gitignored): worker suite re-run green (**33 files / 166 tests**), `pnpm db:reset` applies all three schemas, live Featherless run routed to `Qwen/Qwen2.5-0.5B-Instruct` and returned **94.8% saved** vs the GLM baseline — independently reproducing the smart-loop-v2 number above.
+
 ### Known gaps in the above
 
-- **Voice does not work in the Electron shell** — SPEC §7.3. `webkitSpeechRecognition` throws `network` inside Electron (no Google Speech key shipped). Note the worker now has a real ElevenLabs `/api/stt` proxy, so routing the overlay's mic through that is the obvious fix; until then film voice in Chrome and the hotkey beat separately.
-- **`worker/` tests have not run in the agent's environment** — `pnpm install` is refused by the `minimumReleaseAge` supply-chain policy (`@cloudflare/workers-types` published inside the cutoff). The 166 green tests above are from the `feature/ui` author's run, not re-verified post-merge.
-- `/roster` renders empty without `wrangler dev` on :8787 (the Vite dev proxy 500s). Pre-existing; reproduced identically on `584e8ee`.
+- **Voice does not work in the Electron shell** — SPEC §7.3. `webkitSpeechRecognition` throws `network` inside Electron (no Google Speech key shipped). The worker now has a real ElevenLabs `/api/stt` proxy, so routing the overlay's mic through that is the obvious fix; until then film voice in Chrome and the hotkey beat separately.
+- **`roster` table is never populated** — `/api/roster` returns `{"roster":[]}` against a live worker with the full schema applied, so `/roster` renders headers and no rows. `harness/promote.py` writes `policy.json` but nothing writes this table.
+- **Tool-needing runs stall without connected apps** — a prompt like "summarize this week" plans 3 sub-tasks requiring `gmail.fetch_emails` / `github.list_commits`; with no Composio connection those hops don't complete. Tool-free prompts (classify/summarize-from-text) run clean.
+- **The Electron window itself has still never been seen** — no Screen Recording permission in the agent's terminal. Every check was through the browser at `/spotlight`.
+- `worker/pnpm-workspace.yaml` was added so pnpm 11 allows the esbuild/workerd build scripts (pnpm 11 stopped reading the `pnpm` field in package.json); the lockfile now resolves `@cloudflare/workers-types` to `5.20260814.1`, which satisfies the `minimumReleaseAge` supply-chain policy that the previously committed lockfile violated.
 
 ## Blocked
 
