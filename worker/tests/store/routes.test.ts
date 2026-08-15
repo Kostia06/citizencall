@@ -54,7 +54,7 @@ it('mcps/tools require auth; connections works anonymously (resolveActor) and st
   expect(await anonConnections.json()).toEqual([]);
 
   const tA = await verifiedToken('u-routes-mcp-A');
-  const created = await app.request('/api/mcps', { method: 'POST', ...auth(tA), body: JSON.stringify({ name: 'my-mcp' }) }, env);
+  const created = await app.request('/api/mcps', { method: 'POST', ...auth(tA), body: JSON.stringify({ name: 'my-mcp', url: 'https://mcp.example.com' }) }, env);
   expect(created.status).toBe(201);
   const { id } = await created.json<{ id: string }>();
 

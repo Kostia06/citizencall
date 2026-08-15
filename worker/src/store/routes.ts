@@ -9,13 +9,14 @@
 // /api/benchmark, /api/funnel, /api/connect) that are registered directly
 // on the main app.
 import { Hono, type Context } from 'hono';
+import { z } from 'zod';
 import type { Env } from '../env';
 import { requireAuth, requireVerified } from '../auth/middleware';
 import { clearAnonCookie, peekAnonId, resolveActor } from '../auth/anon';
 import { getSettings, putSettings } from './settings';
 import { validatePrefsPatch } from './prefs';
 import { listConnections, reassignConnections, revokeConnection } from './connections';
-import { createMcp, deleteMcp, listMcps, updateMcp } from './mcps';
+import { createMcp, deleteMcp, getMcp, listMcps, updateMcp } from './mcps';
 import { listToolOverrides, setToolOverride } from './tools';
 
 type Vars = { authUserId?: string; authSessionId?: string; authEmailVerified?: boolean };
@@ -68,17 +69,61 @@ storeRoutes.post('/connections/claim', ...gate, async (c) => {
   return c.body(null, 204);
 });
 
+// Custom MCP entry validation: name required, url must be http(s), headers
+// (optional) a flat string->string record, enabled (optional) a bool.
+// `.strict()` rejects unknown keys so typos ("hdrs", "uri") fail loudly at
+// the boundary instead of silently persisting a config the pipeline ignores.
+const mcpUrlSchema = z
+  .string()
+  .url()
+  .refine((u) => /^https?:\/\//i.test(u), { message: 'url must be http(s)' });
+const mcpHeadersSchema = z.record(z.string(), z.string());
+
+const mcpCreateSchema = z
+  .object({
+    name: z.string().trim().min(1, 'name required').max(120),
+    url: mcpUrlSchema,
+    headers: mcpHeadersSchema.optional(),
+    enabled: z.boolean().optional(),
+  })
+  .strict();
+
+const mcpPatchSchema = z
+  .object({
+    name: z.string().trim().min(1, 'name must be non-empty').max(120).optional(),
+    url: mcpUrlSchema.optional(),
+    headers: mcpHeadersSchema.optional(),
+    enabled: z.boolean().optional(),
+  })
+  .strict();
+
 storeRoutes.get('/mcps', ...gate, async (c) => c.json(await listMcps(c.env.DB, uid(c))));
 
 storeRoutes.post('/mcps', ...gate, async (c) => {
-  const b = await jsonBody(c);
-  if (typeof b.name !== 'string') return c.json({ error: 'name required' }, 400);
-  return c.json(await createMcp(c.env.DB, { userId: uid(c), name: b.name, config: b.config, now: now() }), 201);
+  const parsed = mcpCreateSchema.safeParse(await jsonBody(c));
+  if (!parsed.success) return c.json({ error: 'invalid mcp', details: parsed.error.flatten() }, 400);
+  const { name, url, headers, enabled } = parsed.data;
+  return c.json(
+    await createMcp(c.env.DB, { userId: uid(c), name, config: { url, headers: headers ?? {} }, enabled, now: now() }),
+    201
+  );
 });
 
 storeRoutes.patch('/mcps/:id', ...gate, async (c) => {
-  const b = await jsonBody(c);
-  const ok = await updateMcp(c.env.DB, uid(c), c.req.param('id'), b);
+  const parsed = mcpPatchSchema.safeParse(await jsonBody(c));
+  if (!parsed.success) return c.json({ error: 'invalid mcp', details: parsed.error.flatten() }, 400);
+  const { name, url, headers, enabled } = parsed.data;
+
+  // url/headers live together inside config_json — a partial change to
+  // either merges over the current row (read-modify-write, owner-scoped).
+  let config: { url: string; headers: Record<string, string> } | undefined;
+  if (url !== undefined || headers !== undefined) {
+    const current = await getMcp(c.env.DB, uid(c), c.req.param('id'));
+    if (!current) return c.json({ error: 'Not found.' }, 404);
+    config = { url: url ?? current.url, headers: headers ?? current.headers };
+  }
+
+  const ok = await updateMcp(c.env.DB, uid(c), c.req.param('id'), { name, config, enabled });
   return ok ? c.body(null, 200) : c.json({ error: 'Not found.' }, 404);
 });
 
