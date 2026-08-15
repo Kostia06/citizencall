@@ -98,6 +98,10 @@ export type TraceEvent =
   | { t: 'hop_end'; hop: Hop }
   | { t: 'tool_call'; toolkit: string; tool: string; cacheHit: boolean; ms: number }
   | { t: 'escalate'; from: string; to: string; reason: Verdict }
+  // Connection-required pause: the run is waiting for the user to connect a
+  // toolkit (or skip). Status stays 'running'; run_resumed always follows.
+  | { t: 'connection_required'; toolkit: string; subTaskId: string }
+  | { t: 'run_resumed'; toolkit: string; skipped: boolean }
   | {
       t: 'run_end';
       runId: string;

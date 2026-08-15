@@ -28,11 +28,14 @@ export interface RunRequest {
   noCache?: boolean;
 }
 
-/** Test seam only — production always runs on the boot-loaded policy.json +
- * candidate roster (SPEC.md §13). */
+/** `policy`/`candidates` are test seams only — production always runs on the
+ * boot-loaded policy.json + candidate roster (SPEC.md §13).
+ * `waitForConnection` is production wiring: the DO (run.do.ts) provides it so
+ * a missing Composio connection pauses the run instead of erroring. */
 export interface RunPipelineOptions {
   policy?: Policy;
   candidates?: ModelCandidate[];
+  waitForConnection?: (toolkit: string, subTaskId: string) => Promise<'connected' | 'skipped'>;
 }
 
 export async function runPipeline(
@@ -137,6 +140,7 @@ export async function runPipeline(
         emit: record,
         mcpToolkits: mcpTokens,
         priorOutputs,
+        ...(opts.waitForConnection ? { waitForConnection: opts.waitForConnection } : {}),
       },
       subTask
     );

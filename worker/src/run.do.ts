@@ -4,6 +4,7 @@ import type { Env } from './env';
 import type { TraceEvent } from './types';
 import { runPipeline } from './pipeline/run';
 import { markRunErrored } from './db';
+import { getConnectedAccountId } from './store/connections';
 import { formatSseEvent, replayFrom, SSE_HEARTBEAT } from './sse';
 
 export interface StartRunBody {
@@ -15,6 +16,18 @@ export interface StartRunBody {
 }
 
 const HEARTBEAT_MS = 15_000;
+const CONNECTION_PAUSE_TIMEOUT_MS = 5 * 60_000;
+
+/** How a connection-required pause ended: the user linked the toolkit, or
+ * skipped (explicitly, or via the 5-minute timeout). */
+export type ConnectionResolution = 'connected' | 'skipped';
+
+interface PendingConnection {
+  userId: string;
+  toolkit: string;
+  resolve: (resolution: ConnectionResolution) => void;
+  timer: ReturnType<typeof setTimeout>;
+}
 
 export class RunDO {
   private events: TraceEvent[] = [];
@@ -22,6 +35,12 @@ export class RunDO {
   private waiters: Array<() => void> = [];
   // L0 — one run, in-memory, never persisted (SPEC.md §8).
   private readonly l0 = new Map<string, unknown>();
+  // Connection-required pause (at most one at a time — sub-tasks execute
+  // sequentially). Status stays 'running' while paused so the SSE stream
+  // keeps heartbeating instead of closing.
+  private pendingConnection: PendingConnection | null = null;
+  /** Injectable for tests (runInDurableObject) — production keeps 5 min. */
+  connectionTimeoutMs = CONNECTION_PAUSE_TIMEOUT_MS;
 
   constructor(
     private readonly ctx: DurableObjectState,
@@ -31,6 +50,7 @@ export class RunDO {
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
     if (request.method === 'POST' && url.pathname.endsWith('/start')) return this.handleStart(request);
+    if (request.method === 'POST' && url.pathname.endsWith('/resume')) return this.handleResume(request);
     if (request.method === 'GET' && url.pathname.endsWith('/stream')) return this.handleStream(request);
     return new Response('not found', { status: 404 });
   }
@@ -40,6 +60,55 @@ export class RunDO {
   }
   setL0(key: string, value: unknown): void {
     this.l0.set(key, value);
+  }
+
+  /** Test-visibility accessor (runInDurableObject) — the event buffer is
+   * otherwise only observable through the SSE stream. */
+  snapshotEvents(): readonly TraceEvent[] {
+    return this.events;
+  }
+
+  /** Pipeline callback (threaded via RunPipelineOptions): emit
+   * `connection_required`, then block the run until POST /resume settles the
+   * pause or the timeout treats it as a skip. `run_resumed` is emitted here,
+   * in settleConnectionWait, so the trace always shows the pair. */
+  waitForConnection(userId: string, toolkit: string, subTaskId: string): Promise<ConnectionResolution> {
+    this.push({ t: 'connection_required', toolkit, subTaskId });
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => this.settleConnectionWait('skipped'), this.connectionTimeoutMs);
+      this.pendingConnection = { userId, toolkit, resolve, timer };
+    });
+  }
+
+  private settleConnectionWait(resolution: ConnectionResolution): void {
+    const pending = this.pendingConnection;
+    if (!pending) return;
+    this.pendingConnection = null;
+    clearTimeout(pending.timer);
+    this.push({ t: 'run_resumed', toolkit: pending.toolkit, skipped: resolution === 'skipped' });
+    pending.resolve(resolution);
+  }
+
+  private async handleResume(request: Request): Promise<Response> {
+    const body = (await request.json().catch(() => null)) as { action?: unknown } | null;
+    const action = body?.action;
+    if (action !== 'retry' && action !== 'skip') {
+      return Response.json({ error: "action must be 'retry' or 'skip'" }, { status: 400 });
+    }
+    const pending = this.pendingConnection;
+    if (!pending) return Response.json({ error: 'run is not paused' }, { status: 409 });
+
+    if (action === 'skip') {
+      this.settleConnectionWait('skipped');
+      return Response.json({ resumed: true, skipped: true });
+    }
+    // retry — only resume when the connection actually exists NOW; a
+    // premature retry keeps the pause alive instead of burning it on a
+    // still-missing connection.
+    const accountId = await getConnectedAccountId(this.env.DB, pending.userId, pending.toolkit);
+    if (!accountId) return Response.json({ resumed: false, waiting: true });
+    this.settleConnectionWait('connected');
+    return Response.json({ resumed: true, skipped: false });
   }
 
   private async handleStart(request: Request): Promise<Response> {
@@ -118,7 +187,9 @@ export class RunDO {
   }
 
   private async runPipeline(body: StartRunBody): Promise<void> {
-    await runPipeline(this.env, (e) => this.push(e), body);
+    await runPipeline(this.env, (e) => this.push(e), body, {
+      waitForConnection: (toolkit, subTaskId) => this.waitForConnection(body.userId, toolkit, subTaskId),
+    });
     this.status = 'done';
   }
 }

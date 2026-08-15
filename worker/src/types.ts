@@ -89,6 +89,10 @@ export type TraceEvent =
   | { t: 'escalate'; from: string; to: string; reason: Verdict }
   | { t: 'cache_hit'; runId: string; cachedAt: number; ageMs: number }
   | { t: 'tool_skipped'; toolkit: string; tool: string; reason: string }
+  // Connection-required pause: the run is waiting for the user to connect a
+  // toolkit (or skip). Status stays 'running'; run_resumed always follows.
+  | { t: 'connection_required'; toolkit: string; subTaskId: string }
+  | { t: 'run_resumed'; toolkit: string; skipped: boolean }
   | {
       t: 'run_end';
       runId: string;

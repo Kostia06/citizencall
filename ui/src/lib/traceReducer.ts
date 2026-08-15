@@ -10,6 +10,17 @@ export interface RungState {
   escalatedFrom?: string;
 }
 
+/** Connection-required pause state for the active turn — set by
+ * `connection_required`, settled by `run_resumed`. ConversationTurn renders
+ * the "Connect <App> to continue" card while `status === 'waiting'` and a
+ * collapsed one-line note once resumed. */
+export interface ConnectionGate {
+  toolkit: string;
+  subTaskId: string;
+  status: 'waiting' | 'resumed';
+  skipped?: boolean;
+}
+
 export interface TraceState {
   status: 'idle' | 'running' | 'done' | 'error';
   runId?: string;
@@ -22,6 +33,7 @@ export interface TraceState {
   subTaskOrder: string[];
   rungsBySubTask: Record<string, RungState[]>;
   lastToolCall?: { toolkit: string; tool: string; at: number };
+  connectionGate?: ConnectionGate;
   runEnd?: { totalCostUsd: number; totalMs: number; baselineCostUsd: number; savingsPct: number };
   error?: string;
   /** Bumped on every `escalate` event — CommandBar watches this to spike
@@ -142,6 +154,23 @@ export function traceReducer(state: TraceState, event: TraceEvent): TraceState {
         escalateTick: state.escalateTick + 1,
       };
     }
+
+    case 'connection_required':
+      return {
+        ...state,
+        connectionGate: { toolkit: event.toolkit, subTaskId: event.subTaskId, status: 'waiting' },
+      };
+
+    case 'run_resumed':
+      return {
+        ...state,
+        connectionGate: {
+          toolkit: event.toolkit,
+          subTaskId: state.connectionGate?.subTaskId ?? '',
+          status: 'resumed',
+          skipped: event.skipped,
+        },
+      };
 
     case 'run_end':
       return {

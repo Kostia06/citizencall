@@ -424,6 +424,22 @@ export const storeApi = {
     );
   },
 
+  /** Resumes a run paused on a connection-required gate. No auth: like the
+   * SSE stream, the unguessable runId is the capability. `retry` only resumes
+   * if the toolkit is NOW connected (the worker re-checks and keeps waiting
+   * otherwise); `skip` always resumes without tool data. MOCK never pauses,
+   * so this is a no-op there. */
+  async resumeRun(runId: string, action: 'retry' | 'skip'): Promise<{ resumed: boolean; skipped?: boolean }> {
+    if (MOCK) return { resumed: true };
+    const res = await fetch(`${API_BASE}/api/run/${encodeURIComponent(runId)}/resume`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ action }),
+    });
+    if (!res.ok) throw new Error(`POST /api/run/${runId}/resume failed: ${res.status}`);
+    return res.json();
+  },
+
   async disconnect(authedFetch: AuthedFetch, toolkit: string): Promise<void> {
     return withMockFallback(
       async () => {

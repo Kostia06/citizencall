@@ -46,6 +46,12 @@ export interface ExecuteContext {
   mcpTransport?: McpTransport;
   /** Outputs of already-executed sub-tasks, keyed by sub-task id. */
   priorOutputs?: ReadonlyMap<string, PriorOutput>;
+  /** Connection-required pause (run.do.ts implements this): emits
+   * `connection_required`, then blocks until the user connects the toolkit
+   * ('connected'), skips, or the pause times out ('skipped'). The DO emits
+   * `run_resumed` itself before resolving. Absent (tests, callers without a
+   * DO) means the legacy behavior: an error trace + fail_tool. */
+  waitForConnection?: (toolkit: string, subTaskId: string) => Promise<'connected' | 'skipped'>;
 }
 
 export interface ToolCallResult {
@@ -232,11 +238,20 @@ async function runTool(ctx: ExecuteContext, subTask: SubTask): Promise<ToolOutco
   if (await isToolDisabled(ctx, toolkit, tool)) return skip('disabled by user');
 
   // Live mode only: a Composio call executes against the actor's connected
-  // account, so a missing/revoked connection must surface as a clear trace
-  // error before any network call — never a crash mid-run. Stub mode (no API
-  // key) has no real connections to check.
+  // account, so a missing/revoked connection is checked before any network
+  // call — never a crash mid-run. Stub mode (no API key) has no real
+  // connections to check. With a waitForConnection callback (the DO run
+  // path), a missing connection PAUSES the run until the user connects or
+  // skips; without one, it surfaces as the legacy trace error.
   if (ctx.env.COMPOSIO_API_KEY) {
-    const connectedAccountId = await getConnectedAccountId(ctx.db, ctx.userId, toolkit);
+    let connectedAccountId = await getConnectedAccountId(ctx.db, ctx.userId, toolkit);
+    if (!connectedAccountId && ctx.waitForConnection) {
+      const resolution = await ctx.waitForConnection(toolkit, subTask.id);
+      if (resolution === 'skipped') return skip('connection not linked — skipped');
+      // 'connected' — the DO verified the connection exists before resuming;
+      // re-read it here to execute against the fresh account.
+      connectedAccountId = await getConnectedAccountId(ctx.db, ctx.userId, toolkit);
+    }
     if (!connectedAccountId) {
       ctx.emit({
         t: 'error',

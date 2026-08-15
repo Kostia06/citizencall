@@ -67,6 +67,15 @@ app.post('/api/run', async (c) => {
   return c.json({ runId });
 });
 
+// Resume a connection-required pause: {action:'retry'|'skip'} forwarded to
+// the run's DO (same idFromName routing as /start). Like /api/run/:id, the
+// unguessable runId is the capability — no additional auth requirement.
+app.post('/api/run/:id/resume', async (c) => {
+  const body = await c.req.text();
+  const stub = c.env.RUN.get(c.env.RUN.idFromName(c.req.param('id')));
+  return stub.fetch('https://run.do/resume', { method: 'POST', body });
+});
+
 app.get('/api/run/:id/stream', async (c) => {
   const stub = c.env.RUN.get(c.env.RUN.idFromName(c.req.param('id')));
   const headers = new Headers();
