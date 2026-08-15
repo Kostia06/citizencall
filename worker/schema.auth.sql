@@ -31,6 +31,15 @@ CREATE TABLE IF NOT EXISTS auth_attempts(
   window_start INTEGER NOT NULL,
   count INTEGER NOT NULL DEFAULT 0);
 
+-- Retired refresh-token hashes, kept ~30 days (matches refresh TTL) so a
+-- replayed already-rotated token can be recognized as reuse (not just
+-- "unknown") and its whole session family revoked.
+CREATE TABLE IF NOT EXISTS retired_hashes(
+  hash TEXT PRIMARY KEY,
+  family_id TEXT NOT NULL,
+  retired_at INTEGER NOT NULL);
+
 CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id, revoked);
 CREATE INDEX IF NOT EXISTS idx_sessions_family ON sessions(family_id);
 CREATE INDEX IF NOT EXISTS idx_email_tokens_user ON email_tokens(user_id, type);
+CREATE INDEX IF NOT EXISTS idx_retired_hashes_family ON retired_hashes(family_id);

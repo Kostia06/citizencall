@@ -1,0 +1,90 @@
+import { generateToken, hashToken } from './tokens';
+
+const REFRESH_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+
+export async function createSession(
+  db: D1Database,
+  a: { userId: string; userAgent: string | null; ip: string | null; now: number }
+): Promise<{ sessionId: string; refreshToken: string }> {
+  const sessionId = crypto.randomUUID();
+  const familyId = crypto.randomUUID();
+  const refreshToken = generateToken();
+  await db
+    .prepare(
+      `INSERT INTO sessions(id,user_id,family_id,refresh_hash,user_agent,ip,created_at,last_used_at,expires_at,revoked)
+       VALUES(?,?,?,?,?,?,?,?,?,0)`
+    )
+    .bind(sessionId, a.userId, familyId, await hashToken(refreshToken), a.userAgent, a.ip, a.now, a.now, a.now + REFRESH_TTL_MS)
+    .run();
+  return { sessionId, refreshToken };
+}
+
+// Rotation + reuse-detection.
+//
+// Each session row tracks only its *current* refresh_hash; rotating a token
+// overwrites it. That alone can't tell "never existed" apart from "already
+// rotated away" once the old hash is gone from `sessions`, so every hash we
+// retire is recorded in `retired_hashes` (hash -> family_id) for ~30 days.
+// A lookup miss against `sessions` that DOES hit `retired_hashes` means the
+// presented token was valid once but has already been superseded — a classic
+// stolen-token replay — so the whole family gets revoked.
+//
+// A `revoked` row hit via its still-current hash (e.g. from revokeAllForUser
+// or revokeSession, with no rotation in between) is a dead session, not a
+// theft signal, so that path returns 'invalid' rather than 'reused'.
+export async function rotateSession(
+  db: D1Database,
+  refreshToken: string,
+  now: number
+): Promise<{ sessionId: string; userId: string; refreshToken: string } | 'invalid' | 'reused'> {
+  const hash = await hashToken(refreshToken);
+
+  const row = await db
+    .prepare(`SELECT id,user_id,family_id,expires_at,revoked FROM sessions WHERE refresh_hash=?`)
+    .bind(hash)
+    .first<{ id: string; user_id: string; family_id: string; expires_at: number; revoked: number }>();
+
+  if (row) {
+    if (row.revoked === 1 || row.expires_at < now) return 'invalid';
+
+    const next = generateToken();
+    const nextHash = await hashToken(next);
+    await db.batch([
+      db
+        .prepare(`INSERT INTO retired_hashes(hash,family_id,retired_at) VALUES(?,?,?)`)
+        .bind(hash, row.family_id, now),
+      db
+        .prepare(`UPDATE sessions SET refresh_hash=?, last_used_at=?, expires_at=? WHERE id=?`)
+        .bind(nextHash, now, now + REFRESH_TTL_MS, row.id),
+    ]);
+    return { sessionId: row.id, userId: row.user_id, refreshToken: next };
+  }
+
+  const retired = await db
+    .prepare(`SELECT family_id FROM retired_hashes WHERE hash=?`)
+    .bind(hash)
+    .first<{ family_id: string }>();
+  if (!retired) return 'invalid';
+
+  await db.prepare(`UPDATE sessions SET revoked=1 WHERE family_id=?`).bind(retired.family_id).run();
+  return 'reused';
+}
+
+export async function revokeSession(db: D1Database, sessionId: string): Promise<void> {
+  await db.prepare(`UPDATE sessions SET revoked=1 WHERE id=?`).bind(sessionId).run();
+}
+
+export async function revokeAllForUser(db: D1Database, userId: string): Promise<void> {
+  await db.prepare(`UPDATE sessions SET revoked=1 WHERE user_id=?`).bind(userId).run();
+}
+
+export async function listSessions(
+  db: D1Database,
+  userId: string
+): Promise<Array<{ id: string; userAgent: string | null; ip: string | null; lastUsedAt: number }>> {
+  const { results } = await db
+    .prepare(`SELECT id,user_agent,ip,last_used_at FROM sessions WHERE user_id=? AND revoked=0 ORDER BY last_used_at DESC`)
+    .bind(userId)
+    .all<{ id: string; user_agent: string | null; ip: string | null; last_used_at: number }>();
+  return results.map((r) => ({ id: r.id, userAgent: r.user_agent, ip: r.ip, lastUsedAt: r.last_used_at }));
+}
