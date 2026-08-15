@@ -1,5 +1,18 @@
+import { useMemo, useState } from 'react';
+import type { ReactNode } from 'react';
+import { Reorder, useReducedMotion } from 'framer-motion';
 import { FIXED_BUTTON_ACTIONS } from '../../store/types';
-import type { UserPrefsButton } from '../../store/types';
+import type { Connection, FixedButtonAction, UserPrefsButton } from '../../store/types';
+import { APPS } from '../../store/apps';
+import type { ToolkitApp } from '../../store/apps';
+
+// Connected-app actions are encoded as `toolkit:<slug>` in the same `action:
+// string` field the fixed actions already use — no schema change, so a
+// button can be "highly customizable" (bound to any connected Composio
+// toolkit) without touching UserPrefsButton's shape.
+const TOOLKIT_PREFIX = 'toolkit:';
+const toolkitAction = (slug: string) => `${TOOLKIT_PREFIX}${slug}`;
+const toolkitSlug = (action: string) => (action.startsWith(TOOLKIT_PREFIX) ? action.slice(TOOLKIT_PREFIX.length) : null);
 
 const SLOT_LABELS: Record<string, string> = {
   github: 'GitHub orb',
@@ -8,45 +21,286 @@ const SLOT_LABELS: Record<string, string> = {
   user: 'User orb',
 };
 
-/** Buttons section — the four bar orbs are a FIXED set (no add/remove/
- * reorder, per the design spec's locked decision); each gets an action
- * picker from the fixed action list plus an optional label. */
+function GithubGlyph() {
+  return (
+    <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden>
+      <path d="M12 .5C5.73.5.5 5.73.5 12c0 5.09 3.29 9.4 7.86 10.93.58.1.79-.25.79-.56 0-.27-.01-1.17-.02-2.12-3.2.7-3.88-1.36-3.88-1.36-.52-1.33-1.28-1.68-1.28-1.68-1.05-.72.08-.71.08-.71 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.55-.29-5.24-1.28-5.24-5.68 0-1.25.45-2.28 1.19-3.08-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.18 1.18a11.1 11.1 0 0 1 5.79 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.12 3.05.74.8 1.18 1.83 1.18 3.08 0 4.41-2.69 5.38-5.25 5.67.42.36.78 1.07.78 2.16 0 1.56-.02 2.81-.02 3.19 0 .31.21.67.8.56A10.52 10.52 0 0 0 23.5 12C23.5 5.73 18.27.5 12 .5Z" />
+    </svg>
+  );
+}
+
+function GmailGlyph() {
+  return (
+    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden>
+      <rect x="2.5" y="4.5" width="19" height="15" rx="2.2" />
+      <path d="M3.5 6l8.5 7 8.5-7" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+// Icon + short display name for each fixed action, shared by the mockup
+// orbs and the action-picker grid so a chosen action reads identically in
+// both places. Glyphs echo Orbs.tsx's own language (◆ policy, ◑ user).
+const ACTION_META: Record<FixedButtonAction, { icon: ReactNode; name: string }> = {
+  'connect:github': { icon: <GithubGlyph />, name: 'GitHub' },
+  'connect:gmail': { icon: <GmailGlyph />, name: 'Gmail' },
+  'open:roster': { icon: <span className="text-[15px] leading-none">◆</span>, name: 'Roster' },
+  'toggle:user': { icon: <span className="text-[15px] leading-none">◑</span>, name: 'User' },
+  run: { icon: <span className="text-[13px] leading-none">▶</span>, name: 'Run' },
+  bypassCache: { icon: <span className="text-[15px] leading-none">⚡</span>, name: 'Bypass cache' },
+  suggest: { icon: <span className="text-[15px] leading-none">✦</span>, name: 'Suggest' },
+};
+
+/** Small logo tile for a connected toolkit — mirrors ConnectionsPanel's
+ * `AppTile` fallback (initials monogram if the hosted logo 404s), sized down
+ * for the orb glyph / picker grid. */
+function ToolkitIcon({ app, className = 'h-4 w-4' }: { app: ToolkitApp; className?: string }) {
+  const [failed, setFailed] = useState(false);
+  if (failed) {
+    return (
+      <span className={`flex items-center justify-center rounded-sm bg-white/10 text-[8px] font-bold text-white/70 ${className}`}>
+        {app.name.slice(0, 2).toUpperCase()}
+      </span>
+    );
+  }
+  return (
+    <img
+      src={app.logo}
+      alt=""
+      aria-hidden
+      loading="lazy"
+      onError={() => setFailed(true)}
+      className={`rounded-sm bg-white/95 object-contain p-0.5 ${className}`}
+    />
+  );
+}
+
+/** Resolves any action string (fixed or `toolkit:<slug>`) to a display icon
+ * + name, shared by the mockup orbs and both action-picker grids. Falls back
+ * to the full catalog (not just currently-connected apps) so a
+ * since-disconnected toolkit still renders sensibly instead of a bare `?`. */
+function resolveActionMeta(action: string, iconClassName = 'h-4 w-4'): { icon: ReactNode; name: string } {
+  const fixed = ACTION_META[action as FixedButtonAction];
+  if (fixed) return fixed;
+  const slug = toolkitSlug(action);
+  if (slug) {
+    const app = APPS.find((a) => a.slug === slug);
+    if (app) return { icon: <ToolkitIcon app={app} className={iconClassName} />, name: app.name };
+    return { icon: <span className="text-[13px] leading-none">⬡</span>, name: slug };
+  }
+  return { icon: <span className="text-[10px] text-white/30">?</span>, name: action };
+}
+
+const orbBase =
+  'relative flex h-11 w-11 shrink-0 items-center justify-center rounded-full border text-white/70 outline-none transition-colors duration-200';
+
+function MockOrb({
+  button,
+  selected,
+  reduceMotion,
+  onSelect,
+}: {
+  button: UserPrefsButton;
+  selected: boolean;
+  reduceMotion: boolean;
+  onSelect(): void;
+}) {
+  const meta = resolveActionMeta(button.action, 'h-5 w-5');
+  return (
+    <Reorder.Item
+      as="div"
+      value={button}
+      drag={reduceMotion ? false : 'x'}
+      dragListener={!reduceMotion}
+      whileDrag={reduceMotion ? undefined : { scale: 1.1, zIndex: 1 }}
+      className="cursor-grab active:cursor-grabbing"
+    >
+      <button
+        type="button"
+        aria-label={`${SLOT_LABELS[button.id] ?? button.id} — ${meta.name}${selected ? ' (selected)' : ''}. Click to change its action.`}
+        aria-pressed={selected}
+        onClick={onSelect}
+        className={`${orbBase} ${
+          selected
+            ? 'border-accent/70 bg-accent/15 shadow-glow-accent'
+            : 'border-white/10 bg-white/[0.04] hover:-translate-y-0.5 hover:bg-white/[0.08]'
+        }`}
+      >
+        {meta.icon}
+      </button>
+    </Reorder.Item>
+  );
+}
+
+/** Buttons section, reskinned as a live command-bar mockup — the four fixed
+ * orb slots (github/gmail/policy/user) are the configurable buttons.
+ * Clicking an orb selects it and opens a visual action picker below; the
+ * orb's glyph updates live. Dragging the orbs (pointer-based, disabled under
+ * reduced motion) reorders `buttons`; left/right move controls give the same
+ * reorder keyboard- and reduced-motion-safe. The picker offers the fixed
+ * action list plus, when the user has active connections, each connected
+ * toolkit as a bindable action (`toolkit:<slug>`) — still a plain `action:
+ * string` on `UserPrefsButton`, so Settings' Save flow and the prefs schema
+ * are untouched. */
 export default function ButtonEditor({
   buttons,
   onChange,
+  connections = [],
 }: {
   buttons: UserPrefsButton[];
   onChange(next: UserPrefsButton[]): void;
+  /** Active Composio connections (Settings already fetches these for the
+   * Connections panel) — offered as extra bindable actions so an orb can
+   * point at any connected app, not just the fixed list. Empty/anonymous
+   * degrades gracefully to the fixed actions only. */
+  connections?: Connection[];
 }) {
+  const reduceMotion = !!useReducedMotion();
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  const connectedApps = useMemo(() => {
+    const slugs = new Set(connections.filter((c) => c.status === 'active').map((c) => c.toolkit));
+    return APPS.filter((a) => slugs.has(a.slug));
+  }, [connections]);
+
+  const selected = buttons.find((b) => b.id === selectedId) ?? null;
+  const selectedIndex = selected ? buttons.indexOf(selected) : -1;
+
   function update(id: string, patch: Partial<UserPrefsButton>) {
     onChange(buttons.map((b) => (b.id === id ? { ...b, ...patch } : b)));
   }
 
+  function move(direction: -1 | 1) {
+    if (selectedIndex < 0) return;
+    const target = selectedIndex + direction;
+    if (target < 0 || target >= buttons.length) return;
+    const next = buttons.slice();
+    [next[selectedIndex], next[target]] = [next[target], next[selectedIndex]];
+    onChange(next);
+  }
+
   return (
-    <div className="flex flex-col gap-2.5">
-      {buttons.map((button) => (
-        <div key={button.id} className="flex items-center gap-3">
-          <span className="w-40 shrink-0 text-[13px] text-white/60">{SLOT_LABELS[button.id] ?? button.id}</span>
-          <select
-            value={button.action}
-            onChange={(e) => update(button.id, { action: e.target.value })}
-            className="w-48 rounded-lg border border-white/10 bg-surface-sunken px-3 py-1.5 text-[13px] text-white outline-none transition-colors focus:border-accent/60"
-          >
-            {FIXED_BUTTON_ACTIONS.map((action) => (
-              <option key={action} value={action}>
-                {action}
-              </option>
-            ))}
-          </select>
+    <div className="flex flex-col gap-5">
+      {/* The mockup — a miniature echo of the real bar pill + orbs. */}
+      <div className="flex items-center gap-4 rounded-full border border-white/10 bg-white/[0.03] px-5 py-3 shadow-lift backdrop-blur-soft">
+        <span className="min-w-0 flex-1 truncate text-[13px] text-white/25">Ask anything…</span>
+        <Reorder.Group
+          as="div"
+          axis="x"
+          values={buttons}
+          onReorder={onChange}
+          className="flex items-center gap-2.5"
+        >
+          {buttons.map((button) => (
+            <MockOrb
+              key={button.id}
+              button={button}
+              selected={button.id === selectedId}
+              reduceMotion={reduceMotion}
+              onSelect={() => setSelectedId((id) => (id === button.id ? null : button.id))}
+            />
+          ))}
+        </Reorder.Group>
+      </div>
+      <p className="-mt-2 text-center text-[11px] text-white/25">
+        {reduceMotion ? 'Select an orb, then use the move controls to place it.' : 'Drag an orb to reorder, or click one to change its action.'}
+      </p>
+
+      {/* Placement + action picker for the selected orb. */}
+      {selected && (
+        <div className="animate-chip-pop rounded-xl border border-accent/30 bg-surface-sunken/60 p-4">
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-[12.5px] font-medium text-white/70">
+              {SLOT_LABELS[selected.id] ?? selected.id} — position {selectedIndex + 1} of {buttons.length}
+            </span>
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => move(-1)}
+                disabled={selectedIndex <= 0}
+                aria-label={`Move ${SLOT_LABELS[selected.id] ?? selected.id} left`}
+                className="flex h-7 w-7 items-center justify-center rounded-lg border border-white/10 text-[12px] text-white/50 transition-colors hover:border-accent/40 hover:text-white/80 disabled:opacity-25 disabled:hover:border-white/10 disabled:hover:text-white/50"
+              >
+                ←
+              </button>
+              <button
+                type="button"
+                onClick={() => move(1)}
+                disabled={selectedIndex < 0 || selectedIndex >= buttons.length - 1}
+                aria-label={`Move ${SLOT_LABELS[selected.id] ?? selected.id} right`}
+                className="flex h-7 w-7 items-center justify-center rounded-lg border border-white/10 text-[12px] text-white/50 transition-colors hover:border-accent/40 hover:text-white/80 disabled:opacity-25 disabled:hover:border-white/10 disabled:hover:text-white/50"
+              >
+                →
+              </button>
+            </div>
+          </div>
+
+          <p className="mt-3 text-[10.5px] uppercase tracking-wide text-white/30">Actions</p>
+          <div className="mt-1.5 grid grid-cols-4 gap-2 sm:grid-cols-7">
+            {FIXED_BUTTON_ACTIONS.map((action) => {
+              const meta = ACTION_META[action];
+              const active = selected.action === action;
+              return (
+                <button
+                  key={action}
+                  type="button"
+                  aria-pressed={active}
+                  onClick={() => update(selected.id, { action })}
+                  title={meta.name}
+                  className={`flex flex-col items-center gap-1.5 rounded-lg border px-2 py-2.5 text-[10.5px] transition-colors ${
+                    active
+                      ? 'border-accent/70 bg-accent/15 text-white shadow-glow-accent'
+                      : 'border-white/10 bg-white/[0.02] text-white/50 hover:border-white/25 hover:text-white/80'
+                  }`}
+                >
+                  <span className="flex h-6 w-6 items-center justify-center">{meta.icon}</span>
+                  <span className="truncate">{meta.name}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          {connectedApps.length > 0 && (
+            <>
+              <p className="mt-3 text-[10.5px] uppercase tracking-wide text-white/30">Connected apps</p>
+              <div className="mt-1.5 grid grid-cols-4 gap-2 sm:grid-cols-7">
+                {connectedApps.map((app) => {
+                  const action = toolkitAction(app.slug);
+                  const active = selected.action === action;
+                  return (
+                    <button
+                      key={app.slug}
+                      type="button"
+                      aria-pressed={active}
+                      onClick={() => update(selected.id, { action })}
+                      title={app.name}
+                      className={`flex flex-col items-center gap-1.5 rounded-lg border px-2 py-2.5 text-[10.5px] transition-colors ${
+                        active
+                          ? 'border-accent/70 bg-accent/15 text-white shadow-glow-accent'
+                          : 'border-white/10 bg-white/[0.02] text-white/50 hover:border-white/25 hover:text-white/80'
+                      }`}
+                    >
+                      <span className="flex h-6 w-6 items-center justify-center">
+                        <ToolkitIcon app={app} className="h-5 w-5" />
+                      </span>
+                      <span className="truncate">{app.name}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </>
+          )}
+
           <input
             type="text"
-            value={button.label ?? ''}
-            onChange={(e) => update(button.id, { label: e.target.value })}
-            placeholder="label (optional)"
-            className="flex-1 rounded-lg border border-white/10 bg-surface-sunken px-3 py-1.5 text-[13px] text-white outline-none transition-colors placeholder:text-white/25 focus:border-accent/60"
+            value={selected.label ?? ''}
+            onChange={(e) => update(selected.id, { label: e.target.value })}
+            placeholder="Label (optional)"
+            aria-label={`Label for ${SLOT_LABELS[selected.id] ?? selected.id}`}
+            className="mt-3 w-full rounded-lg border border-white/10 bg-surface-sunken px-3 py-1.5 text-[13px] text-white outline-none transition-colors placeholder:text-white/25 focus:border-accent/60"
           />
         </div>
-      ))}
+      )}
     </div>
   );
 }

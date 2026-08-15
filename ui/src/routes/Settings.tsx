@@ -148,8 +148,12 @@ export default function Settings() {
           />
         </SectionCard>
 
-        <SectionCard title="Buttons" subtitle="The four bar orbs — pick each one's action.">
-          <ButtonEditor buttons={draft.buttons} onChange={(buttons) => setDraft((d) => ({ ...d, buttons }))} />
+        <SectionCard title="Buttons" subtitle="The four bar orbs — arrange them and pick each one's action.">
+          <ButtonEditor
+            buttons={draft.buttons}
+            onChange={(buttons) => setDraft((d) => ({ ...d, buttons }))}
+            connections={connections}
+          />
         </SectionCard>
 
         <SectionCard title="Suggestions" subtitle="Context-aware next-action ghost text in the command bar.">
@@ -164,8 +168,8 @@ export default function Settings() {
               }`}
             >
               <span
-                className={`absolute top-0.5 h-5 w-5 rounded-full bg-white transition-transform duration-200 ${
-                  draft.suggestions ? 'translate-x-[22px]' : 'translate-x-0.5'
+                className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-white transition-transform duration-200 ${
+                  draft.suggestions ? 'translate-x-5' : 'translate-x-0'
                 }`}
               />
             </button>
