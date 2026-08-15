@@ -141,7 +141,7 @@ export class RunDO {
     }
 
     const planStarted = Date.now();
-    const { plan, cacheHit: planCacheHit } = await decompose(this.env.DB, norm.to);
+    const { plan, cacheHit: planCacheHit } = await decompose(this.env, this.env.DB, policy, norm.to);
     this.push({ t: 'plan', plan, cacheHit: planCacheHit, ms: Date.now() - planStarted });
     await insertSubTasks(this.env.DB, body.runId, plan);
 
