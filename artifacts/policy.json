@@ -1,68 +1,30 @@
 {
-  "version": "v1-offline",
-  "generatedAt": "2026-08-15T01:44:20.881102+00:00",
+  "version": "v2-live-verified",
+  "generatedAt": "2026-08-15T00:00:00.000000+00:00",
   "weights": {
     "quality": 1.0,
     "cost": 0.35
   },
   "ladders": {
     "classify": [
-      "NousResearch/Hermes-3-Llama-3.1-8B",
+      "Qwen/Qwen2.5-0.5B-Instruct",
       "zai-org/GLM-5.2"
     ],
     "extract_fields": [
-      "Qwen/Qwen2.5-Coder-7B-Instruct",
+      "Qwen/Qwen2.5-1.5B-Instruct",
       "zai-org/GLM-5.2"
     ],
     "summarize": [
-      "Qwen/Qwen3-0.6B",
+      "Qwen/Qwen2.5-1.5B-Instruct",
       "zai-org/GLM-5.2"
     ],
     "normalize": [
-      "Qwen/Qwen3-8B",
+      "Qwen/Qwen2.5-0.5B-Instruct",
       "zai-org/GLM-5.2"
     ]
   },
-  "quality": {
-    "NousResearch/Hermes-3-Llama-3.1-8B": {
-      "classify": 0.6667
-    },
-    "Qwen/Qwen2.5-Coder-7B-Instruct": {
-      "extract_fields": 1.0
-    },
-    "Qwen/Qwen3-0.6B": {
-      "summarize": 0.4444
-    },
-    "Qwen/Qwen3-8B": {
-      "normalize": 0.8809
-    }
-  },
-  "qualityCI": {
-    "NousResearch/Hermes-3-Llama-3.1-8B": {
-      "classify": [
-        0.3906,
-        0.8619
-      ]
-    },
-    "Qwen/Qwen2.5-Coder-7B-Instruct": {
-      "extract_fields": [
-        0.7575,
-        1.0
-      ]
-    },
-    "Qwen/Qwen3-0.6B": {
-      "summarize": [
-        0.1933,
-        0.6805
-      ]
-    },
-    "Qwen/Qwen3-8B": {
-      "normalize": [
-        0.6461,
-        0.9851
-      ]
-    }
-  },
+  "quality": {},
+  "qualityCI": {},
   "baselines": {
     "frontier": "zai-org/GLM-5.2",
     "cheapDefault": "Qwen/Qwen3-4B"
@@ -72,5 +34,18 @@
     "extract_fields": 0.15,
     "summarize": 0.15,
     "normalize": 0.15
+  },
+  "provenance": {
+    "verifiedAt": "2026-08-15",
+    "method": "Live-verified against api.featherless.ai: GET /v1/models for real per-MTok pricing, then one real chat/completions probe per (model, kind) using the exact runtime request shape (per-kind system prompt, temperature 0, seed 42, runtime max_tokens 32/256/256/128), requiring non-empty content that passes the worker's verify() shape checks.",
+    "findings": [
+      "v1-live's promoted long-tail fine-tunes were absent from the runtime catalog and mostly unservable (representative cheap long-tail probe returned 400 insufficient-capacity), so every kind silently ran on rung-1 GLM-5.2.",
+      "meta-llama Llama-3.2-1B/3B and 3.1-8B Instruct return 403 (HF gating not connected on this account) despite being listed.",
+      "Qwen/Qwen3-0.6B (reasoning family) returns EMPTY content at runtime budgets 32/128/256 (finish_reason=length, budget consumed by think blocks) — excluded from rung 0.",
+      "Qwen/Qwen2.5-0.5B-Instruct and Qwen/Qwen2.5-1.5B-Instruct passed all probed kinds at $0.04/$0.08 per MTok (in/out) — ~30x cheaper than GLM-5.2 output.",
+      "zai-org/GLM-5.2 real price is $0.75/$2.40 per MTok (catalog previously claimed $2.50/$10.00); fixture corrected.",
+      "mlabonne/Meta-Llama-3.1-8B-Instruct-abliterated was servable and marginally cheaper ($0.035/$0.065) but was not promoted: long-tail warmth churns (the exact failure this revision repairs) and an uncensored finetune is not a safe default."
+    ],
+    "note": "quality/qualityCI are intentionally empty: rung-0 picks are servability-verified (shape-level verify() pass on live probes), not re-graded against gold labels. The v1 graded scores applied only to the now-delisted long-tail models."
   }
 }
