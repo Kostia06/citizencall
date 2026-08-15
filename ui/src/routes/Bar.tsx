@@ -6,9 +6,10 @@ import ConversationTurn from '../components/ConversationTurn';
 import Orbs from '../components/Orbs';
 import { ToastStack, useToasts } from '../components/Toast';
 import AuthNav from '../components/AuthNav';
-import { MOCK, startRun, type RunHandle } from '../api';
+import { MOCK, startRun, storeApi, type Connection, type RunHandle } from '../api';
 import { conversationReducer, initialConversationState } from '../lib/traceReducer';
 import { layoutFlow, layoutFlowReduced } from '../lib/motion';
+import { useAuth } from '../auth/useAuth';
 import type { RunAttachment } from '../types';
 
 const USERS = ['demo_kos', 'demo_teammate'];
@@ -31,6 +32,9 @@ export default function Bar() {
   const [userIdx, setUserIdx] = useState(0);
   const [liveToolkit, setLiveToolkit] = useState<'github' | 'gmail' | null>(null);
   const { toasts, push } = useToasts();
+  const { authedFetch, status } = useAuth();
+  const [connections, setConnections] = useState<Connection[]>([]);
+  const [contextPrompt, setContextPrompt] = useState('');
   const runHandleRef = useRef<RunHandle | null>(null);
   const liveTimeoutRef = useRef<number | undefined>(undefined);
   const transcriptRef = useRef<HTMLDivElement>(null);
@@ -48,6 +52,29 @@ export default function Bar() {
       if (liveTimeoutRef.current) window.clearTimeout(liveTimeoutRef.current);
     };
   }, []);
+
+  // Live prefs, lightly wired (task spec §5/§6): real connection state for
+  // the orbs, and the default context prompt to prepend to runs. Keybinding
+  // remapping is deliberately NOT applied here — CommandBar owns its own
+  // keyboard handling and remapping it cleanly is deferred, see report.
+  useEffect(() => {
+    let cancelled = false;
+    storeApi
+      .listConnections(authedFetch)
+      .then((list) => {
+        if (!cancelled) setConnections(list);
+      })
+      .catch(() => undefined);
+    storeApi
+      .getSettings(authedFetch)
+      .then((prefs) => {
+        if (!cancelled) setContextPrompt(prefs.contextPrompt);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [authedFetch]);
 
   useEffect(() => {
     const toolCall = lastTurn?.trace.lastToolCall;
@@ -76,6 +103,10 @@ export default function Bar() {
   }
 
   const currentUser = USERS[userIdx];
+  // Preserves the existing "always connected" demo look in MOCK mode and
+  // for anonymous visitors; once authed against a live backend the orbs
+  // reflect real GET /api/connections state.
+  const mockConnectedFallback = MOCK || status !== 'authed';
 
   function handleSubmit(
     text: string,
@@ -84,9 +115,13 @@ export default function Bar() {
     runHandleRef.current?.close();
     stickToBottomRef.current = true;
     dispatch({ type: 'start_turn', id: nextTurnId(), prompt: text, source: opts.source });
+    // The transcript shows the user's raw text; the default context prompt
+    // (settings §5) is prepended only to what's sent to the run, not to the
+    // displayed turn.
+    const sendText = contextPrompt.trim() ? `${contextPrompt.trim()}\n\n${text}` : text;
     runHandleRef.current = startRun({
       userId: currentUser,
-      text,
+      text: sendText,
       source: opts.source,
       noCache: opts.bypassCache,
       attachments: opts.attachments,
@@ -142,8 +177,8 @@ export default function Bar() {
           </div>
           <div className="sm:pt-1.5">
             <Orbs
-              githubConnected
-              gmailConnected
+              githubConnected={mockConnectedFallback || connections.some((c) => c.toolkit === 'github' && c.status === 'active')}
+              gmailConnected={mockConnectedFallback || connections.some((c) => c.toolkit === 'gmail' && c.status === 'active')}
               liveToolkit={liveToolkit}
               policyVersion="v3"
               currentUser={currentUser}

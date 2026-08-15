@@ -9,6 +9,7 @@ import Login from './routes/Login';
 import Signup from './routes/Signup';
 import Verify from './routes/Verify';
 import Reset from './routes/Reset';
+import Settings from './routes/Settings';
 import { AuthProvider } from './auth/AuthProvider';
 import './index.css';
 
@@ -26,6 +27,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
             <Route path="/signup" element={<Signup />} />
             <Route path="/verify" element={<Verify />} />
             <Route path="/reset" element={<Reset />} />
+            <Route path="/settings" element={<Settings />} />
           </Routes>
         </AuthProvider>
       </BrowserRouter>

@@ -3,6 +3,11 @@ import { mockBenchmark, mockFunnel, mockRoster } from './mock/fixtures';
 import { buildScenario } from './mock/scenario';
 import { mockAuthStore } from './auth/mockAuthStore';
 import type { AuthUser } from './auth/types';
+import { mockStoreStore } from './store/mockStore';
+import type { Connection, UserPrefs } from './store/types';
+
+export { DEFAULT_PREFS } from './store/types';
+export type { Connection, UserPrefs, UserPrefsButton, FixedButtonAction } from './store/types';
 
 // MOCK is on by default so the UI is fully demoable with zero backend —
 // flip VITE_MOCK=false to talk to a real Worker. See SPEC.md §13.
@@ -281,6 +286,71 @@ export const authApi = {
         if (!res.ok) throw new AuthError(await readJsonError(res), res.status);
       },
       () => mockAuthStore.resetPassword(token, password),
+    );
+  },
+};
+
+// ---- /api/* store client — web SPA design §4/§6, shapes in
+// docs/superpowers/specs/2026-08-14-per-user-store-design.md §4/§5. Every
+// call needs the bearer token, so it's threaded through as `authedFetch`
+// (AuthProvider's version — attaches the token and retries once on 401)
+// rather than the plain `authFetch` used above for the token-less /auth/*
+// calls. A 401 surfaces as an AuthError the caller can catch to show the
+// inline "log in" prompt instead of a hard error. */
+export type AuthedFetch = (path: string, init?: RequestInit) => Promise<Response>;
+
+export const storeApi = {
+  async getSettings(authedFetch: AuthedFetch): Promise<UserPrefs> {
+    return withMockFallback(
+      async () => {
+        const res = await authedFetch('/api/settings');
+        if (!res.ok) throw new AuthError(await readJsonError(res), res.status);
+        return res.json();
+      },
+      () => mockStoreStore.getSettings(),
+    );
+  },
+
+  async putSettings(authedFetch: AuthedFetch, patch: Partial<UserPrefs>): Promise<UserPrefs> {
+    return withMockFallback(
+      async () => {
+        const res = await authedFetch('/api/settings', { method: 'PUT', body: JSON.stringify(patch) });
+        if (!res.ok) throw new AuthError(await readJsonError(res), res.status);
+        return res.json();
+      },
+      () => mockStoreStore.putSettings(patch),
+    );
+  },
+
+  async listConnections(authedFetch: AuthedFetch): Promise<Connection[]> {
+    return withMockFallback(
+      async () => {
+        const res = await authedFetch('/api/connections');
+        if (!res.ok) throw new AuthError(await readJsonError(res), res.status);
+        return res.json();
+      },
+      () => mockStoreStore.listConnections(),
+    );
+  },
+
+  async connect(authedFetch: AuthedFetch, toolkit: string): Promise<{ url: string }> {
+    return withMockFallback(
+      async () => {
+        const res = await authedFetch('/api/connect', { method: 'POST', body: JSON.stringify({ toolkit }) });
+        if (!res.ok) throw new AuthError(await readJsonError(res), res.status);
+        return res.json();
+      },
+      () => mockStoreStore.connect(toolkit),
+    );
+  },
+
+  async disconnect(authedFetch: AuthedFetch, toolkit: string): Promise<void> {
+    return withMockFallback(
+      async () => {
+        const res = await authedFetch(`/api/connections/${encodeURIComponent(toolkit)}`, { method: 'DELETE' });
+        if (!res.ok && res.status !== 204) throw new AuthError(await readJsonError(res), res.status);
+      },
+      () => mockStoreStore.disconnect(toolkit),
     );
   },
 };
