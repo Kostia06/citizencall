@@ -36,38 +36,52 @@ const SubTaskDraft = z.object({
   kind: z.enum(['classify', 'extract_fields', 'summarize', 'normalize']),
   instruction: z.string().trim().min(1),
   needsTools: z.boolean().optional().default(false),
-  toolkit: z.enum(['github', 'gmail']).nullish(),
+  // A free string, not an enum: the allowed set is dynamic (github/gmail plus
+  // the user's enabled MCP toolkits). Unknown toolkits are dropped per
+  // sub-task in resolveTool rather than nulling the whole plan — one
+  // hallucinated toolkit name shouldn't discard an otherwise-good plan.
+  toolkit: z.string().nullish(),
   sensitive: z.boolean().optional().default(false),
 });
 type SubTaskDraft = z.infer<typeof SubTaskDraft>;
 const PlanDraft = z.array(SubTaskDraft).min(1).max(MAX_SUBTASKS);
 
-const SYSTEM_PROMPT = [
-  'You are a task planner for an agent. Break the user request into an ordered list',
-  `of 1 to ${MAX_SUBTASKS} sub-tasks. Each sub-task kind is one of: classify, extract_fields,`,
-  'summarize, normalize. Reply with ONLY a JSON array, no prose and no code fences.',
-  'Each element: {"kind": <kind>, "instruction": <imperative string>, "needsTools": <bool>,',
-  '"toolkit": <"github"|"gmail"|null>, "sensitive": <bool>}. Set needsTools=true and toolkit',
-  'when the step must read from GitHub or Gmail. Keep instructions concise and self-contained.',
-].join(' ');
+const BUILTIN_TOOLKITS = ['github', 'gmail'] as const;
+
+function systemPrompt(extraToolkits: string[]): string {
+  const toolkits = [...BUILTIN_TOOLKITS, ...extraToolkits];
+  const list = toolkits.map((t) => `"${t}"`).join('|');
+  return [
+    'You are a task planner for an agent. Break the user request into an ordered list',
+    `of 1 to ${MAX_SUBTASKS} sub-tasks. Each sub-task kind is one of: classify, extract_fields,`,
+    'summarize, normalize. Reply with ONLY a JSON array, no prose and no code fences.',
+    'Each element: {"kind": <kind>, "instruction": <imperative string>, "needsTools": <bool>,',
+    `"toolkit": <${list}|null>, "sensitive": <bool>}. Set needsTools=true and toolkit`,
+    'when the step must read from one of those tools. Keep instructions concise and self-contained.',
+  ].join(' ');
+}
 
 export async function decompose(
   env: Env,
   db: D1Database,
   policy: Policy,
-  normalizedText: string
+  normalizedText: string,
+  extraToolkits: string[] = []
 ): Promise<{ plan: Plan; cacheHit: boolean }> {
+  // A cached plan carries the sub-task ids of the run that minted it —
+  // sub_tasks.id is a global PK, so every run must re-key the plan (fresh ids,
+  // dependsOn remapped) before inserting its own rows.
   const cached = await getPlan(db, normalizedText);
-  if (cached) return { plan: cached, cacheHit: true };
+  if (cached) return { plan: rekeyPlan(cached), cacheHit: true };
 
-  const plan = (await modelPlan(env, policy, normalizedText)) ?? heuristicPlan(normalizedText);
+  const plan = (await modelPlan(env, policy, normalizedText, extraToolkits)) ?? heuristicPlan(normalizedText);
   await putPlan(db, normalizedText, plan);
   return { plan, cacheHit: false };
 }
 
 // Returns null (not throws) on any failure so the caller falls back to the
 // heuristic. A planning misfire must never take down the whole run.
-async function modelPlan(env: Env, policy: Policy, text: string): Promise<Plan | null> {
+async function modelPlan(env: Env, policy: Policy, text: string, extraToolkits: string[]): Promise<Plan | null> {
   const modelId = policy.baselines.frontier;
   if (!modelId) return null;
 
@@ -76,7 +90,7 @@ async function modelPlan(env: Env, policy: Policy, text: string): Promise<Plan |
     const res = await callFeatherless(env, {
       modelId,
       messages: [
-        { role: 'system', content: SYSTEM_PROMPT },
+        { role: 'system', content: systemPrompt(extraToolkits) },
         { role: 'user', content: text },
       ],
       maxTokens: MAX_TOKENS,
@@ -86,17 +100,18 @@ async function modelPlan(env: Env, policy: Policy, text: string): Promise<Plan |
     return null; // cold/backpressure/capacity — heuristic covers the demo path
   }
 
-  return planFromContent(content);
+  return planFromContent(content, extraToolkits);
 }
 
 // Pure: model text -> validated Plan, or null on invalid/empty output. Exported
 // for unit testing without a network round-trip.
-export function planFromContent(content: string): Plan | null {
+export function planFromContent(content: string, extraToolkits: string[] = []): Plan | null {
   const drafts = parseDrafts(content);
   if (!drafts) return null;
 
+  const allowedToolkits = new Set<string>([...BUILTIN_TOOLKITS, ...extraToolkits]);
   const withIds = drafts.map((d) => ({ draft: d, id: crypto.randomUUID() }));
-  const subTasks: SubTask[] = withIds.map(({ draft, id }, idx) => buildSubTask(draft, idx, id));
+  const subTasks: SubTask[] = withIds.map(({ draft, id }, idx) => buildSubTask(draft, idx, id, allowedToolkits));
   // Sequential dependency chain — the DO executes sub-tasks in order and later
   // steps commonly consume earlier output; express that truthfully in the plan.
   for (let i = 1; i < subTasks.length; i++) {
@@ -107,8 +122,9 @@ export function planFromContent(content: string): Plan | null {
   return { subTasks };
 }
 
-function buildSubTask(d: SubTaskDraft, idx: number, id: string): SubTask {
-  const tool = resolveTool(d.instruction, d.needsTools ? (d.toolkit ?? null) : null);
+function buildSubTask(d: SubTaskDraft, idx: number, id: string, allowedToolkits: ReadonlySet<string>): SubTask {
+  const hint = d.needsTools && d.toolkit && allowedToolkits.has(d.toolkit) ? d.toolkit : null;
+  const tool = resolveTool(d.instruction, hint);
   return {
     id,
     idx,
@@ -122,10 +138,12 @@ function buildSubTask(d: SubTaskDraft, idx: number, id: string): SubTask {
   };
 }
 
-function resolveTool(instruction: string, toolkitHint: 'github' | 'gmail' | null) {
+function resolveTool(instruction: string, toolkitHint: string | null) {
   const byText = TOOL_HINTS.find((h) => h.pattern.test(instruction));
   if (byText) return { toolkit: byText.toolkit, tool: byText.tool };
-  if (toolkitHint) return DEFAULT_TOOL[toolkitHint];
+  // MCP toolkits have no per-tool catalog yet — 'call' is the single generic
+  // tool name the MCP transport (pipeline/mcp.ts) will dispatch on.
+  if (toolkitHint) return DEFAULT_TOOL[toolkitHint] ?? { toolkit: toolkitHint, tool: 'call' };
   return undefined;
 }
 
@@ -158,6 +176,17 @@ function extractJson(raw: string): string | null {
   const end = Math.max(body.lastIndexOf(']'), body.lastIndexOf('}'));
   if (start === -1 || end === -1 || end < start) return null;
   return body.slice(start, end + 1);
+}
+
+function rekeyPlan(plan: Plan): Plan {
+  const idMap = new Map(plan.subTasks.map((s) => [s.id, crypto.randomUUID()]));
+  return {
+    subTasks: plan.subTasks.map((s) => ({
+      ...s,
+      id: idMap.get(s.id)!,
+      dependsOn: s.dependsOn.map((d) => idMap.get(d) ?? d),
+    })),
+  };
 }
 
 function isRecord(v: unknown): v is Record<string, unknown> {
