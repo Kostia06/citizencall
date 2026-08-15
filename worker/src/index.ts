@@ -7,12 +7,15 @@ import type { Env } from './env';
 import { getRoster, getRun } from './db';
 import { createConnectionLink, verifyState } from './providers/composio';
 import { policy } from './policy';
+import { authRoutes } from './auth/routes';
 import resultsFixture from '../../artifacts/results.example.json';
 import funnelFixture from '../../artifacts/funnel.example.json';
 
 export { RunDO } from './run.do';
 
 const app = new Hono<{ Bindings: Env }>();
+
+app.route('/auth', authRoutes);
 
 const runRequestSchema = z.object({
   userId: z.string().min(1),
