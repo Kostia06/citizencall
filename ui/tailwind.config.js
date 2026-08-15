@@ -8,12 +8,32 @@ export default {
           DEFAULT: '#5B8CFF',
           dim: '#3E5FBE',
           bright: '#8FB0FF',
+          glow: 'rgba(91,140,255,0.45)',
         },
         surface: {
           DEFAULT: '#1c1c1e',
           raised: '#242426',
           sunken: '#141416',
         },
+        void: '#050506',
+        ember: {
+          DEFAULT: '#FF8B5E',
+          glow: 'rgba(255,139,94,0.4)',
+        },
+      },
+      fontSize: {
+        'display-1': ['7rem', { lineHeight: '0.95', letterSpacing: '-0.03em' }],
+        'display-2': ['4.5rem', { lineHeight: '1.0', letterSpacing: '-0.02em' }],
+        'headline-1': ['clamp(2rem,4.5vw,3.5rem)', { lineHeight: '1.1', letterSpacing: '-0.01em' }],
+        'headline-2': ['clamp(1.5rem,3vw,2rem)', { lineHeight: '1.15', letterSpacing: '-0.005em' }],
+      },
+      boxShadow: {
+        lift: '0 8px 30px rgba(0,0,0,0.35)',
+        'glow-accent': '0 0 24px rgba(91,140,255,0.35)',
+        'glow-ember': '0 0 20px rgba(255,139,94,0.4)',
+      },
+      backdropBlur: {
+        soft: '20px',
       },
       fontFamily: {
         sans: [
@@ -62,14 +82,60 @@ export default {
           '0%': { opacity: '0' },
           '100%': { opacity: '1' },
         },
+        // New — HopCard failure: synchronized red-tinted glow alongside the
+        // existing `shake` keyframe (kept unchanged). DESIGN.md §5 HopCard.
+        'fail-flash': {
+          '0%, 100%': { boxShadow: '0 0 0 0 rgba(255,139,94,0)' },
+          '20%, 80%': { boxShadow: '0 0 20px 0 rgba(255,139,94,0.4)' },
+        },
+        // New — command bar confirm pulse on ⏎ — DESIGN.md §6.
+        'confirm-pulse': {
+          '0%': { transform: 'scale(1)' },
+          '50%': { transform: 'scale(1.015)' },
+          '100%': { transform: 'scale(1)' },
+        },
+        // New — command bar ⌘K / focus glow — DESIGN.md §5 Command bar.
+        'focus-glow-pulse': {
+          '0%': { boxShadow: '0 0 0 0 rgba(91,140,255,0.45)' },
+          '100%': { boxShadow: '0 0 0 6px rgba(91,140,255,0)' },
+        },
+        // New — ⇧⏎ bypass-cache tell — DESIGN.md §5 Command bar / §6.
+        'ember-edge-flash': {
+          '0%, 100%': { boxShadow: '0 0 0 0 rgba(255,139,94,0)' },
+          '50%': { boxShadow: '0 0 20px 2px rgba(255,139,94,0.4)' },
+        },
+        // New — RunEndSummary total settle pulse — DESIGN.md §5 Cost count-up.
+        'count-settle': {
+          '0%': { transform: 'scale(1)' },
+          '50%': { transform: 'scale(1.04)' },
+          '100%': { transform: 'scale(1)' },
+        },
+        // New — canvas background fade-in once the first frame is ready —
+        // DESIGN.md §4 step 1/8 (opacity ceiling 0.4–0.55).
+        'canvas-in': {
+          '0%': { opacity: '0' },
+          '100%': { opacity: '0.48' },
+        },
+        // New — full-viewport drag-over accent glow — DESIGN.md §6.
+        'drag-glow-in': {
+          '0%': { opacity: '0' },
+          '100%': { opacity: '1' },
+        },
       },
       animation: {
         'bar-in': 'bar-in .55s cubic-bezier(.22,1,.36,1) both',
         'hop-in': 'hop-in .45s cubic-bezier(.22,1,.36,1) both',
         shake: 'shake .45s cubic-bezier(.36,.07,.19,.97) both',
+        'shake-glow': 'shake .45s cubic-bezier(.36,.07,.19,.97) both, fail-flash .45s ease both',
         breathe: 'breathe 1.6s ease-in-out infinite',
         'ring-expand': 'ring-expand 1.6s ease-out infinite',
         'chip-pop': 'chip-pop .3s cubic-bezier(.22,1,.36,1) both',
+        'confirm-pulse': 'confirm-pulse .2s ease-out both',
+        'focus-glow-pulse': 'focus-glow-pulse .4s ease-out both',
+        'ember-edge-flash': 'ember-edge-flash .15s ease-out both',
+        'count-settle': 'count-settle .2s ease-out both',
+        'canvas-in': 'canvas-in .4s ease-out both',
+        'drag-glow-in': 'drag-glow-in .3s ease-out both',
       },
     },
   },

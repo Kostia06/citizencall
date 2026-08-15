@@ -1,5 +1,8 @@
 import { useState } from 'react';
+import type { PointerEvent as ReactPointerEvent, ReactNode } from 'react';
 import { Link } from 'react-router-dom';
+import { motion, useMotionValue, useReducedMotion, useSpring } from 'framer-motion';
+import { magneticSnappy } from '../lib/motion';
 
 interface OrbsProps {
   githubConnected: boolean;
@@ -10,8 +13,10 @@ interface OrbsProps {
   onToggleUser(): void;
 }
 
-const orbBase =
-  'relative flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/[0.04] transition-transform duration-200 ease-out hover:-translate-y-[3px] hover:scale-[1.06] cursor-pointer select-none';
+const HALO = 40; // px — cursor-proximity radius that triggers magnetism
+const MAX_PULL = 6; // px — max translate toward cursor
+
+const MotionLink = motion(Link);
 
 function PulseRings() {
   return (
@@ -24,6 +29,88 @@ function PulseRings() {
     </>
   );
 }
+
+/** One orb with cursor-proximity magnetism layered on top of the existing
+ * hover lift/scale — DESIGN.md §5 Command bar "Magnetic orbs". Reduced
+ * motion disables cursor tracking entirely; hover falls back to a plain
+ * background-color change via the `hover:` classes already on the button. */
+function Orb({
+  className,
+  title,
+  onClick,
+  as: As = 'div',
+  to,
+  children,
+}: {
+  className: string;
+  title: string;
+  onClick?: () => void;
+  as?: 'div' | 'button' | 'link';
+  to?: string;
+  children: ReactNode;
+}) {
+  const reduceMotion = useReducedMotion();
+  const x = useMotionValue(0);
+  const y = useMotionValue(0);
+  const springX = useSpring(x, magneticSnappy);
+  const springY = useSpring(y, magneticSnappy);
+
+  function handlePointerMove(e: ReactPointerEvent<HTMLElement>) {
+    if (reduceMotion) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const cx = rect.left + rect.width / 2;
+    const cy = rect.top + rect.height / 2;
+    const dx = e.clientX - cx;
+    const dy = e.clientY - cy;
+    const dist = Math.hypot(dx, dy);
+    const reach = rect.width / 2 + HALO;
+    if (dist < reach) {
+      const pull = Math.min(1, (reach - dist) / reach);
+      x.set((dx / reach) * MAX_PULL * pull);
+      y.set((dy / reach) * MAX_PULL * pull);
+    } else {
+      x.set(0);
+      y.set(0);
+    }
+  }
+
+  function handlePointerLeave() {
+    x.set(0);
+    y.set(0);
+  }
+
+  const motionProps = reduceMotion
+    ? {}
+    : {
+        style: { x: springX, y: springY },
+        whileHover: { y: -3, scale: 1.06, transition: magneticSnappy },
+        onPointerMove: handlePointerMove,
+        onPointerLeave: handlePointerLeave,
+      };
+
+  if (As === 'link' && to) {
+    return (
+      <MotionLink to={to} title={title} className={className} {...motionProps}>
+        {children}
+      </MotionLink>
+    );
+  }
+  if (As === 'button') {
+    return (
+      <motion.button type="button" title={title} onClick={onClick} className={className} {...motionProps}>
+        {children}
+      </motion.button>
+    );
+  }
+  return (
+    <motion.div title={title} className={className} {...motionProps}>
+      {children}
+    </motion.div>
+  );
+}
+
+const orbBase =
+  'relative flex h-12 w-12 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/[0.04] cursor-pointer select-none hover:bg-white/[0.07] transition-colors duration-200';
 
 /** The four circles from SPEC.md §6 — they carry demo weight, not decoration. */
 export default function Orbs({
@@ -38,33 +125,27 @@ export default function Orbs({
 
   return (
     <div className="flex items-center gap-3">
-      <div
-        className={`${orbBase} ${githubConnected ? 'text-white' : 'text-white/35'}`}
-        title={githubConnected ? 'GitHub connected' : 'GitHub not connected'}
-      >
+      <Orb className={`${orbBase} ${githubConnected ? 'text-white' : 'text-white/35'}`} title={githubConnected ? 'GitHub connected' : 'GitHub not connected'}>
         {liveToolkit === 'github' && <PulseRings />}
         <GithubIcon />
-      </div>
+      </Orb>
 
-      <div
-        className={`${orbBase} ${gmailConnected ? 'text-white' : 'text-white/35'}`}
-        title={gmailConnected ? 'Gmail connected' : 'Gmail not connected'}
-      >
+      <Orb className={`${orbBase} ${gmailConnected ? 'text-white' : 'text-white/35'}`} title={gmailConnected ? 'Gmail connected' : 'Gmail not connected'}>
         {liveToolkit === 'gmail' && <PulseRings />}
         <GmailIcon />
-      </div>
+      </Orb>
 
-      <Link to="/roster" className={`${orbBase} text-white/70`} title="Policy — open roster">
+      <Orb as="link" to="/roster" className={`${orbBase} text-white/70`} title="Policy — open roster">
         <span className="text-lg leading-none">◆</span>
         {policyVersion && (
           <span className="absolute -bottom-1 -right-1 rounded-full bg-accent px-1.5 py-0.5 text-[9px] font-bold leading-none text-black">
             {policyVersion}
           </span>
         )}
-      </Link>
+      </Orb>
 
-      <button
-        type="button"
+      <Orb
+        as="button"
         className={`${orbBase} text-white/70`}
         title={`Signed in as ${currentUser} — click to switch`}
         onClick={() => {
@@ -78,7 +159,7 @@ export default function Orbs({
         >
           ◑
         </span>
-      </button>
+      </Orb>
     </div>
   );
 }

@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { motion, useReducedMotion } from 'framer-motion';
 import { fetchBenchmark, fetchRoster } from '../api';
 import { formatDownloads, formatPct, formatUsd, timeAgo } from '../lib/format';
+import { entranceStandardReduced, headlineVariants } from '../lib/motion';
 import type { RosterEntry, TaskKind } from '../types';
 
 const KIND_LABEL: Record<TaskKind, string> = {
@@ -20,6 +22,8 @@ function shortName(modelId: string): string {
 export default function Roster() {
   const [roster, setRoster] = useState<RosterEntry[] | null>(null);
   const [frontierCostPer1k, setFrontierCostPer1k] = useState<number | null>(null);
+  const reduceMotion = !!useReducedMotion();
+  const { parent: headlineParent, line: headlineLine } = headlineVariants(reduceMotion);
 
   useEffect(() => {
     fetchRoster().then(setRoster);
@@ -43,21 +47,31 @@ export default function Roster() {
         </div>
 
         {headline && (
-          <div className="mt-10 animate-hop-in">
-            <p className="text-[12px] font-medium uppercase tracking-[0.2em] text-accent-bright">
+          <motion.div className="mt-10" variants={headlineParent} initial="hidden" animate="show">
+            <motion.p
+              variants={headlineLine}
+              className="text-[12px] font-medium uppercase tracking-[0.2em] text-accent-bright"
+            >
               promoted from 34,504 tool-use-capable open models
-            </p>
-            <h1 className="mt-4 max-w-2xl text-[clamp(1.75rem,4vw,2.75rem)] font-semibold leading-[1.1] text-white">
-              {formatDownloads(headline.hfDownloads)} downloads. Nobody uses{' '}
-              <span className="font-mono text-white/90">{shortName(headline.modelId)}</span>.
+            </motion.p>
+            {/* Cold-open headline — the one screen that should feel like a
+                title card, not a UI screen. Each line staggers in 60ms apart
+                via entrance-standard — DESIGN.md §5 Roster. */}
+            <h1 className="mt-4 max-w-2xl text-headline-1 font-semibold leading-[1.1] text-white">
+              <motion.span variants={headlineLine} className="block">
+                {formatDownloads(headline.hfDownloads)} downloads.
+              </motion.span>
+              <motion.span variants={headlineLine} className="block">
+                Nobody uses <span className="font-mono text-white/90">{shortName(headline.modelId)}</span>.
+              </motion.span>
             </h1>
-            <p className="mt-5 max-w-xl text-[15px] leading-relaxed text-white/55">
+            <motion.p variants={headlineLine} className="mt-5 max-w-xl text-[15px] leading-relaxed text-white/55">
               On {KIND_LABEL[headline.taskKind]} it matches{' '}
               <span className="font-mono text-white/70">{shortName(headline.displacedModelId)}</span> at
               {ratio ? ` ${ratio.toFixed(0)}×` : ''} lower price per 1,000 calls — and we didn't pick it. We
               measured it, against labels we wrote ourselves.
-            </p>
-          </div>
+            </motion.p>
+          </motion.div>
         )}
 
         <div className="mt-12 overflow-hidden rounded-2xl border border-white/10">
@@ -82,12 +96,18 @@ export default function Roster() {
                     </td>
                   </tr>
                 ))}
-              {roster?.map((r) => (
-                <tr
+              {roster?.map((r, i) => (
+                <motion.tr
                   key={`${r.taskKind}-${r.modelId}`}
-                  className={`border-b border-white/5 transition-colors hover:bg-white/[0.03] ${
+                  initial={reduceMotion ? false : { opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={
+                    reduceMotion ? entranceStandardReduced : { ...headlineLine.show.transition, delay: i * 0.04 }
+                  }
+                  className={`relative border-b border-white/5 border-l-2 border-l-transparent hover:border-l-accent hover:bg-white/[0.03] ${
                     r.modelId === headline?.modelId ? 'bg-accent/[0.05]' : ''
                   }`}
+                  style={{ transition: 'border-color 150ms ease-out, background-color 150ms ease-out' }}
                 >
                   <td className="px-4 py-3.5 text-white/60">{KIND_LABEL[r.taskKind]}</td>
                   <td className="px-4 py-3.5 font-mono text-white/90">{shortName(r.modelId)}</td>
@@ -105,7 +125,7 @@ export default function Roster() {
                     {formatUsd(r.costPer1k)}
                   </td>
                   <td className="px-4 py-3.5 text-white/35">{timeAgo(r.promotedAt)}</td>
-                </tr>
+                </motion.tr>
               ))}
             </tbody>
           </table>

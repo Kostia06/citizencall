@@ -35,7 +35,7 @@ export default function HopCard({ rung, subTask, index }: HopCardProps) {
 
   return (
     <div
-      className={`rounded-2xl border border-white/10 bg-white/[0.04] p-4 ${isFailed ? 'animate-shake' : 'animate-hop-in'}`}
+      className={`rounded-2xl border border-white/10 bg-white/[0.04] p-4 ${isFailed ? 'animate-shake-glow' : 'animate-hop-in'}`}
       style={{ animationDelay: isFailed ? undefined : `${index * 70}ms` }}
     >
       <div className="flex items-center justify-between gap-3">

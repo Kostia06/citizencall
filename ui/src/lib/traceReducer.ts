@@ -23,6 +23,9 @@ export interface TraceState {
   lastToolCall?: { toolkit: string; tool: string; at: number };
   runEnd?: { totalCostUsd: number; totalMs: number; baselineCostUsd: number; savingsPct: number };
   error?: string;
+  /** Bumped on every `escalate` event — CommandBar watches this to spike
+   * the conic border's spin speed for 400ms. DESIGN.md §5 Command bar. */
+  escalateTick: number;
 }
 
 export function initialTraceState(): TraceState {
@@ -32,6 +35,7 @@ export function initialTraceState(): TraceState {
     requestText: '',
     subTaskOrder: [],
     rungsBySubTask: {},
+    escalateTick: 0,
   };
 }
 
@@ -132,6 +136,7 @@ export function traceReducer(state: TraceState, event: TraceEvent): TraceState {
           ...state.rungsBySubTask,
           [subTaskId]: [...rungs, { subTaskId, escalatedFrom: failedRung?.hop?.id }],
         },
+        escalateTick: state.escalateTick + 1,
       };
     }
 

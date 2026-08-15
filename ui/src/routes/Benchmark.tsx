@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
+import type { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
+import { motion, useReducedMotion } from 'framer-motion';
 import { fetchBenchmark } from '../api';
-import { formatPct, formatUsd } from '../lib/format';
+import { formatPct, formatUsd, useCountUp } from '../lib/format';
 import type { BenchmarkResult } from '../types';
 
 type BarKey = keyof BenchmarkResult['baselines'];
@@ -18,6 +20,7 @@ const BAR_NOTE: Partial<Record<BarKey, string>> = {
  * distinguish discovery from "we stopped using a frontier model." */
 export default function Benchmark() {
   const [data, setData] = useState<BenchmarkResult | null>(null);
+  const reduceMotion = useReducedMotion();
 
   useEffect(() => {
     fetchBenchmark().then(setData);
@@ -53,21 +56,19 @@ export default function Benchmark() {
               </div>
             ))}
           {data &&
-            BAR_ORDER.map((key) => {
+            BAR_ORDER.map((key, i) => {
               const bar = data.baselines[key];
               const isFeatured = key === 'cheap_default' || key === 'understudy';
               const heightPct = Math.max(4, (bar.costPer1k / maxCost) * 100);
               return (
-                <div key={key} className="flex h-full flex-col items-center justify-end">
-                  <span className="mb-2 font-mono text-[13px] tabular-nums text-white/80">
-                    {formatUsd(bar.costPer1k)}
-                  </span>
-                  <div
-                    className={`w-full rounded-t-xl transition-[height] duration-700 ease-out ${
-                      key === 'understudy' ? 'bg-accent' : key === 'cheap_default' ? 'bg-accent/40' : 'bg-white/12'
-                    }`}
-                    style={{ height: `${heightPct}%` }}
-                  />
+                <BenchmarkBarColumn
+                  key={key}
+                  index={i}
+                  heightPct={heightPct}
+                  costPer1k={bar.costPer1k}
+                  colorClass={key === 'understudy' ? 'bg-accent' : key === 'cheap_default' ? 'bg-accent/40' : 'bg-white/12'}
+                  reduceMotion={!!reduceMotion}
+                >
                   <div className="mt-3 text-center">
                     <p
                       className={`text-[12px] font-medium leading-snug ${
@@ -83,7 +84,7 @@ export default function Benchmark() {
                       </p>
                     )}
                   </div>
-                </div>
+                </BenchmarkBarColumn>
               );
             })}
         </div>
@@ -106,5 +107,56 @@ export default function Benchmark() {
         {data?.note && <p className="mt-8 text-[11px] text-white/25">{data.note}</p>}
       </div>
     </div>
+  );
+}
+
+/** One bar — staggered 90ms per index (left→right), DESIGN.md §5 Benchmark.
+ * Height migrated from `height` to `transform: scaleY` (transform-origin:
+ * bottom) so growth is GPU-only instead of layout-triggering — the one
+ * perf fix DESIGN.md §3/§5 flags as recommended. The dollar label counts up
+ * in sync via useCountUp instead of rendering the final value immediately. */
+function BenchmarkBarColumn({
+  index,
+  heightPct,
+  costPer1k,
+  colorClass,
+  reduceMotion,
+  children,
+}: {
+  index: number;
+  heightPct: number;
+  costPer1k: number;
+  colorClass: string;
+  reduceMotion: boolean;
+  children: ReactNode;
+}) {
+  // Count up from 0 rather than mounting at the final value — the target
+  // only flips to the real cost once the bar's own entrance delay has
+  // elapsed, so the number materializes in sync with the bar growing.
+  const [target, setTarget] = useState(0);
+  useEffect(() => {
+    const id = window.setTimeout(() => setTarget(costPer1k), reduceMotion ? 0 : index * 90 + 50);
+    return () => window.clearTimeout(id);
+  }, [costPer1k, index, reduceMotion]);
+  const count = useCountUp(target, 700);
+
+  return (
+    <motion.div
+      className="flex h-full flex-col items-center justify-end"
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: reduceMotion ? 0.15 : 0.4, delay: reduceMotion ? 0 : index * 0.09, ease: 'easeOut' }}
+    >
+      <span className="mb-2 font-mono text-[13px] tabular-nums text-white/80">{formatUsd(count)}</span>
+      {/* Track takes the remaining flex space; the bar itself is absolutely
+          positioned inside it so scaleY only repaints, never relayouts. */}
+      <div className="relative w-full min-h-0 flex-1">
+        <div
+          className={`absolute inset-x-0 bottom-0 h-full origin-bottom rounded-t-xl transition-transform duration-700 ease-out ${colorClass}`}
+          style={{ transform: `scaleY(${heightPct / 100})` }}
+        />
+      </div>
+      {children}
+    </motion.div>
   );
 }

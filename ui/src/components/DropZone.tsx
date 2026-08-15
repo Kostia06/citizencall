@@ -51,5 +51,18 @@ export default function DropZone({ onFiles, children }: DropZoneProps) {
     };
   }, [onFiles]);
 
-  return <>{children({ isDragOver })}</>;
+  return (
+    <>
+      {isDragOver && (
+        <div
+          aria-hidden
+          className="pointer-events-none fixed inset-0 z-40 animate-drag-glow-in opacity-100"
+          style={{
+            background: 'radial-gradient(ellipse 70% 60% at 50% 0%, rgba(91,140,255,0.08), transparent 70%)',
+          }}
+        />
+      )}
+      {children({ isDragOver })}
+    </>
+  );
 }

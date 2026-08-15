@@ -72,6 +72,7 @@ export default function Bar() {
         <div className="flex-1">
           <CommandBar
             running={running}
+            escalateTick={trace.escalateTick}
             onSubmit={handleSubmit}
             onFilesDropped={(files) => push(`${files.length} file${files.length === 1 ? '' : 's'} attached`)}
             onToast={push}

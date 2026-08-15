@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
+import { motion, useReducedMotion } from 'framer-motion';
 import DropZone from './DropZone';
 import Mic from './Mic';
+import { magneticSnappy } from '../lib/motion';
+import { useBurst } from '../lib/useBurst';
 
 const GHOST = "Summarize this week's repository changes and draft a PR description.";
 
@@ -18,6 +21,9 @@ export interface DroppedFile {
 
 interface CommandBarProps {
   running: boolean;
+  /** Bumped once per `escalate` trace event — spikes the conic border's
+   * spin speed for 400ms. DESIGN.md §5 Command bar. */
+  escalateTick: number;
   onSubmit(text: string, opts: { bypassCache: boolean; source: 'text' | 'voice' }): void;
   onFilesDropped(files: File[]): void;
   onToast(message: string): void;
@@ -25,13 +31,20 @@ interface CommandBarProps {
 
 /** The pinned 60px glass pill — SPEC.md §6. Owns its own input state so the
  * mic can stream words in live; only hands the final text up on submit. */
-export default function CommandBar({ running, onSubmit, onFilesDropped, onToast }: CommandBarProps) {
+export default function CommandBar({ running, escalateTick, onSubmit, onFilesDropped, onToast }: CommandBarProps) {
   const [value, setValue] = useState('');
   const [source, setSource] = useState<'text' | 'voice'>('text');
   const [focused, setFocused] = useState(false);
   const [highlight, setHighlight] = useState(-1);
   const [files, setFiles] = useState<DroppedFile[]>([]);
+  const [ghostAccepting, setGhostAccepting] = useState(false);
+  const [clearing, setClearing] = useState(false);
+  const [ringSpike, setRingSpike] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const [confirmPulsing, fireConfirmPulse] = useBurst(200);
+  const [emberFlashing, fireEmberFlash] = useBurst(150);
+  const [focusPulsing, fireFocusPulse] = useBurst(400);
+  const reduceMotion = useReducedMotion();
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -44,6 +57,15 @@ export default function CommandBar({ running, onSubmit, onFilesDropped, onToast 
     return () => window.removeEventListener('keydown', onKeyDown);
   }, []);
 
+  // Ring speed spike on escalation — DESIGN.md §5 Command bar. Skip the
+  // initial mount (escalateTick starts at 0).
+  useEffect(() => {
+    if (escalateTick === 0) return;
+    setRingSpike(true);
+    const id = window.setTimeout(() => setRingSpike(false), 400);
+    return () => window.clearTimeout(id);
+  }, [escalateTick]);
+
   const showSuggestions = focused && !running && value.trim().length === 0;
   const filtered = SUGGESTIONS;
   const ghostSuffix =
@@ -52,6 +74,8 @@ export default function CommandBar({ running, onSubmit, onFilesDropped, onToast 
   function runNow(text: string, bypassCache: boolean) {
     const trimmed = text.trim();
     if (!trimmed || running) return;
+    fireConfirmPulse();
+    if (bypassCache) fireEmberFlash();
     onSubmit(trimmed, { bypassCache, source });
     setSource('text');
   }
@@ -59,12 +83,24 @@ export default function CommandBar({ running, onSubmit, onFilesDropped, onToast 
   function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
     if (e.key === 'Tab' && ghostSuffix) {
       e.preventDefault();
-      setValue(GHOST);
+      setGhostAccepting(true);
+      window.setTimeout(() => {
+        setValue(GHOST);
+        setGhostAccepting(false);
+      }, 120);
       return;
     }
     if (e.key === 'Escape') {
-      setValue('');
-      setHighlight(-1);
+      if (!value) {
+        setHighlight(-1);
+        return;
+      }
+      setClearing(true);
+      window.setTimeout(() => {
+        setValue('');
+        setHighlight(-1);
+        setClearing(false);
+      }, 100);
       return;
     }
     if (showSuggestions && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
@@ -92,10 +128,15 @@ export default function CommandBar({ running, onSubmit, onFilesDropped, onToast 
     >
       {({ isDragOver }) => (
         <div className="w-full">
-          <div className={`bar-shell ${running ? 'is-running' : ''}`}>
+          <div
+            className={`bar-shell ${running ? 'is-running' : ''}`}
+            style={ringSpike ? ({ '--ring-duration': '1.2s' } as React.CSSProperties) : undefined}
+          >
             <div
               className={`bar-pill relative flex h-[60px] items-center gap-2 px-3 animate-bar-in ${
                 isDragOver ? 'is-dragover' : ''
+              } ${confirmPulsing ? 'animate-confirm-pulse' : ''} ${emberFlashing ? 'animate-ember-edge-flash' : ''} ${
+                focusPulsing ? 'animate-focus-glow-pulse' : ''
               }`}
             >
               <div className="relative flex-1">
@@ -104,18 +145,29 @@ export default function CommandBar({ running, onSubmit, onFilesDropped, onToast 
                   value={value}
                   disabled={running}
                   onChange={(e) => setValue(e.target.value)}
-                  onFocus={() => setFocused(true)}
+                  onFocus={() => {
+                    setFocused(true);
+                    fireFocusPulse();
+                  }}
                   onBlur={() => window.setTimeout(() => setFocused(false), 120)}
                   onKeyDown={handleKeyDown}
                   placeholder={value ? '' : ''}
                   spellCheck={false}
                   aria-label="Command"
-                  className="relative z-10 w-full bg-transparent text-[15px] text-white placeholder:text-white/25 outline-none disabled:opacity-50"
+                  className={`relative z-10 w-full origin-left bg-transparent text-[15px] text-white placeholder:text-white/25 outline-none transition-[transform,opacity] duration-100 ease-out disabled:opacity-50 ${
+                    clearing ? 'scale-95 opacity-0' : 'scale-100 opacity-100'
+                  }`}
                 />
                 {ghostSuffix && (
                   <div className="pointer-events-none absolute inset-0 flex items-center whitespace-pre text-[15px]">
                     <span className="invisible">{value}</span>
-                    <span className="ghost-text">{ghostSuffix}</span>
+                    <span
+                      className={`ghost-text transition-colors duration-[120ms] ${
+                        ghostAccepting ? '!text-white' : ''
+                      }`}
+                    >
+                      {ghostSuffix}
+                    </span>
                   </div>
                 )}
               </div>
@@ -136,18 +188,26 @@ export default function CommandBar({ running, onSubmit, onFilesDropped, onToast 
           </div>
 
           {showSuggestions && (
-            <div className="mx-1 mt-2 overflow-hidden rounded-2xl border border-white/10 bg-surface-raised/95 backdrop-blur-xl">
+            <div className="relative mx-1 mt-2 overflow-hidden rounded-2xl border border-white/10 bg-surface-raised/95 backdrop-blur-xl">
               {filtered.map((s, i) => (
                 <button
                   key={s}
                   type="button"
                   onMouseDown={(e) => e.preventDefault()}
                   onClick={() => runNow(s, false)}
-                  className={`block w-full truncate px-4 py-2.5 text-left text-[13px] transition-colors ${
-                    i === highlight ? 'bg-accent/15 text-white' : 'text-white/55 hover:bg-white/5'
+                  onMouseEnter={() => setHighlight(i)}
+                  className={`relative block w-full truncate px-4 py-2.5 text-left text-[13px] transition-colors ${
+                    i === highlight ? 'text-white' : 'text-white/55 hover:bg-white/5'
                   }`}
                 >
-                  {s}
+                  {i === highlight && (
+                    <motion.div
+                      layoutId={reduceMotion ? undefined : 'suggestion-highlight'}
+                      className="absolute inset-0 bg-accent/15"
+                      transition={reduceMotion ? { duration: 0 } : magneticSnappy}
+                    />
+                  )}
+                  <span className="relative z-10">{s}</span>
                 </button>
               ))}
             </div>

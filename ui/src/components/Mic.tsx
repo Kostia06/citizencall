@@ -25,6 +25,7 @@ export default function Mic({ onInterim, onFinal, onToast, disabled }: MicProps)
   const streamRef = useRef<MediaStream | null>(null);
   const rafRef = useRef<number | undefined>(undefined);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const barHeightsRef = useRef<number[]>([0, 0, 0, 0, 0]);
 
   useEffect(() => {
     if (!getSpeechRecognition()) setUnsupported(true);
@@ -51,7 +52,12 @@ export default function Mic({ onInterim, onFinal, onToast, disabled }: MicProps)
         let sum = 0;
         for (let j = 0; j < bucket; j++) sum += data[i * bucket + j];
         const avg = sum / bucket / 255; // 0..1
-        const barHeight = Math.max(2, avg * canvas.height);
+        const targetHeight = Math.max(2, avg * canvas.height);
+        // Per-bar smoothing so bars settle instead of jitter frame-to-frame
+        // — DESIGN.md §5 Mic.
+        const prev = barHeightsRef.current[i] ?? targetHeight;
+        const barHeight = prev + (targetHeight - prev) * 0.35;
+        barHeightsRef.current[i] = barHeight;
         const x = i * (canvas.width / bars) + 1;
         const y = (canvas.height - barHeight) / 2;
         ctx.fillStyle = 'rgba(91,140,255,0.9)';
@@ -155,16 +161,27 @@ export default function Mic({ onInterim, onFinal, onToast, disabled }: MicProps)
         disabled={disabled}
         aria-label={recording ? 'Stop recording' : unsupported ? 'Voice unavailable' : 'Start voice input'}
         onClick={() => (recording ? stop() : start())}
-        className="flex h-8 w-8 items-center justify-center rounded-full text-[#8E8E93] transition-colors hover:text-white disabled:opacity-30"
+        className="relative flex h-8 w-8 items-center justify-center rounded-full text-[#8E8E93] transition-colors hover:text-white disabled:opacity-30"
       >
-        {recording ? (
+        {/* Idle→recording crossfade, 150ms — DESIGN.md §5 Mic. Both glyphs
+            stay mounted and swap opacity rather than instant-swap. */}
+        <span
+          className={`absolute inset-0 flex items-center justify-center transition-opacity duration-150 ease-out ${
+            recording ? 'opacity-100' : 'opacity-0'
+          }`}
+        >
           <span className="h-2.5 w-2.5 rounded-full bg-red-500" />
-        ) : (
+        </span>
+        <span
+          className={`absolute inset-0 flex items-center justify-center transition-opacity duration-150 ease-out ${
+            recording ? 'opacity-0' : 'opacity-100'
+          }`}
+        >
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden>
             <rect x="9" y="2.5" width="6" height="11" rx="3" />
             <path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21M8.5 21h7" strokeLinecap="round" />
           </svg>
-        )}
+        </span>
       </button>
     </div>
   );

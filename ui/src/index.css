@@ -25,6 +25,35 @@ body {
   background: radial-gradient(ellipse 80% 60% at 50% -10%, #16182a 0%, #000 55%) fixed;
 }
 
+/* ---- Living background canvas — DESIGN.md §4 ---- */
+/* The body radial-gradient above stays as the pre-JS paint; the canvas
+   fades in over it once its first frame is drawn, so there is never a
+   flash of unstyled background. */
+.bg-canvas {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  width: 100%;
+  height: 100%;
+  filter: blur(80px);
+  opacity: 0;
+}
+
+.app-content {
+  position: relative;
+  z-index: 1;
+}
+
+/* ---- TracePipeline "current" spine — DESIGN.md §1 / §5 ---- */
+.trace-line {
+  background: linear-gradient(to bottom, var(--accent), rgba(91, 140, 255, 0.15));
+}
+
+.trace-line-dot {
+  box-shadow: 0 0 8px 1px rgba(91, 140, 255, 0.6);
+}
+
 /* ---- Command bar glass pill ---- */
 .bar-pill {
   background: rgba(28, 28, 30, 0.72);
@@ -71,7 +100,9 @@ body {
     linear-gradient(#000 0 0);
   -webkit-mask-composite: xor;
   mask-composite: exclude;
-  animation: spin-a 2.4s linear infinite;
+  /* Duration is a custom property so CommandBar can spike it to 1.2s for
+     400ms on the `escalate` trace event — DESIGN.md §5 Command bar. */
+  animation: spin-a var(--ring-duration, 2.4s) linear infinite;
   pointer-events: none;
 }
 
@@ -115,4 +146,11 @@ body {
     animation: none;
     --a: 45deg;
   }
+  /* Canvas draws exactly one static frame (Background.tsx skips the rAF
+     loop entirely via matchMedia); the animation-duration override above
+     already collapses its fade-in to effectively instant. */
+  /* shake is a motion-sickness trigger under reduced-motion — replace the
+     oscillation with a single flash (fail-flash keyframe stays, shake's
+     translateX is neutralized by the animation-duration:0.001ms rule
+     above, which already strips the transform half of `shake-glow`). */
 }
