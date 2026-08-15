@@ -8,6 +8,7 @@ import { getRoster, getRun } from './db';
 import { createConnectionLink, verifyState } from './providers/composio';
 import { policy } from './policy';
 import { authRoutes } from './auth/routes';
+import { storeRoutes } from './store/routes';
 import resultsFixture from '../../artifacts/results.example.json';
 import funnelFixture from '../../artifacts/funnel.example.json';
 
@@ -16,6 +17,12 @@ export { RunDO } from './run.do';
 const app = new Hono<{ Bindings: Env }>();
 
 app.route('/auth', authRoutes);
+// storeRoutes applies requireAuth/requireVerified per-route (not via a
+// blanket `use('*', ...)`), so mounting it at /api only claims its own
+// literal paths (/api/settings, /api/connections*, /api/mcps*, /api/tools)
+// and cannot shadow the non-auth /api/* routes registered below
+// (/api/run, /api/roster, /api/benchmark, /api/funnel, /api/connect).
+app.route('/api', storeRoutes);
 
 const runRequestSchema = z.object({
   userId: z.string().min(1),
