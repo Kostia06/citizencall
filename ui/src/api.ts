@@ -107,15 +107,25 @@ function startLiveRun(opts: StartRunOpts): RunHandle {
       // Native EventSource sends Last-Event-ID automatically on reconnect
       // (SPEC.md §13 fix (b)) as long as the server emits `id:` per event.
       es = new EventSource(`${API_BASE}/api/run/${runId}/stream`);
+      let finished = false;
       es.onmessage = (msg) => {
         try {
           const event = JSON.parse(msg.data) as TraceEvent;
           opts.onEvent(event);
+          // The DO closes the stream after the terminal event; without this,
+          // EventSource treats that close as an error and reconnect-loops
+          // (replay → close → reconnect) while toasting "stream dropped"
+          // after every successful run.
+          if (event.t === 'run_end' || event.t === 'error') {
+            finished = true;
+            es?.close();
+          }
         } catch (err) {
           opts.onError?.(err);
         }
       };
       es.onerror = (err) => {
+        if (finished) return; // normal post-completion close, not a drop
         // EventSource retries on its own; surface it but don't tear down —
         // a transient drop mid-run is expected and should self-heal.
         opts.onError?.(err);
@@ -208,6 +218,9 @@ async function withMockFallback<T>(live: () => Promise<T>, mock: () => Promise<T
   }
 }
 
+// Shared by all authApi.refresh() callers — see the SINGLE-FLIGHT note there.
+let inflightRefresh: Promise<{ accessToken: string; user: AuthUser } | null> | null = null;
+
 export const authApi = {
   async signup(email: string, password: string): Promise<{ userId: string }> {
     return withMockFallback(
@@ -233,8 +246,23 @@ export const authApi = {
 
   /** Attempts to restore a session from the refresh cookie (web) or the
    * mock store. Resolves to null on no session — never throws for that
-   * case, since "anon" is a normal outcome, not an error. */
+   * case, since "anon" is a normal outcome, not an error.
+   *
+   * SINGLE-FLIGHT: refresh ROTATES the cookie token, and the worker treats a
+   * replay of the retired token as theft (reuse-detection revokes the whole
+   * session). Concurrent callers — StrictMode's double mount, several 401
+   * retries racing — must therefore share one in-flight rotation, or the
+   * loser logs the user out (found live: first refresh 200, every later one
+   * 401 "Session expired"). */
   async refresh(): Promise<{ accessToken: string; user: AuthUser } | null> {
+    if (inflightRefresh) return inflightRefresh;
+    inflightRefresh = this.doRefresh().finally(() => {
+      inflightRefresh = null;
+    });
+    return inflightRefresh;
+  },
+
+  async doRefresh(): Promise<{ accessToken: string; user: AuthUser } | null> {
     return withMockFallback(
       async () => {
         const res = await authFetch('/auth/refresh', { method: 'POST' });
