@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
+import os
+import sys
 from typing import Any
 
 from common import ARTIFACTS_DIR, TASKS_DIR, TaskInstance, TaskKind, append_jsonl, load_json, load_jsonl, save_json
@@ -93,12 +95,15 @@ def _candidate_models(candidates_by_kind: dict, catalog_by_id: dict[str, dict], 
     return [catalog_by_id[mid] for mid in ids if mid in catalog_by_id]
 
 
-def run_offline_pipeline(units: int = DEFAULT_UNITS) -> dict[str, Any]:
+def run_pipeline(units: int = DEFAULT_UNITS, offline: bool = True) -> dict[str, Any]:
     candidates_by_kind = load_json(ARTIFACTS_DIR / "candidates.json")
     catalog = load_json(ARTIFACTS_DIR / "catalog.json")["models"]
     catalog_by_id = {m["id"]: m for m in catalog}
 
-    client = FeatherlessClient(offline=True)
+    # offline=True uses deterministic stubs; offline=False makes real Featherless
+    # calls (needs FEATHERLESS_API_KEY). evaluate.run_candidate branches on
+    # client.offline, so the sweep logic below is identical either way.
+    client = FeatherlessClient(offline=offline)
     sem = UnitSemaphore(total_units=units)
 
     per_kind_results: list[dict[str, Any]] = []
@@ -198,14 +203,16 @@ def run_offline_pipeline(units: int = DEFAULT_UNITS) -> dict[str, Any]:
         "perKind": per_kind_results,
         "survivedRound1": survived_round1,
         "promoted": promoted_count,
+        "offline": offline,
     }
 
 
 def write_artifacts(pipeline_out: dict[str, Any]) -> None:
     generated_at = dt.datetime.now(dt.timezone.utc).isoformat()
+    offline = pipeline_out.get("offline", True)
 
     policy = {
-        "version": "v1-offline",
+        "version": "v1-offline" if offline else "v1-live",
         "generatedAt": generated_at,
         "weights": {"quality": 1.0, "cost": 0.35},
         "ladders": pipeline_out["ladders"],
@@ -219,7 +226,12 @@ def write_artifacts(pipeline_out: dict[str, Any]) -> None:
     results = {
         "generatedAt": generated_at,
         "perKind": pipeline_out["perKind"],
-        "note": "Produced by harness/promote.py --offline using deterministic stub responses, not real Featherless calls. Run with --live snapshot/warmup + a real sweep for reportable numbers.",
+        "note": (
+            "Produced by harness/promote.py --offline using deterministic stub responses, "
+            "not real Featherless calls. Run with --live for reportable numbers."
+            if offline
+            else "Produced by harness/promote.py --live against Featherless. Every call is in artifacts/sweep-log.jsonl."
+        ),
     }
     save_json(ARTIFACTS_DIR / "results.json", results)
 
@@ -257,15 +269,22 @@ def write_artifacts(pipeline_out: dict[str, Any]) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--offline", action="store_true", default=True, help="Use deterministic stub responses (default; no API key required)")
+    parser.add_argument("--live", action="store_true", help="Make real Featherless calls (needs FEATHERLESS_API_KEY). Overrides --offline.")
     parser.add_argument("--units", type=int, default=DEFAULT_UNITS)
     args = parser.parse_args()
+
+    offline = not args.live
+    if not offline and not os.environ.get("FEATHERLESS_API_KEY"):
+        print("--live requires FEATHERLESS_API_KEY (set it or add a repo-root .env)", file=sys.stderr)
+        raise SystemExit(2)
 
     if SWEEP_LOG.exists():
         SWEEP_LOG.unlink()  # each run starts a fresh audit log
 
-    pipeline_out = run_offline_pipeline(units=args.units)
+    pipeline_out = run_pipeline(units=args.units, offline=offline)
     write_artifacts(pipeline_out)
-    print("promote: wrote policy.json, results.json, funnel.json, sweep-log.jsonl")
+    mode = "offline" if offline else "live"
+    print(f"promote ({mode}): wrote policy.json, results.json, funnel.json, sweep-log.jsonl")
 
 
 if __name__ == "__main__":

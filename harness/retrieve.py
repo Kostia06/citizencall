@@ -63,7 +63,9 @@ def prefilter(catalog: list[ModelCandidate], kind: str) -> list[ModelCandidate]:
         for m in catalog
         if m.get("contextLength", 0) >= spec["ctx"]
         and (m.get("toolUse") or not spec["needs_tools"])
-        and m.get("availability") in ("warm", "loading")
+        # availability tier isn't exposed by /v1/models (SPEC.md §9.1); warmth is
+        # confirmed downstream by warmup.py / call-time 400s, so 'unknown' passes.
+        and m.get("availability") in ("warm", "loading", "unknown")
         and m.get("availableOnPlan")
         and m.get("paramsB", 0) <= PREFILTER_MAX_PARAMS_B
     ]

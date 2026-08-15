@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import sys
 
 import requests
@@ -33,24 +34,61 @@ def fetch_live_catalog(api_key: str) -> list[ModelCandidate]:
     return [_to_candidate(m) for m in raw]
 
 
+# Featherless encodes model size in the id/model_class (e.g. "llama33-70b"),
+# not a numeric field — parse it, taking the first "<n>b" token.
+_SIZE_RE = re.compile(r"(\d+(?:\.\d+)?)\s*b\b")
+_INSTRUCT_MARKERS = ("instruct", "-it", "chat", "sft", "dpo", "rlhf", "-rl")
+
+
+def _parse_params_b(model_class: str, model_id: str) -> float:
+    for s in (model_class or "", model_id or ""):
+        match = _SIZE_RE.search(s.lower())
+        if match:
+            return float(match.group(1))
+    return 0.0
+
+
+def _is_base_non_instruct(model_id: str) -> bool:
+    low = model_id.lower()
+    return "base" in low and not any(mk in low for mk in _INSTRUCT_MARKERS)
+
+
+def _synth_card(model_id: str, model_class: str) -> str:
+    # /v1/models carries no description, so the id + model_class are the only
+    # text signal for BM25/dense retrieval — synthesize a card from them.
+    tokens = re.split(r"[^a-z0-9.]+", f"{model_id} {model_class}".lower())
+    return " ".join(t for t in tokens if t)
+
+
 def _to_candidate(m: dict) -> ModelCandidate:
-    # Featherless's model objects nest pricing/availability differently than
-    # our ModelCandidate shape — this is the one place that translation happens.
+    # Featherless's model objects nest pricing/features differently than our
+    # ModelCandidate shape — this is the one place that translation happens.
+    # Real /v1/models fields: id, model_class, context_length, concurrency_cost,
+    # pricing{input,output}, features{tool_use}, available_on_current_plan,
+    # is_gated. There is NO params_b, availability tier, or hf_downloads.
+    model_id = m["id"]
+    model_class = m.get("model_class") or model_id.split("/")[-1]
+    pricing = m.get("pricing") or {}
+    features = m.get("features") or {}
     return ModelCandidate(
-        id=m["id"],
-        modelClass=m.get("model_class", m["id"].split("/")[-1]),
-        contextLength=int(m.get("context_length", 0)),
-        paramsB=float(m.get("params_b", 0) or 0),
-        pricePerMTokIn=float(m.get("price_per_mtok_in", 0) or 0),
-        pricePerMTokOut=float(m.get("price_per_mtok_out", 0) or 0),
+        id=model_id,
+        modelClass=model_class,
+        contextLength=int(m.get("context_length", 0) or 0),
+        paramsB=_parse_params_b(model_class, model_id),
+        # pricing.input / pricing.output are $ per 1M tokens.
+        pricePerMTokIn=float(pricing.get("input", 0) or 0),
+        pricePerMTokOut=float(pricing.get("output", 0) or 0),
         concurrencyCost=int(m.get("concurrency_cost", 1) or 1),
-        availability=m.get("availability", "unknown"),
-        isHotLive=bool(m.get("is_hot_live", False)),
-        toolUse=bool(m.get("tool_use", False)),
-        availableOnPlan=bool(m.get("available_on_plan", True)),
-        hfDownloads=m.get("hf_downloads"),
-        isBaseNonInstruct=bool(m.get("is_base_non_instruct", False)),
-        cardText=m.get("description", ""),
+        # No availability tier in the catalog (SPEC.md §9.1) — warmth is only
+        # knowable by probing (warmup.py) or at call time (400 => cold).
+        availability="unknown",
+        isHotLive=False,
+        toolUse=bool(features.get("tool_use", False)),
+        # Gated models 403 on call (HF auth), so treat them as off-plan here.
+        availableOnPlan=bool(m.get("available_on_current_plan", True)) and not bool(m.get("is_gated", False)),
+        hfDownloads=None,
+        isBaseNonInstruct=_is_base_non_instruct(model_id),
+        cardText=_synth_card(model_id, model_class),
     )
 
 
