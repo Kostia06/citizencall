@@ -79,7 +79,17 @@ export interface Hop {
 }
 
 export type TraceEvent =
-  | { t: 'run_start'; runId: string; userId: string; text: string; source: 'text' | 'voice' }
+  | {
+      t: 'run_start';
+      runId: string;
+      userId: string;
+      text: string;
+      source: 'text' | 'voice';
+      // ui-only addition — attachments picked up in CommandBar (drag-drop +
+      // clipboard). Not yet in worker/src/types.ts; optional so live-mode
+      // payloads without it still validate. See DropZone.tsx / CommandBar.tsx.
+      attachments?: RunAttachment[];
+    }
   | { t: 'transcript'; raw: string; final: boolean } // ← S2T
   | { t: 'normalized'; from: string; to: string; ms: number; modelId: string }
   | { t: 'plan'; plan: Plan; cacheHit: boolean; ms: number }
@@ -110,6 +120,19 @@ export interface Policy {
 }
 
 // ---- UI-only types (not part of the worker contract) ----
+
+export type AttachmentKind = 'file' | 'clipboard-image' | 'clipboard-text';
+
+/** A file or clipboard blob attached to the command bar before a run starts
+ * — CommandBar.tsx (drag-drop + clipboard read) and mock/scenario.ts. Only
+ * metadata crosses the wire; raw bytes stay client-side for this demo. */
+export interface RunAttachment {
+  id: string;
+  name: string;
+  kind: AttachmentKind;
+  size?: number;
+  mimeType?: string;
+}
 
 export interface RosterEntry {
   taskKind: TaskKind;

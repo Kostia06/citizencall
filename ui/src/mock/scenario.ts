@@ -1,4 +1,4 @@
-import type { SubTask, TraceEvent } from '../types';
+import type { RunAttachment, SubTask, TraceEvent } from '../types';
 
 export interface ScenarioStep {
   event: TraceEvent;
@@ -42,12 +42,23 @@ export function buildScenario(opts: {
   userId: string;
   text: string;
   source: 'text' | 'voice';
+  attachments?: RunAttachment[];
 }): ScenarioStep[] {
-  const { runId, userId, text, source } = opts;
+  const { runId, userId, text, source, attachments } = opts;
   const steps: ScenarioStep[] = [];
 
   steps.push({
-    event: { t: 'run_start', runId, userId, text: source === 'voice' ? RAW_TRANSCRIPT : text, source },
+    event: {
+      t: 'run_start',
+      runId,
+      userId,
+      text: source === 'voice' ? RAW_TRANSCRIPT : text,
+      source,
+      // Attachments don't change any downstream scripted step — the plan,
+      // routing and hops below are fixed regardless — they just ride along
+      // on run_start so the trace can reference what was attached.
+      attachments: attachments && attachments.length > 0 ? attachments : undefined,
+    },
     delay: 0,
   });
 

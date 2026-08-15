@@ -75,6 +75,8 @@ export default function TracePipeline({ state }: { state: TraceState }) {
               <span>
                 {state.plan.subTasks.length} sub-task{state.plan.subTasks.length === 1 ? '' : 's'} planned ·{' '}
                 {formatMs(state.plan.ms)}
+                {state.attachments.length > 0 &&
+                  ` · ${state.attachments.length} attachment${state.attachments.length === 1 ? '' : 's'}`}
               </span>
               <span className={state.plan.cacheHit ? 'font-medium text-emerald-400/80' : 'text-white/30'}>
                 plan: {state.plan.cacheHit ? 'GLOBAL HIT' : 'MISS'}

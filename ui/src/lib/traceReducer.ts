@@ -1,4 +1,4 @@
-import type { Hop, RouteDecision, SubTask, TraceEvent } from '../types';
+import type { Hop, RouteDecision, RunAttachment, SubTask, TraceEvent } from '../types';
 
 /** One rung of the escalation ladder for a sub-task: route decision, the
  * hop that started (optimistic) and the hop that ended (settled). */
@@ -15,6 +15,7 @@ export interface TraceState {
   runId?: string;
   source: 'text' | 'voice';
   requestText: string;
+  attachments: RunAttachment[];
   transcript?: { raw: string; final: boolean };
   normalize?: { from: string; to: string; ms: number; modelId: string; revealed: boolean };
   plan?: { subTasks: SubTask[]; cacheHit: boolean; ms: number };
@@ -33,6 +34,7 @@ export function initialTraceState(): TraceState {
     status: 'idle',
     source: 'text',
     requestText: '',
+    attachments: [],
     subTaskOrder: [],
     rungsBySubTask: {},
     escalateTick: 0,
@@ -68,6 +70,7 @@ export function traceReducer(state: TraceState, event: TraceEvent): TraceState {
         runId: event.runId,
         source: event.source,
         requestText: event.text,
+        attachments: event.attachments ?? [],
       };
 
     case 'transcript':
