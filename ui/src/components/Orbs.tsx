@@ -19,6 +19,12 @@ interface OrbsProps {
   onConnect(slug: string): void;
   /** Hold-drag reorder — fires with the full new order; parent persists it. */
   onReorder(next: UserPrefsButton[]): void;
+  /** When supplied, route-opening orbs call this instead of navigating in
+   * place. The Electron overlay passes it so the roster opens in the real
+   * browser — navigating a 720px panel to a full page would replace the
+   * search field and strand the user there. Browser routes leave it
+   * undefined and keep the plain <Link>. */
+  onOpenRoute?(path: string): void;
 }
 
 const HALO = 40; // px — cursor-proximity radius that triggers magnetism
@@ -201,6 +207,7 @@ export default function Orbs({
   onToggleUser,
   onConnect,
   onReorder,
+  onOpenRoute,
 }: OrbsProps) {
   const [userSpun, setUserSpun] = useState(false);
 
@@ -226,7 +233,13 @@ export default function Orbs({
     switch (btn.action) {
       case 'open:roster':
         return (
-          <Orb as="link" to="/roster" className={`${orbBase} text-white/70`} title={btn.label ?? 'Policy — open roster'}>
+          <Orb
+            {...(onOpenRoute
+              ? ({ as: 'button', onClick: () => onOpenRoute('/roster') } as const)
+              : ({ as: 'link', to: '/roster' } as const))}
+            className={`${orbBase} text-white/70`}
+            title={btn.label ?? 'Policy — open roster'}
+          >
             <span className="text-lg leading-none">◆</span>
             {policyVersion && (
               <span className="absolute -bottom-1 -right-1 rounded-full bg-accent px-1.5 py-0.5 text-[9px] font-bold leading-none text-black">
