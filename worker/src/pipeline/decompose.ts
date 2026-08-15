@@ -167,11 +167,15 @@ function buildSubTask(d: SubTaskDraft, idx: number, id: string, allowedToolkits:
 }
 
 function resolveTool(instruction: string, toolkitHint: string | null) {
+  // The model's own toolkit pick wins over the text patterns — "send a
+  // discord message about the repo" must stay discord, not get hijacked to
+  // github because "repo" matched a hint regex. Patterns are the fallback
+  // for plans where the model flagged needsTools but named no toolkit.
+  // MCP/catalog toolkits have no per-tool catalog yet — 'call' is the single
+  // generic tool name the MCP transport (pipeline/mcp.ts) dispatches on.
+  if (toolkitHint) return DEFAULT_TOOL[toolkitHint] ?? { toolkit: toolkitHint, tool: 'call' };
   const byText = TOOL_HINTS.find((h) => h.pattern.test(instruction));
   if (byText) return { toolkit: byText.toolkit, tool: byText.tool };
-  // MCP toolkits have no per-tool catalog yet — 'call' is the single generic
-  // tool name the MCP transport (pipeline/mcp.ts) will dispatch on.
-  if (toolkitHint) return DEFAULT_TOOL[toolkitHint] ?? { toolkit: toolkitHint, tool: 'call' };
   return undefined;
 }
 

@@ -81,7 +81,7 @@ export type TraceEvent =
   | { t: 'run_start'; runId: string; userId: string; text: string; source: 'text' | 'voice' }
   | { t: 'transcript'; raw: string; final: boolean } // ← S2T
   | { t: 'normalized'; from: string; to: string; ms: number; modelId: string }
-  | { t: 'plan'; plan: Plan; cacheHit: boolean; ms: number }
+  | { t: 'plan'; plan: Plan; cacheHit: boolean; cacheKind?: 'exact' | 'semantic'; ms: number }
   | { t: 'route'; decision: RouteDecision }
   | { t: 'hop_start'; hop: Pick<Hop, 'id' | 'subTaskId' | 'modelId' | 'paramsB'> }
   | { t: 'hop_end'; hop: Hop }

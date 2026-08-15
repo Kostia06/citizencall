@@ -10,6 +10,7 @@ import type { Hop, ModelCandidate, Policy, TraceEvent } from '../types';
 import { policy as bootPolicy, candidates as bootCandidates } from '../policy';
 import { normalize } from './normalize';
 import { decompose } from './decompose';
+import { detectMentionedToolkits } from './toolkit-mentions';
 import { executeSubTask, type PriorOutput, type ToolCallResult } from './execute';
 import { buildRunEndEvent, sumCost } from './trace';
 import { asTraceEvent } from './events';
@@ -119,10 +120,16 @@ export async function runPipeline(
 
   const mcpToolkits = await listEnabledMcpToolkits(db, body.userId).catch(() => []);
   const mcpTokens = new Set(mcpToolkits.map((m) => m.toolkit));
+  // Catalog toolkits the prompt mentions (e.g. "discord") join the planner's
+  // vocabulary so a needed-but-unconnected app plans a tool call and the
+  // connection-required pause can name it.
+  const mentioned = await detectMentionedToolkits(env, norm.to);
 
   const planStarted = Date.now();
-  const { plan, cacheHit: planCacheHit } = await decompose(env, db, policy, norm.to, [...mcpTokens]);
-  record({ t: 'plan', plan, cacheHit: planCacheHit, ms: Date.now() - planStarted });
+  const { plan, cacheHit: planCacheHit, cacheKind } = await decompose(env, db, policy, norm.to, [
+    ...new Set([...mcpTokens, ...mentioned]),
+  ]);
+  record({ t: 'plan', plan, cacheHit: planCacheHit, ...(cacheKind ? { cacheKind } : {}), ms: Date.now() - planStarted });
   await insertSubTasks(db, body.runId, plan);
 
   const hops: Hop[] = [];
