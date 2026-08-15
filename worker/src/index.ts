@@ -6,12 +6,15 @@ import { z } from 'zod';
 import type { Env } from './env';
 import { getRoster, getRun } from './db';
 import { createConnectionLink, verifyState } from './providers/composio';
+import { getToolkitCatalog } from './providers/composio-catalog';
 import { policy } from './policy';
 import { authRoutes } from './auth/routes';
 import type { AuthVars } from './auth/middleware';
 import { resolveActor } from './auth/anon';
 import { storeRoutes } from './store/routes';
 import { upsertConnection } from './store/connections';
+import { checkAndIncrement } from './auth/throttle';
+import { suggestNextAction } from './pipeline/suggest';
 import resultsFixture from '../../artifacts/results.example.json';
 import funnelFixture from '../../artifacts/funnel.example.json';
 
@@ -79,6 +82,38 @@ app.get('/api/roster', async (c) => {
 // harness has produced real ones — same pattern as policy.ts.
 app.get('/api/benchmark', (c) => c.json(resultsFixture));
 app.get('/api/funnel', (c) => c.json(funnelFixture));
+
+const suggestRequestSchema = z.object({ context: z.array(z.string()).max(50) });
+
+// Anonymous-friendly (no auth required) but IP-throttled — this is a
+// fire-and-forget nudge, not a routed run, so it doesn't need an actor
+// identity, only abuse protection. Reuses the same auth_attempts bucket
+// mechanism as the auth routes (see auth/routes.ts's clientIp/throttle
+// pattern) rather than inventing a second rate-limit store.
+app.post('/api/suggest', async (c) => {
+  const body = await c.req.json().catch(() => null);
+  const parsed = suggestRequestSchema.safeParse(body);
+  if (!parsed.success) return c.json({ error: 'invalid request', details: parsed.error.flatten() }, 400);
+
+  const ip = c.req.header('CF-Connecting-IP') ?? 'unknown';
+  const throttle = await checkAndIncrement(c.env.DB, `suggest:ip:${ip}`, Date.now(), {
+    windowMs: 60_000,
+    max: 20,
+  });
+  if (!throttle.allowed) {
+    c.header('Retry-After', String(Math.ceil(throttle.retryAfterMs / 1000)));
+    return c.json({ error: 'rate limited' }, 429);
+  }
+
+  const suggestion = await suggestNextAction(c.env, parsed.data.context);
+  return c.json({ suggestion });
+});
+
+// Composio's toolkit catalog for the "connect an app" picker — always
+// returns 100+ apps (live from Composio when COMPOSIO_API_KEY is set and
+// reachable, otherwise the bundled fallback list), so the UI never renders
+// an empty picker.
+app.get('/api/toolkits', async (c) => c.json(await getToolkitCatalog(c.env)));
 
 const connectRequestSchema = z.object({
   toolkit: z.enum(['github', 'gmail']),

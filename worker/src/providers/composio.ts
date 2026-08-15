@@ -100,6 +100,10 @@ export async function verifyState(env: Env, token: string | null): Promise<OAuth
   }
 }
 
+function stubLink(toolkit: string, userId: string, state: string): ConnectionLink {
+  return { url: `https://composio.stub/link?toolkit=${toolkit}&user=${userId}&state=${state}`, state };
+}
+
 export async function createConnectionLink(
   env: Env,
   userId: string,
@@ -107,12 +111,29 @@ export async function createConnectionLink(
   authConfigId: string
 ): Promise<ConnectionLink> {
   const state = await createState(env, { userId, toolkit });
-  if (!env.COMPOSIO_API_KEY) {
-    return { url: `https://composio.stub/link?toolkit=${toolkit}&user=${userId}&state=${state}`, state };
+  if (!env.COMPOSIO_API_KEY) return stubLink(toolkit, userId, state);
+
+  // The narrow `state` option this used to pass isn't part of Composio's
+  // actual link() options (verified against @composio/core's
+  // CreateConnectedAccountLinkOptionsSchema — it only knows callbackUrl,
+  // alias, allowMultiple, experimental) and was being silently stripped, so
+  // /oauth/done's signed state never round-tripped through a live connect.
+  // The real mechanism is: pass our own /oauth/done URL as callbackUrl, with
+  // state riding in ITS query string — Composio appends status= and
+  // connected_account_id= onto whatever callbackUrl you give it (confirmed
+  // against the live v3.1 API), which is exactly the shape /oauth/done reads.
+  const callbackUrl = `${env.APP_URL ?? ''}/oauth/done?state=${encodeURIComponent(state)}`;
+  try {
+    const c = await client(env.COMPOSIO_API_KEY);
+    const link = await c.connectedAccounts.link(userId, authConfigId, { callbackUrl });
+    return { url: link.redirectUrl, state };
+  } catch (err) {
+    // authConfigId not provisioned for this toolkit in the Composio
+    // dashboard yet, or any other live-API failure: fall back to the dev
+    // stub link rather than 500ing the whole /api/connect call.
+    console.error(`Composio connect failed for toolkit=${toolkit} authConfigId=${authConfigId}:`, err);
+    return stubLink(toolkit, userId, state);
   }
-  const c = await client(env.COMPOSIO_API_KEY);
-  const link = await c.connectedAccounts.link(userId, authConfigId, { state });
-  return { url: link.redirectUrl, state };
 }
 
 export interface ToolExecResult {
