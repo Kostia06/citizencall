@@ -7,6 +7,7 @@ import type { Env } from './env';
 import { getRoster, getRun } from './db';
 import { createConnectionLink, verifyState } from './providers/composio';
 import { getToolkitCatalog } from './providers/composio-catalog';
+import { AuthConfigUnavailableError, resolveAuthConfigId } from './providers/composio-auth-configs';
 import { policy } from './policy';
 import { authRoutes } from './auth/routes';
 import type { AuthVars } from './auth/middleware';
@@ -115,8 +116,17 @@ app.post('/api/suggest', async (c) => {
 // an empty picker.
 app.get('/api/toolkits', async (c) => c.json(await getToolkitCatalog(c.env)));
 
+// Any Composio catalog slug (1,200+ toolkits), not a hardcoded allowlist —
+// the slug is validated for shape here and resolved against Composio's
+// auth-config API below, which is the real source of truth for "does this
+// toolkit exist / can it connect".
 const connectRequestSchema = z.object({
-  toolkit: z.enum(['github', 'gmail']),
+  toolkit: z
+    .string()
+    .trim()
+    .min(1)
+    .max(100)
+    .regex(/^[a-z0-9_-]+$/i, 'toolkit must be a catalog slug'),
   authConfigId: z.string().optional(),
 });
 
@@ -125,16 +135,41 @@ const connectRequestSchema = z.object({
 // the request body — the same IDOR-safe pattern as the rest of the per-user
 // store (SPEC.md §5.3 / design doc §6), extended to let an anonymous caller
 // start a connect before they've signed up.
+//
+// Contract: 200 {redirectUrl} (plus legacy url/state) or a structured 422
+// {error:"auth_config_unavailable", toolkit} when Composio can't provide a
+// managed auth config for the toolkit (needs manual dashboard setup).
 app.post('/api/connect', async (c) => {
   const body = await c.req.json().catch(() => null);
   const parsed = connectRequestSchema.safeParse(body);
   if (!parsed.success) return c.json({ error: 'invalid request', details: parsed.error.flatten() }, 400);
 
   const { userId } = await resolveActor(c);
-  const { toolkit } = parsed.data;
-  const authConfigId = parsed.data.authConfigId ?? toolkit.toUpperCase();
+  const toolkit = parsed.data.toolkit.toLowerCase();
+
+  let authConfigId = parsed.data.authConfigId;
+  if (!authConfigId) {
+    if (c.env.COMPOSIO_API_KEY) {
+      try {
+        authConfigId = await resolveAuthConfigId(c.env.COMPOSIO_API_KEY, toolkit);
+      } catch (err) {
+        if (err instanceof AuthConfigUnavailableError) {
+          console.error(err.message);
+          return c.json({ error: 'auth_config_unavailable', toolkit }, 422);
+        }
+        throw err;
+      }
+    } else {
+      // Keyless dev/test path: createConnectionLink returns its stub link
+      // without ever using the id, so a placeholder keeps signatures honest.
+      authConfigId = toolkit.toUpperCase();
+    }
+  }
+
   const link = await createConnectionLink(c.env, userId, toolkit, authConfigId);
-  return c.json(link);
+  // `redirectUrl` is the cross-agent contract; `url` + `state` remain for
+  // existing callers of the older shape.
+  return c.json({ redirectUrl: link.url, url: link.url, state: link.state });
 });
 
 app.get('/oauth/done', async (c) => {
