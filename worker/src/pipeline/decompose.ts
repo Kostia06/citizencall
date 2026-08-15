@@ -1,6 +1,10 @@
 // Stage 1 — decompose. Turns normalized text into a Plan of SubTasks with a real
-// routed model call, checking the L3 plan cache first (SPEC.md §8: exact match on
-// normalized text, global, plan-only — never stores tool or model output).
+// routed model call, checking the L3 plan cache first (SPEC.md §8: global,
+// plan-only — never stores tool or model output). L3 is two-tier: exact match
+// on the normalized key (fast path, unchanged), then on exact miss a bounded
+// semantic near-match over recent plan-cache rows (cache/planSemantic.ts) —
+// the SPEC.md §8 "semantic L3" future work, done lexically since this stack
+// has no embedding provider.
 //
 // The planner runs on the frontier baseline: planning is a single small-output
 // call where correctness matters most, and it's amortized by the L3 cache — a
@@ -13,7 +17,8 @@
 // the worker still produces a usable plan deterministically.
 import { z } from 'zod';
 import type { Env } from '../env';
-import { getPlan, putPlan } from '../cache/plan';
+import { getPlan, normalizePlanKey } from '../cache/plan';
+import { findNearPlan, putPlanIndexed } from '../cache/planSemantic';
 import { callFeatherless } from '../providers/featherless';
 import type { Plan, Policy, SubTask, TaskKind } from '../types';
 
@@ -67,21 +72,38 @@ function systemPrompt(extraToolkits: string[]): string {
   ].join(' ');
 }
 
+export interface DecomposeResult {
+  plan: Plan;
+  cacheHit: boolean;
+  // How the hit was found. Additive: run.ts only reads plan/cacheHit, and the
+  // wire `plan` event's cacheHit stays a boolean (types.ts is out of scope).
+  cacheKind?: 'exact' | 'semantic';
+}
+
 export async function decompose(
   env: Env,
   db: D1Database,
   policy: Policy,
   normalizedText: string,
   extraToolkits: string[] = []
-): Promise<{ plan: Plan; cacheHit: boolean }> {
+): Promise<DecomposeResult> {
   // A cached plan carries the sub-task ids of the run that minted it —
-  // sub_tasks.id is a global PK, so every run must re-key the plan (fresh ids,
-  // dependsOn remapped) before inserting its own rows.
+  // sub_tasks.id is a global PK, so EVERY cache hit (exact or semantic) must
+  // re-key the plan (fresh ids, dependsOn remapped) before inserting its rows.
   const cached = await getPlan(db, normalizedText);
-  if (cached) return { plan: rekeyPlan(cached), cacheHit: true };
+  if (cached) return { plan: rekeyPlan(cached), cacheHit: true, cacheKind: 'exact' };
+
+  const key = normalizePlanKey(normalizedText);
+  const near = await findNearPlan(db, key);
+  if (near) {
+    // Promote the borrow to an exact row under the new key (provenance in
+    // borrowed_from), so the next identical prompt takes the fast path.
+    await putPlanIndexed(db, key, near.plan, near.matchedKey);
+    return { plan: rekeyPlan(near.plan), cacheHit: true, cacheKind: 'semantic' };
+  }
 
   const plan = (await modelPlan(env, policy, normalizedText, extraToolkits)) ?? heuristicPlan(normalizedText);
-  await putPlan(db, normalizedText, plan);
+  await putPlanIndexed(db, key, plan);
   return { plan, cacheHit: false };
 }
 
