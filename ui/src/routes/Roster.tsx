@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { motion, useReducedMotion } from 'framer-motion';
 import { fetchBenchmark, fetchRoster } from '../api';
+import AuthNav from '../components/AuthNav';
 import { formatDownloads, formatPct, formatUsd, timeAgo } from '../lib/format';
 import { entranceStandardReduced, headlineVariants } from '../lib/motion';
 import type { RosterEntry, TaskKind } from '../types';
@@ -41,9 +42,12 @@ export default function Roster() {
       <div className="mx-auto max-w-3xl">
         <div className="flex items-center justify-between text-[11px] text-white/30">
           <span>understudy</span>
-          <Link to="/" className="transition-colors hover:text-white/70">
-            ← bar
-          </Link>
+          <div className="flex items-center gap-4">
+            <Link to="/" className="transition-colors hover:text-white/70">
+              ← bar
+            </Link>
+            <AuthNav />
+          </div>
         </div>
 
         {headline && (

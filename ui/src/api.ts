@@ -1,12 +1,14 @@
 import type { BenchmarkResult, RosterEntry, RunAttachment, TraceEvent } from './types';
 import { mockBenchmark, mockFunnel, mockRoster } from './mock/fixtures';
 import { buildScenario } from './mock/scenario';
+import { mockAuthStore } from './auth/mockAuthStore';
+import type { AuthUser } from './auth/types';
 
 // MOCK is on by default so the UI is fully demoable with zero backend —
 // flip VITE_MOCK=false to talk to a real Worker. See SPEC.md §13.
 export const MOCK: boolean = import.meta.env.VITE_MOCK !== 'false';
 
-const API_BASE: string = import.meta.env.VITE_API_BASE ?? '';
+export const API_BASE: string = import.meta.env.VITE_API_BASE ?? '';
 
 export interface RunHandle {
   runId: string;
@@ -148,3 +150,137 @@ export async function connectToolkit(userId: string, toolkit: 'github' | 'gmail'
   if (!res.ok) throw new Error(`POST /api/connect failed: ${res.status}`);
   return res.json();
 }
+
+// ---- /auth/* client — web SPA design §3/§4, endpoint contract in
+// docs/superpowers/specs/2026-08-14-auth-foundation-design.md §6. ----
+
+/** Thrown for a real (non-network) failure response from the auth API —
+ * bad credentials, expired token, etc. Distinct from a network failure so
+ * `withMockFallback` never masks a genuine rejection as "backend down". */
+export class AuthError extends Error {
+  status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = 'AuthError';
+    this.status = status;
+  }
+}
+
+async function authFetch(path: string, init?: RequestInit): Promise<Response> {
+  return fetch(`${API_BASE}${path}`, {
+    credentials: 'include', // rides the __Host-refresh cookie for web
+    headers: { 'content-type': 'application/json', ...init?.headers },
+    ...init,
+  });
+}
+
+async function readJsonError(res: Response): Promise<string> {
+  try {
+    const body = (await res.json()) as { message?: string; error?: string };
+    return body.message ?? body.error ?? `request failed: ${res.status}`;
+  } catch {
+    return `request failed: ${res.status}`;
+  }
+}
+
+/** Runs `live` against the real Worker; falls back to the in-memory mock
+ * store when MOCK is on, or transparently when `live` fails to reach the
+ * network at all (fetch throw — not an AuthError, which is a genuine
+ * response from a live backend and must propagate). This is what keeps the
+ * SPA demoable with no Worker running. */
+async function withMockFallback<T>(live: () => Promise<T>, mock: () => Promise<T>): Promise<T> {
+  if (MOCK) return mock();
+  try {
+    return await live();
+  } catch (err) {
+    if (err instanceof AuthError) throw err;
+    console.warn('[auth] backend unreachable, falling back to mock auth', err);
+    return mock();
+  }
+}
+
+export const authApi = {
+  async signup(email: string, password: string): Promise<{ userId: string }> {
+    return withMockFallback(
+      async () => {
+        const res = await authFetch('/auth/signup', { method: 'POST', body: JSON.stringify({ email, password }) });
+        if (!res.ok) throw new AuthError(await readJsonError(res), res.status);
+        return res.json();
+      },
+      () => mockAuthStore.signup(email, password),
+    );
+  },
+
+  async login(email: string, password: string): Promise<{ accessToken: string; user: AuthUser }> {
+    return withMockFallback(
+      async () => {
+        const res = await authFetch('/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) });
+        if (!res.ok) throw new AuthError(await readJsonError(res), res.status);
+        return res.json();
+      },
+      () => mockAuthStore.login(email, password),
+    );
+  },
+
+  /** Attempts to restore a session from the refresh cookie (web) or the
+   * mock store. Resolves to null on no session — never throws for that
+   * case, since "anon" is a normal outcome, not an error. */
+  async refresh(): Promise<{ accessToken: string; user: AuthUser } | null> {
+    return withMockFallback(
+      async () => {
+        const res = await authFetch('/auth/refresh', { method: 'POST' });
+        if (res.status === 401) return null;
+        if (!res.ok) throw new AuthError(await readJsonError(res), res.status);
+        const body = (await res.json()) as { accessToken: string; user?: AuthUser };
+        if (!body.user) {
+          const meRes = await authFetch('/auth/me', { headers: { authorization: `Bearer ${body.accessToken}` } });
+          if (!meRes.ok) return null;
+          const { user } = (await meRes.json()) as { user: AuthUser };
+          return { accessToken: body.accessToken, user };
+        }
+        return { accessToken: body.accessToken, user: body.user };
+      },
+      () => mockAuthStore.refresh(),
+    );
+  },
+
+  async logout(): Promise<void> {
+    return withMockFallback(
+      async () => {
+        const res = await authFetch('/auth/logout', { method: 'POST' });
+        if (!res.ok && res.status !== 204) throw new AuthError(await readJsonError(res), res.status);
+      },
+      () => mockAuthStore.logout(),
+    );
+  },
+
+  async verify(token: string): Promise<void> {
+    return withMockFallback(
+      async () => {
+        const res = await authFetch('/auth/verify', { method: 'POST', body: JSON.stringify({ token }) });
+        if (!res.ok) throw new AuthError(await readJsonError(res), res.status);
+      },
+      () => mockAuthStore.verify(token),
+    );
+  },
+
+  async forgotPassword(email: string): Promise<void> {
+    return withMockFallback(
+      async () => {
+        const res = await authFetch('/auth/password/forgot', { method: 'POST', body: JSON.stringify({ email }) });
+        if (!res.ok) throw new AuthError(await readJsonError(res), res.status);
+      },
+      () => mockAuthStore.forgotPassword(email),
+    );
+  },
+
+  async resetPassword(token: string, password: string): Promise<void> {
+    return withMockFallback(
+      async () => {
+        const res = await authFetch('/auth/password/reset', { method: 'POST', body: JSON.stringify({ token, password }) });
+        if (!res.ok) throw new AuthError(await readJsonError(res), res.status);
+      },
+      () => mockAuthStore.resetPassword(token, password),
+    );
+  },
+};

@@ -4,6 +4,7 @@ import CommandBar from '../components/CommandBar';
 import Orbs from '../components/Orbs';
 import TracePipeline from '../components/TracePipeline';
 import { ToastStack, useToasts } from '../components/Toast';
+import AuthNav from '../components/AuthNav';
 import { MOCK, startRun, type RunHandle } from '../api';
 import { initialTraceState, traceReducer } from '../lib/traceReducer';
 import type { RunAttachment } from '../types';
@@ -74,6 +75,7 @@ export default function Bar() {
             <Link to="/benchmark" className="transition-colors hover:text-white/70">
               benchmark
             </Link>
+            <AuthNav />
           </div>
         </div>
       </div>
