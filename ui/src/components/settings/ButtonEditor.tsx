@@ -1,8 +1,8 @@
 import { useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { Reorder, useReducedMotion } from 'framer-motion';
-import { FIXED_BUTTON_ACTIONS, ensureInputButton } from '../../store/types';
-import type { Connection, FixedButtonAction, Routine, UserPrefsButton } from '../../store/types';
+import { ensureInputButton } from '../../store/types';
+import type { Connection, Routine, UserPrefsButton } from '../../store/types';
 import { APPS } from '../../store/apps';
 import type { ToolkitApp } from '../../store/apps';
 
@@ -48,7 +48,10 @@ function GmailGlyph() {
 // Icon + short display name for each fixed action, shared by the mockup
 // orbs and the action-picker grid so a chosen action reads identically in
 // both places. Glyphs echo Orbs.tsx's own language (◆ policy, ◑ user).
-const ACTION_META: Record<FixedButtonAction, { icon: ReactNode; name: string }> = {
+// Legacy fixed actions still living in saved prefs (DEFAULT_PREFS seeds
+// them) — resolved here for display only; the picker offers connected apps
+// and routines exclusively.
+const ACTION_META: Record<string, { icon: ReactNode; name: string }> = {
   'connect:github': { icon: <GithubGlyph />, name: 'GitHub' },
   'connect:gmail': { icon: <GmailGlyph />, name: 'Gmail' },
 };
@@ -85,7 +88,7 @@ function ToolkitIcon({ app, className = 'h-4 w-4' }: { app: ToolkitApp; classNam
  * just currently-connected apps) so a since-disconnected toolkit still
  * renders sensibly instead of a bare `?`. */
 function resolveActionMeta(action: string, routines: Routine[], iconClassName = 'h-4 w-4'): { icon: ReactNode; name: string } {
-  const fixed = ACTION_META[action as FixedButtonAction];
+  const fixed = ACTION_META[action];
   if (fixed) return fixed;
   const slug = toolkitSlug(action);
   if (slug) {
@@ -339,30 +342,11 @@ export default function ButtonEditor({
           {/* The input slot is position-only — no action to rebind, no label. */}
           {selected.id !== 'input' && (
           <>
-          <p className="mt-3 text-[10.5px] uppercase tracking-wide text-ink/30">Actions</p>
-          <div className="mt-1.5 grid grid-cols-4 gap-2 sm:grid-cols-7">
-            {FIXED_BUTTON_ACTIONS.map((action) => {
-              const meta = ACTION_META[action];
-              const active = selected.action === action;
-              return (
-                <button
-                  key={action}
-                  type="button"
-                  aria-pressed={active}
-                  onClick={() => update(selected.id, { action })}
-                  title={meta.name}
-                  className={`flex flex-col items-center gap-1.5 rounded-lg border px-2 py-2.5 text-[10.5px] transition-colors ${
-                    active
-                      ? 'border-accent/70 bg-accent/15 text-paper shadow-glow-accent'
-                      : 'border-ink/10 bg-ink/[0.02] text-ink/50 hover:border-ink/25 hover:text-ink/80'
-                  }`}
-                >
-                  <span className="flex h-6 w-6 items-center justify-center">{meta.icon}</span>
-                  <span className="w-full truncate text-center">{meta.name}</span>
-                </button>
-              );
-            })}
-          </div>
+          {connectedApps.length === 0 && (
+            <p className="mt-3 text-[11.5px] text-ink/35">
+              Connect an app in the Apps tab to bind it to this orb.
+            </p>
+          )}
 
           {connectedApps.length > 0 && (
             <>

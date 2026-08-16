@@ -51,23 +51,12 @@ export function ensureInputButton(buttons: UserPrefsButton[]): UserPrefsButton[]
 /** The fixed keybinding actions the editor exposes — spec §5. */
 export const KEYBINDING_ACTIONS = ['run', 'newline', 'bypassCache', 'focus', 'clear'] as const;
 
-/** Fixed action list bar buttons can be assigned to — web UI spec §5. No
- * add/remove/reorder; the four button slots (github/gmail/policy/user) are
- * fixed, only their action + label are editable. `suggest` triggers/toggles
- * the context-aware next-action suggestion (see CommandBar); like the other
- * actions here, wiring a slot's click to it is deferred the same way
- * keybinding remapping is (Bar.tsx) — the persistent Settings toggle is the
- * primary control for now.
- */
-export const FIXED_BUTTON_ACTIONS = [
-  'connect:github',
-  'connect:gmail',
-  // Retired (user request 2026-08-16): 'toggle:user', 'run', 'bypassCache',
-  // 'suggest' — orbs are connection-only now. 'toggle:theme' retired earlier
-  // (dark-only, lib/theme.ts). Stale saved buttons with any retired action
-  // are hidden by Orbs and render as '?' in the arranger until reassigned.
-] as const;
-export type FixedButtonAction = (typeof FIXED_BUTTON_ACTIONS)[number];
+// The fixed action list is GONE (user request 2026-08-16): orbs bind only
+// to connected apps (`toolkit:<slug>`) and routines (`routine:<id>`). The
+// legacy fixed actions — 'connect:github'/'connect:gmail' (still valid in
+// saved prefs and DEFAULT_PREFS; Orbs maps them to their toolkits),
+// 'toggle:user'/'toggle:theme'/'run'/'bypassCache'/'suggest' (retired,
+// hidden by Orbs) — no longer appear in the arranger's picker.
 
 export interface Connection {
   toolkit: string;

@@ -14,7 +14,6 @@ export type {
   Connection,
   UserPrefs,
   UserPrefsButton,
-  FixedButtonAction,
   UserMcp,
   ToolOverride,
   Routine,
