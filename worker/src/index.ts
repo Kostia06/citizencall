@@ -77,8 +77,24 @@ app.post('/api/run', async (c) => {
 // unguessable runId is the capability — no additional auth requirement.
 app.post('/api/run/:id/resume', async (c) => {
   const body = await c.req.text();
-  const stub = c.env.RUN.get(c.env.RUN.idFromName(c.req.param('id')));
-  return stub.fetch('https://run.do/resume', { method: 'POST', body });
+  const runId = c.req.param('id');
+  const stub = c.env.RUN.get(c.env.RUN.idFromName(runId));
+  const res = await stub.fetch('https://run.do/resume', { method: 'POST', body });
+  if (res.status !== 409) return res;
+  // 409 "not paused": either the run truly isn't paused, or the DO isolate
+  // was evicted and its in-memory pause died with it — leaving the row
+  // 'running' forever with no way to settle it (audit FAIL: zombie runs).
+  // If the row is 'running' and older than the pause window, reconcile now
+  // instead of making the caller wait for the cron reaper.
+  const row = await c.env.DB.prepare(`SELECT status, created_at FROM runs WHERE id = ?`).bind(runId).first<{
+    status: string;
+    created_at: number;
+  }>();
+  if (row?.status === 'running' && Date.now() - row.created_at > 6 * 60_000) {
+    await c.env.DB.prepare(`UPDATE runs SET status = 'error' WHERE id = ?`).bind(runId).run();
+    return c.json({ resumed: false, reconciled: true });
+  }
+  return res;
 });
 
 app.get('/api/run/:id/stream', async (c) => {
