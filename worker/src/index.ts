@@ -20,6 +20,7 @@ import { scheduled } from './routines/scheduler';
 import { upsertConnection } from './store/connections';
 import { checkAndIncrement } from './auth/throttle';
 import { suggestNextAction } from './pipeline/suggest';
+import { historySchema } from './pipeline/conversation';
 import funnelFixture from '../../artifacts/funnel.example.json';
 
 export { RunDO } from './run.do';
@@ -45,6 +46,10 @@ const runRequestSchema = z.object({
   text: z.string().min(1),
   source: z.enum(['text', 'voice']),
   noCache: z.boolean().optional(),
+  // Prior turns for multi-turn context — capped/truncated by the schema
+  // (12 newest turns, 2000 chars each), threaded through the DO to
+  // runPipeline's conversation block.
+  history: historySchema.optional(),
 });
 
 app.post('/api/run', async (c) => {
@@ -67,6 +72,7 @@ app.post('/api/run', async (c) => {
       text: parsed.data.text,
       source: parsed.data.source,
       noCache: parsed.data.noCache ?? false,
+      ...(parsed.data.history && parsed.data.history.length > 0 ? { history: parsed.data.history } : {}),
     }),
   });
   return c.json({ runId });

@@ -129,7 +129,11 @@ export async function decompose(
   policy: Policy,
   normalizedText: string,
   extraToolkits: string[] = [],
-  mentionedToolkits: string[] = []
+  mentionedToolkits: string[] = [],
+  // (threading) The last user turn, one line, as a planning disambiguator.
+  // Deliberately NOT part of either plan-cache key and never joined into the
+  // plan text — it only rides the model call on a cache miss.
+  conversationHint = ''
 ): Promise<DecomposeResult> {
   // A cached plan carries the sub-task ids of the run that minted it —
   // sub_tasks.id is a global PK, so EVERY cache hit (exact or semantic) must
@@ -159,7 +163,7 @@ export async function decompose(
   // gets the real planner.
   const plan = isTrivialPrompt(normalizedText, extraToolkits)
     ? heuristicPlan(normalizedText)
-    : ((await modelPlan(env, policy, normalizedText, extraToolkits)) ?? heuristicPlan(normalizedText));
+    : ((await modelPlan(env, policy, normalizedText, extraToolkits, conversationHint)) ?? heuristicPlan(normalizedText));
   ensureMentionedToolCall(plan, normalizedText, mentionedToolkits);
   await putPlanIndexed(db, key, plan);
   return { plan, cacheHit: false };
@@ -197,12 +201,17 @@ const FAST_PLANNER_MAX_TOKENS = 700; // non-reasoning: the JSON fits comfortably
 
 // Returns null (not throws) on any failure so the caller falls back to the
 // heuristic. A planning misfire must never take down the whole run.
-async function modelPlan(env: Env, policy: Policy, text: string, extraToolkits: string[]): Promise<Plan | null> {
+async function modelPlan(env: Env, policy: Policy, text: string, extraToolkits: string[], conversationHint = ''): Promise<Plan | null> {
   // Mentioned/MCP toolkits first — they're what this prompt is actually
   // about — then the builtins, within the listing cap.
   const toolListing = await buildToolListing(env, [...extraToolkits, ...BUILTIN_TOOLKITS]);
+  // (threading) Appended to the SYSTEM prompt so a follow-up like "and what
+  // about yesterday?" resolves its referent; the user text stays untouched.
+  const hintLine = conversationHint
+    ? `\nFor disambiguation only (do not plan sub-tasks for it): the user's previous message was: "${conversationHint}"`
+    : '';
   const messages = [
-    { role: 'system' as const, content: systemPrompt(extraToolkits, toolListing) },
+    { role: 'system' as const, content: systemPrompt(extraToolkits, toolListing) + hintLine },
     { role: 'user' as const, content: text },
   ];
 

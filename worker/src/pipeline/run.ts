@@ -19,6 +19,7 @@ import { finalizeRun, flushHops, flushToolCalls, insertRun, insertSubTasks, save
 import { loadUserContext } from '../store/context';
 import { buildMemoryContext } from '../memory/context';
 import { maybeAutoWriteMemory } from './memory-hook';
+import { buildConversationBlock, lastUserTurnHint, type ConversationTurn } from './conversation';
 import { normalizePlanKey } from '../cache/plan';
 import { getRunResult, putRunResult } from '../cache/runResult';
 
@@ -29,6 +30,9 @@ export interface RunRequest {
   source: 'text' | 'voice';
   /** ⌘⏎ bypass: skip the run-cache lookup but still write through. */
   noCache?: boolean;
+  /** Prior turns of the client session, oldest first (validated/truncated at
+   * /api/run). Budgeted into the userContext channel — never the plan text. */
+  history?: ConversationTurn[];
 }
 
 /** `policy`/`candidates` are test seams only — production always runs on the
@@ -73,7 +77,11 @@ export async function runPipeline(
   // (found live: "say hu" replied about its own context blob). It still
   // keys the run cache below, so changed context busts cached answers.
   const memoryBlock = await buildMemoryContextSafe(db, body.userId, body.text);
-  const userContext = [userCtx.contextPrompt, memoryBlock].filter(Boolean).join('\n\n');
+  // (threading) Prior turns ride the SAME channel as context prompt +
+  // memories — the system message, via execute.ts buildMessages — and, being
+  // part of userContext, they key the run cache below by construction.
+  const conversationBlock = buildConversationBlock(body.history);
+  const userContext = [userCtx.contextPrompt, memoryBlock, conversationBlock].filter(Boolean).join('\n\n');
 
   const norm = await normalize(env, db, policy, body.text, body.source);
   if (body.source === 'voice') {
@@ -147,7 +155,10 @@ export async function runPipeline(
     policy,
     norm.to,
     [...new Set([...mcpTokens, ...mentioned])],
-    mentioned
+    mentioned,
+    // (threading) One-line disambiguator only — plan text and cache keys stay
+    // hint-free, so trivial prompts keep their fast path.
+    lastUserTurnHint(body.history)
   );
   record({ t: 'plan', plan, cacheHit: planCacheHit, ...(cacheKind ? { cacheKind } : {}), ms: Date.now() - planStarted });
   await insertSubTasks(db, body.runId, plan);

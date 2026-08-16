@@ -13,6 +13,9 @@ export interface StartRunBody {
   text: string;
   source: 'text' | 'voice';
   noCache?: boolean;
+  /** Prior turns of the client session — validated/truncated at POST
+   * /api/run, passed through to runPipeline untouched. */
+  history?: Array<{ role: 'user' | 'assistant'; text: string }>;
 }
 
 const HEARTBEAT_MS = 15_000;

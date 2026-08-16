@@ -8,7 +8,7 @@ import { ToastStack, useToasts } from '../components/Toast';
 import TopNav from '../components/TopNav';
 import HistoryDrawer from '../components/history/HistoryDrawer';
 import RestoredTurn, { type RestoredRun } from '../components/history/RestoredTurn';
-import { DEFAULT_PREFS, MOCK, startRun, storeApi, type Connection, type Routine, type RunHandle, type SessionSummary, type UserPrefsButton } from '../api';
+import { DEFAULT_PREFS, MOCK, startRun, storeApi, type Connection, type HistoryTurn, type Routine, type RunHandle, type SessionSummary, type UserPrefsButton } from '../api';
 import { conversationReducer, initialConversationState } from '../lib/traceReducer';
 import { layoutFlow, layoutFlowReduced } from '../lib/motion';
 import { useAuth } from '../auth/useAuth';
@@ -353,10 +353,35 @@ export default function Bar() {
       .catch(() => push('Could not load that session'));
   }
 
+  /** The last 6 on-screen turns (live + restored, in transcript order) as
+   * user/assistant pairs — multi-turn context for the worker. Mirrors the
+   * render order below: restored-before-any-turn first, then each turn
+   * followed by the restored runs anchored after it. */
+  function collectHistory(): HistoryTurn[] {
+    const ordered: Array<{ prompt: string; answer?: string }> = [];
+    for (const r of restored.filter((x) => x.afterTurnId === null)) {
+      ordered.push({ prompt: r.run.requestText, ...(r.run.answerText ? { answer: r.run.answerText } : {}) });
+    }
+    for (const turn of turns) {
+      ordered.push({ prompt: turn.prompt, ...(turn.trace.answerText ? { answer: turn.trace.answerText } : {}) });
+      for (const r of restored.filter((x) => x.afterTurnId === turn.id)) {
+        ordered.push({ prompt: r.run.requestText, ...(r.run.answerText ? { answer: r.run.answerText } : {}) });
+      }
+    }
+    const history: HistoryTurn[] = [];
+    for (const t of ordered.slice(-6)) {
+      history.push({ role: 'user', text: t.prompt });
+      if (t.answer) history.push({ role: 'assistant', text: t.answer });
+    }
+    return history;
+  }
+
   function handleSubmit(
     text: string,
     opts: { bypassCache: boolean; source: 'text' | 'voice'; attachments: RunAttachment[] },
   ) {
+    // Captured BEFORE start_turn dispatches, so it holds only prior turns.
+    const history = collectHistory();
     runHandleRef.current?.close();
     stickToBottomRef.current = true;
     dispatch({ type: 'start_turn', id: nextTurnId(), prompt: text, source: opts.source });
@@ -371,6 +396,7 @@ export default function Bar() {
       source: opts.source,
       noCache: opts.bypassCache,
       attachments: opts.attachments,
+      ...(history.length > 0 ? { history } : {}),
       onEvent: (event) => dispatch({ type: 'trace_event', event }),
       onError: () => push('Run stream dropped — reconnecting…'),
     });

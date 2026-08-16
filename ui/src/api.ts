@@ -39,12 +39,22 @@ export interface RunHandle {
   close(): void;
 }
 
+/** One prior turn of the on-screen conversation, sent with POST /api/run so
+ * the worker can thread multi-turn context into the run's system message. */
+export interface HistoryTurn {
+  role: 'user' | 'assistant';
+  text: string;
+}
+
 export interface StartRunOpts {
   userId: string;
   text: string;
   source: 'text' | 'voice';
   noCache?: boolean;
   attachments?: RunAttachment[];
+  /** Prior turns, oldest first. The worker validates/truncates (12 turns,
+   * 2000 chars each) and budgets them — send-and-forget on this side. */
+  history?: HistoryTurn[];
   /** Bearer for POST /api/run when logged in. Without it the worker's
    * resolveActor attributes the run to the `__Host-anon` cookie session,
    * so a logged-in user's runs would vanish from THEIR /api/sessions
@@ -128,6 +138,7 @@ function startLiveRun(opts: StartRunOpts): RunHandle {
           source: opts.source,
           noCache: opts.noCache,
           attachments: opts.attachments ?? [],
+          ...(opts.history && opts.history.length > 0 ? { history: opts.history } : {}),
         }),
       });
       if (!res.ok) throw new Error(`POST /api/run failed: ${res.status}`);
