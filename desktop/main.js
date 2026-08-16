@@ -10,7 +10,7 @@
 // API key, so `webkitSpeechRecognition` throws `network` on start. The mic
 // button degrades to a toast ("Speech unavailable — type instead"). Film the
 // voice beat in Chrome and the ⌘-hotkey beat here, as two cuts.
-const { app, BrowserWindow, globalShortcut, ipcMain, screen, shell } = require('electron');
+const { app, BrowserWindow, globalShortcut, ipcMain, screen, session, shell } = require('electron');
 const path = require('node:path');
 
 // ⌥Space, not ⌘Space: ⌘Space is macOS Spotlight's own and cannot be taken.
@@ -23,8 +23,39 @@ const HOTKEY = process.env.UNDERSTUDY_HOTKEY || 'Alt+Space';
 const PORT_RANGE = [5173, 5174, 5175, 5176, 5177];
 const APP_TITLE = '<title>Understudy</title>';
 
+// The worker's session cookies are `__Host-` prefixed (`__Host-refresh`,
+// `__Host-anon`). Chromium only accepts that prefix from an https: scheme —
+// http://localhost is refused even though it's a secure context (verified:
+// plain Secure cookies stick there, `__Host-` ones vanish) — so signing in
+// against the DEV server silently failed to persist. Rename the prefix to
+// `dev-host-` on responses and back on requests, for plain-http origins
+// only; https (prod) is untouched.
+function bridgeHostCookiesForHttp(ses, origin) {
+  const filter = { urls: [`${origin}/*`] };
+  ses.webRequest.onHeadersReceived(filter, (details, callback) => {
+    const headers = details.responseHeaders ?? {};
+    for (const key of Object.keys(headers)) {
+      if (key.toLowerCase() === 'set-cookie') {
+        headers[key] = headers[key].map((v) => v.replace(/^__Host-/, 'dev-host-'));
+      }
+    }
+    callback({ responseHeaders: headers });
+  });
+  ses.webRequest.onBeforeSendHeaders(filter, (details, callback) => {
+    const cookie = details.requestHeaders.Cookie;
+    if (cookie && cookie.includes('dev-host-')) {
+      details.requestHeaders.Cookie = cookie.replaceAll('dev-host-', '__Host-');
+    }
+    callback({ requestHeaders: details.requestHeaders });
+  });
+}
+
+const PROD_URL = 'https://citizencall.dev/spotlight';
+
 async function resolveUrl() {
   if (process.env.UNDERSTUDY_URL) return process.env.UNDERSTUDY_URL;
+  // A packaged .app has no dev server to find — it talks to production.
+  if (app.isPackaged) return PROD_URL;
   for (const port of PORT_RANGE) {
     const origin = `http://localhost:${port}`;
     try {
@@ -42,7 +73,12 @@ async function resolveUrl() {
   return null;
 }
 
-const WIDTH = 720;
+// Wider than the pill itself (620px, ui/src/routes/Spotlight.tsx) so the
+// pill can sit exactly on the display's horizontal midline while orb
+// clusters hang off either edge without being clipped: half-width must cover
+// half the pill (310) + gap (12) + a side's orb row (4 orbs ≈ 228) + the
+// shell's 20px padding.
+const WIDTH = 1160;
 const INITIAL_HEIGHT = 96;
 // Fraction of the display height the overlay's top edge sits at.
 const TOP_FRACTION = 0.22;
@@ -65,21 +101,12 @@ function createWindow(url) {
     fullscreenable: false,
     skipTaskbar: true,
     alwaysOnTop: true,
-    // Both of these draw on the WINDOW RECT, not on the pill inside it, so
-    // either one paints a visible box around a bar that is supposed to look
-    // like it's floating on the desktop:
-    //   vibrancy  -> a frosted rectangle filling the whole window
-    //   hasShadow -> a rectangular drop shadow around that same rect
-    // The pill carries its own translucency and its own shadow in CSS
-    // instead (see `html.spotlight-shell .bar-pill` in ui/src/index.css).
+    // The window itself paints NOTHING — no vibrancy, no shadow, no panel
+    // rect. The only visible chrome is the pill, orbs and answer card, each
+    // its own floating element with CSS-drawn fill and shadow (native
+    // hasShadow would draw a rectangle around the whole invisible rect).
     hasShadow: false,
     backgroundColor: '#00000000',
-    // Opt back in to the native frosted panel if you prefer it — it does give
-    // real desktop blur, which CSS backdrop-filter cannot do in a transparent
-    // Electron window. It brings the box back with it.
-    ...(process.env.UNDERSTUDY_VIBRANCY
-      ? { vibrancy: 'hud', visualEffectState: 'active', hasShadow: true, roundedCorners: true }
-      : {}),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -92,6 +119,30 @@ function createWindow(url) {
   win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreenWindows: true });
 
   win.loadURL(url);
+
+  // Glassmorphism, Spotlight-style: a translucent surface tint + backdrop
+  // blur. In a transparent Electron window backdrop-filter can only sample
+  // PAGE content (the desktop behind the window is out of reach), so the
+  // tint carries most of the effect — strong enough that nothing behind
+  // reads sharply, weak enough to stay visibly glassy. Injected here rather
+  // than in ui/ so a browser tab at /spotlight is untouched.
+  win.webContents.on('did-finish-load', () => {
+    win?.webContents.insertCSS(
+      'html.spotlight-shell .bar-pill { background: rgba(28, 28, 32, 0.78) !important; backdrop-filter: blur(24px) saturate(140%); -webkit-backdrop-filter: blur(24px) saturate(140%); }' +
+        'html.spotlight-shell .spotlight-orbs button { background-color: rgba(28, 28, 32, 0.72) !important; backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); }' +
+        'html.spotlight-shell [class*="rounded-2xl"] { background-color: rgba(24, 24, 28, 0.82) !important; backdrop-filter: blur(24px) saturate(140%); -webkit-backdrop-filter: blur(24px) saturate(140%); }' +
+        // Light theme (data-theme flips live via the ☾ orb / account prefs);
+        // the text inside uses the ink token, which flips with it.
+        "html.spotlight-shell[data-theme='light'] .bar-pill { background: rgba(245, 245, 247, 0.8) !important; border-color: rgba(0, 0, 0, 0.14) !important; }" +
+        "html.spotlight-shell[data-theme='light'] .spotlight-orbs button { background-color: rgba(245, 245, 247, 0.75) !important; }" +
+        "html.spotlight-shell[data-theme='light'] [class*='rounded-2xl'] { background-color: rgba(250, 250, 252, 0.85) !important; }" +
+        // The command field is a TEXTAREA, which index.css's no-drag list
+        // (input/button/a/canvas) misses — without this the whole field is a
+        // drag region and clicks/keystrokes move the window instead of
+        // focusing it.
+        'html.spotlight-shell textarea { -webkit-app-region: no-drag; }',
+    );
+  });
 
   // Renderer errors would otherwise be invisible — a frameless window with a
   // crashed React tree just looks like an empty pane.
@@ -165,6 +216,9 @@ app.whenReady().then(async () => {
   }
 
   baseOrigin = new URL(url).origin;
+  if (baseOrigin.startsWith('http://')) {
+    bridgeHostCookiesForHttp(session.defaultSession, baseOrigin);
+  }
   createWindow(url);
 
   if (!globalShortcut.register(HOTKEY, toggle)) {
@@ -210,6 +264,33 @@ ipcMain.on('understudy:open-external', (_event, routePath) => {
 });
 
 ipcMain.on('understudy:hide', hide);
+
+// Sign-in for the overlay's own session. openExternal can't do it — the
+// system browser's cookies never reach Electron's cookie jar — so login
+// happens in a small NORMAL window sharing the default (persistent) session.
+// The refresh cookie outlives restarts, so this is a one-time step per
+// machine. On close the overlay reloads to pick up the new identity.
+/** @type {BrowserWindow | null} */
+let authWin = null;
+ipcMain.on('understudy:open-auth', () => {
+  if (!baseOrigin) return;
+  if (authWin) {
+    authWin.focus();
+    return;
+  }
+  authWin = new BrowserWindow({
+    width: 480,
+    height: 680,
+    title: 'Sign in to Understudy',
+    alwaysOnTop: true,
+  });
+  authWin.loadURL(`${baseOrigin}/login`);
+  authWin.on('closed', () => {
+    authWin = null;
+    win?.webContents.reload();
+    show();
+  });
+});
 
 app.on('will-quit', () => globalShortcut.unregisterAll());
 
