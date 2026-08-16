@@ -79,6 +79,12 @@ function systemPrompt(extraToolkits: string[], toolListing = ''): string {
     'Each element: {"kind": <kind>, "instruction": <imperative string>, "needsTools": <bool>,',
     `"toolkit": <${list}|null>, "tool": <tool slug|null>, "sensitive": <bool>}. Set needsTools=true and toolkit`,
     'when the step must read from or act on one of those tools. Keep instructions concise and self-contained.',
+    // Executors receive ONLY the instruction string — a plan that says
+    // "extract fields from this invoice" without the invoice sends the
+    // executor nothing to extract (observed live: GLM-5.2 returned all-null
+    // fields because the source text never reached it).
+    'Executors see ONLY each instruction, never the original request: when a step reads data quoted in the',
+    'request (an invoice, email, review, document), copy that source text verbatim into the instruction.',
     ...(toolListing
       ? [
           'Available tools per toolkit. When a step uses a toolkit, set "tool" to the ONE exact slug',

@@ -110,6 +110,17 @@ describe('executeSubTask — exactly one rung of escalation', () => {
 
     const escalateEvents = events.filter((e) => e.t === 'escalate');
     expect(escalateEvents).toHaveLength(1); // exactly one rung — never a second escalation
+
+    // Stream-ordering contract: the UI reducer opens the new rung and drops
+    // the failed rung's streamed text on `escalate`, so it must arrive
+    // before any rung-1 event (it used to fire after rung-1's hop_end,
+    // garbling the live answer and rendering a ghost empty rung).
+    const escalateIdx = events.findIndex((e) => e.t === 'escalate');
+    const rung1RouteIdx = events.findIndex(
+      (e) => e.t === 'route' && (e as unknown as { decision: { ladderPosition: number } }).decision.ladderPosition === 1
+    );
+    expect(rung1RouteIdx).toBeGreaterThan(-1);
+    expect(escalateIdx).toBeLessThan(rung1RouteIdx);
   });
 
   it('does not escalate when the primary hop passes verify', async () => {

@@ -210,6 +210,9 @@ export async function runPipeline(
         candidates,
         userId: body.userId,
         emit: record,
+        // Root sub-tasks fall back to this when the planner's instruction
+        // paraphrases away the quoted source data (see ExecuteContext).
+        requestText: norm.to,
         mcpToolkits: mcpTokens,
         ...(mcpTransport ? { mcpTransport } : {}),
         ...(userContext ? { userContext } : {}),

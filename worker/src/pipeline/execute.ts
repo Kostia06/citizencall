@@ -50,6 +50,12 @@ export interface ExecuteContext {
   /** Saved context prompt + injected memories — rides in the SYSTEM message
    * of every sub-task call (see buildMessages). */
   userContext?: string;
+  /** The user's (normalized) request text. Root sub-tasks get it as a context
+   * block when the planner's instruction doesn't already carry it — the
+   * planner paraphrases ("extract fields from this invoice") and drops the
+   * quoted source data, so the executor otherwise has nothing to work on
+   * (observed live: GLM-5.2 answered "No invoice text was provided"). */
+  requestText?: string;
   /** MCP call transport — absent means "not implemented", never a crash. */
   mcpTransport?: McpTransport;
   /** Outputs of already-executed sub-tasks, keyed by sub-task id. */
@@ -220,9 +226,14 @@ export async function executeSubTask(ctx: ExecuteContext, subTask: SubTask): Pro
   // user endpoint must never make the answer worse than without it.
   const finalize = async (last: Attempt): Promise<ExecuteResult> => {
     if (last.hop.verdict === 'pass' || !ctx.userProvider) return resultOf(last);
+    // `escalate` must hit the stream BEFORE the new rung's hop/delta events:
+    // the UI reducer opens the fresh rung and discards the failed rung's
+    // streamed text on this event. Emitting it after the attempt (as this
+    // originally did) left the failed text on screen for the whole retry and
+    // rendered a ghost empty rung — observed live 2026-08-16.
+    ctx.emit({ t: 'escalate', from: last.hop.modelId, to: userRungLabel(ctx.userProvider), reason: last.hop.verdict });
     const userRung = await userProviderAttempt(ctx, subTask, last);
     if (!userRung) return resultOf(last);
-    ctx.emit({ t: 'escalate', from: last.hop.modelId, to: userRung.hop.modelId, reason: last.hop.verdict });
     hops.push(userRung.hop);
     return resultOf(userRung);
   };
@@ -238,14 +249,18 @@ export async function executeSubTask(ctx: ExecuteContext, subTask: SubTask): Pro
 
   // Exactly one rung of built-in escalation — never a third roster attempt,
   // and if no rung 1 is defined/eligible we stop here on the primary's verdict.
+  // Rung 1 is routed here (not inside attempt) because `escalate` needs the
+  // target modelId yet must precede the rung's route/hop/delta events — see
+  // the ordering note in finalize above.
   let escalated: Attempt;
   try {
-    escalated = await attempt(ctx, subTask, candidatesById, 1, primary.hop.modelId);
+    const decision = routeSubTask(ctx.policy, ctx.candidates, subTask, 1);
+    ctx.emit({ t: 'escalate', from: primary.hop.modelId, to: decision.modelId, reason: primary.hop.verdict });
+    escalated = await attempt(ctx, subTask, candidatesById, 1, primary.hop.modelId, decision);
   } catch (err) {
     if (err instanceof NoEligibleModelError) return finalize(primary);
     throw err;
   }
-  ctx.emit({ t: 'escalate', from: primary.hop.modelId, to: escalated.decision.modelId, reason: primary.hop.verdict });
   hops.push(escalated.hop);
   if (escalated.toolCall) toolCalls.push(escalated.toolCall);
 
@@ -256,16 +271,20 @@ export async function executeSubTask(ctx: ExecuteContext, subTask: SubTask): Pro
  * tool outcome (no tool re-run) and the same message builder, so the only
  * variable is the model behind the call. Returns null on provider failure —
  * the caller keeps the built-in rung's result. */
+// "(your key)" labels the rung in the UI trace — it is deliberately part of
+// the hop's modelId so every surface (events, hops rows) shows whose model
+// answered without a schema change.
+function userRungLabel(provider: UserProvider): string {
+  return `${provider.model} (your key)`;
+}
+
 async function userProviderAttempt(
   ctx: ExecuteContext,
   subTask: SubTask,
   last: Attempt
 ): Promise<{ hop: Hop; content: string; toolDerived: boolean } | null> {
   const provider = ctx.userProvider!;
-  // "(your key)" labels the rung in the UI trace — it is deliberately part of
-  // the hop's modelId so every surface (events, hops rows) shows whose model
-  // answered without a schema change.
-  const label = `${provider.model} (your key)`;
+  const label = userRungLabel(provider);
   const hopId = crypto.randomUUID();
   const started = Date.now();
   ctx.emit({ t: 'hop_start', hop: { id: hopId, subTaskId: subTask.id, modelId: label, paramsB: 0 } });
@@ -324,9 +343,12 @@ async function attempt(
   subTask: SubTask,
   candidatesById: Map<string, ModelCandidate>,
   ladderPosition: 0 | 1,
-  escalatedFrom: string | undefined
+  escalatedFrom: string | undefined,
+  // Escalation pre-routes rung 1 so `escalate` can name its target before
+  // this attempt's events start — passed in to avoid routing twice.
+  precomputedDecision?: RouteDecision
 ): Promise<Attempt> {
-  const decision = routeSubTask(ctx.policy, ctx.candidates, subTask, ladderPosition);
+  const decision = precomputedDecision ?? routeSubTask(ctx.policy, ctx.candidates, subTask, ladderPosition);
   ctx.emit({ t: 'route', decision });
   const model = candidatesById.get(decision.modelId);
   if (!model) throw new NoEligibleModelError(`routed to unknown candidate ${decision.modelId}`);
@@ -504,6 +526,16 @@ function contextBlocks(ctx: ExecuteContext, subTask: SubTask, toolOutcome: ToolO
 } {
   const blocks: string[] = [];
   let toolDerived = false;
+
+  // Root sub-tasks (nothing upstream to read from) get the original request
+  // as source material unless the instruction already embeds it (heuristic
+  // plans set instruction = the request verbatim — no point repeating it).
+  if (subTask.dependsOn.length === 0 && ctx.requestText) {
+    const req = ctx.requestText.trim();
+    if (req && !subTask.instruction.includes(req)) {
+      blocks.push(`The user's request (source material for this step):\n${truncate(req, MAX_DEP_CONTEXT_CHARS)}`);
+    }
+  }
 
   for (const depId of subTask.dependsOn) {
     const dep = ctx.priorOutputs?.get(depId);

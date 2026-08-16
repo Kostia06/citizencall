@@ -15,6 +15,15 @@ export interface VerifyInput {
   toolOk?: boolean;
 }
 
+// Models wrap valid JSON in a markdown fence even when told "Reply with only
+// JSON" (GLM-5.2, observed live 2026-08-16 — it escalated/failed on a
+// formatting quirk while the payload was correct). The fence is presentation,
+// not schema: tolerate exactly one enclosing fence.
+function stripEnclosingFence(text: string): string {
+  const fenced = /^```[a-zA-Z]*\s*\n?([\s\S]*?)\n?\s*```$/.exec(text);
+  return fenced ? fenced[1]!.trim() : text;
+}
+
 export function verify(input: VerifyInput): Verdict {
   if (input.needsTools && input.toolOk === false) return 'fail_tool';
 
@@ -23,7 +32,7 @@ export function verify(input: VerifyInput): Verdict {
 
   if (input.kind === 'extract_fields') {
     try {
-      extractFieldsSchema.parse(JSON.parse(trimmed));
+      extractFieldsSchema.parse(JSON.parse(stripEnclosingFence(trimmed)));
     } catch {
       return 'fail_schema';
     }
