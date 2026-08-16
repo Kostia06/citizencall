@@ -75,12 +75,30 @@ describe('resolveTool', () => {
 
   for (const c of cases) {
     it(c.name, () => {
-      expect(resolveTool(DISCORD_TOOLS, 'discord', c.planned, c.instruction)?.slug).toBe(c.expected);
+      expect(resolveTool(DISCORD_TOOLS, 'discord', c.planned, c.instruction)?.tool.slug).toBe(c.expected);
     });
   }
 
   it('returns null on an empty tool list so the planned name executes as-is', () => {
     expect(resolveTool([], 'discord', 'call', 'check messages')).toBeNull();
+  });
+
+  it('flags the blind fallback as matched:false; keyword hits as matched:true', () => {
+    expect(resolveTool(DISCORD_TOOLS, 'discord', 'call', 'do something entirely unrelated xyzzy')?.matched).toBe(false);
+    expect(resolveTool(DISCORD_TOOLS, 'discord', 'call', 'check for new messages in the channel')?.matched).toBe(true);
+  });
+
+  it("the toolkit's own name is not a keyword match (live: every discord tool contains 'discord')", () => {
+    // Real discord toolkit shape: identity/meta tools only, no message reads.
+    const metaOnly = [
+      tool('DISCORD_GET_MY_OAUTH2_AUTHORIZATION', 'Get details about the current oauth2 authorization'),
+      tool('DISCORD_GET_MY_USER', 'Get the current user'),
+      tool('DISCORD_LIST_MY_GUILDS', 'List the guilds the current user is a member of'),
+    ];
+    const r = resolveTool(metaOnly, 'discord', 'call', 'check for any messages in discord');
+    expect(r?.matched).toBe(false);
+    // ...and the blind pick must never be a meta/oauth tool.
+    expect(r?.tool.slug).toBe('DISCORD_GET_MY_USER');
   });
 });
 

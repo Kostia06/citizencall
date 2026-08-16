@@ -149,12 +149,15 @@ function renderRichText(text: string, keyPrefix: string): ReactNode[] {
 }
 
 function codeBlock(key: string, content: string): ReactNode {
+  // ```json\n… — the language tag after the fence is part of the captured
+  // content; rendered verbatim it showed as a stray "json" first line.
+  const body = content.replace(/^[a-zA-Z0-9+#-]{1,16}\n/, '').replace(/^\n/, '').replace(/\n$/, '');
   return (
     <pre
       key={key}
       className="my-2 overflow-x-auto rounded-xl border border-white/10 bg-white/[0.04] px-3 py-2 font-mono text-[12px] leading-snug text-white/80"
     >
-      <code>{content.replace(/^\n/, '').replace(/\n$/, '')}</code>
+      <code>{body}</code>
     </pre>
   );
 }

@@ -115,9 +115,14 @@ function trimTool(item: ComposioToolItem): ToolkitTool {
 // personal agent actually uses.
 const READ_VERB = /^(LIST|GET|SEARCH|FETCH|FIND|READ|RETRIEVE)/;
 const ACT_VERB = /^(SEND|CREATE|POST|REPLY|MESSAGE|ADD|STAR)/;
+// Plumbing tools nobody asks for by intent — never a good blind pick, and
+// they crowd the planner window. Found live: "any messages in discord"
+// resolved onto GET_MY_OAUTH2_AUTHORIZATION and answered with raw auth JSON.
+const META_TOOL = /OAUTH|AUTHORIZATION|ACCESS_TOKEN|INVITE/;
 
 function verbScore(tool: ToolkitTool, toolkit: string): number {
   const bare = stripToolkitPrefix(tool.slug, toolkit);
+  if (META_TOOL.test(bare)) return 0;
   if (READ_VERB.test(bare)) return 2;
   if (ACT_VERB.test(bare)) return 1;
   return 0;
@@ -254,26 +259,42 @@ function tokenize(text: string): Set<string> {
   return tokens;
 }
 
+export interface ResolvedTool {
+  tool: ToolkitTool;
+  /** False = blind fallback: nothing in the toolkit matched the intent. The
+   * executor should NOT run the tool then — Composio toolkits are often
+   * thin (discord: 6 identity tools, zero message reads), and executing an
+   * unrelated read answers the wrong question with confident-looking data
+   * (live: "any messages in discord" → OAuth2 authorization JSON). */
+  matched: boolean;
+}
+
 /** Planned tool name -> the toolkit's real tool. Resolution ladder:
  *  1. exact slug (case/punctuation-insensitive, toolkit prefix optional)
  *  2. keyword overlap between the sub-task instruction + planned name and
- *     each tool's slug/name/description (read-ish tools win ties)
- *  3. first read-ish tool, else the first tool
+ *     each tool's slug/name/description (read-ish tools win ties). The
+ *     toolkit's own name is excluded — every discord tool contains
+ *     "discord", so it matched everything and the first ranked tool won.
+ *  3. otherwise `matched:false` with the safest read (context for the
+ *     executor's honest "this integration can't do that" answer)
  *  Returns null only when `tools` is empty — the caller then executes the
  *  planned name as-is (stub mode / discovery unavailable). */
-export function resolveTool(tools: ToolkitTool[], toolkit: string, planned: string, instruction: string): ToolkitTool | null {
+export function resolveTool(tools: ToolkitTool[], toolkit: string, planned: string, instruction: string): ResolvedTool | null {
   if (tools.length === 0) return null;
 
   const normalized = normalizeName(planned);
   const exact = tools.find(
     (t) => normalizeName(t.slug) === normalized || stripToolkitPrefix(t.slug, toolkit) === normalized
   );
-  if (exact) return exact;
+  if (exact) return { tool: exact, matched: true };
 
+  const toolkitToken = toolkit.toUpperCase();
   const wanted = tokenize(`${planned} ${instruction}`);
+  wanted.delete(toolkitToken);
   let best: { tool: ToolkitTool; score: number } | null = null;
   for (const tool of tools) {
     const haystack = tokenize(`${tool.slug} ${tool.name} ${tool.description}`);
+    haystack.delete(toolkitToken);
     let score = 0;
     for (const token of wanted) if (haystack.has(token)) score++;
     // Prefer reads on ties — a fuzzy match should never fall onto a write.
@@ -282,13 +303,14 @@ export function resolveTool(tools: ToolkitTool[], toolkit: string, planned: stri
   }
   // score>=3: at least one real keyword overlap (2) — the read-ish tiebreak
   // alone (1) is not a match.
-  if (best && best.score >= 3) return best.tool;
+  if (best && best.score >= 3) return { tool: best.tool, matched: true };
 
   // Blind fallback: a harmless read the executor can actually complete —
   // prefer reads whose schema needs nothing over reads that would force the
   // args model to invent identifiers.
   const reads = tools.filter((t) => verbScore(t, toolkit) === 2);
-  return reads.find((t) => t.params.required.length === 0) ?? reads[0] ?? tools[0] ?? null;
+  const fallback = reads.find((t) => t.params.required.length === 0) ?? reads[0] ?? tools[0] ?? null;
+  return fallback ? { tool: fallback, matched: false } : null;
 }
 
 // ---------------------------------------------------------------------------

@@ -259,7 +259,11 @@ async function attempt(
 type ToolOutcome =
   | { status: 'ran'; ok: boolean; output: unknown; call: ToolCallResult }
   | { status: 'skipped' } // tool_skipped already emitted
-  | { status: 'no_connection' }; // error already emitted
+  | { status: 'no_connection' } // error already emitted
+  // Toolkit is real+connected but has no tool for this intent (resolver
+  // matched:false) — don't run an unrelated tool; the model answers honestly
+  // from the capability list instead.
+  | { status: 'no_matching_tool'; available: string[] };
 
 async function runTool(ctx: ExecuteContext, subTask: SubTask): Promise<ToolOutcome | undefined> {
   if (!subTask.needsTools || !subTask.toolCall) return undefined;
@@ -325,9 +329,17 @@ async function runTool(ctx: ExecuteContext, subTask: SubTask): Promise<ToolOutco
   try {
     const toolkitTools = await getToolkitTools(ctx.env, toolkit);
     const resolved = resolveTool(toolkitTools, toolkit, plannedTool, subTask.instruction);
+    if (resolved && !resolved.matched) {
+      // Nothing in this toolkit does what was asked (live: discord has zero
+      // message-reading tools). Running the fallback read would answer the
+      // wrong question with confident-looking JSON — decline the call and
+      // let the model say so, naming what IS available.
+      ctx.emit(asTraceEvent({ t: 'tool_skipped', toolkit, tool: plannedTool, reason: `no ${toolkit} tool matches this request` }));
+      return { status: 'no_matching_tool', available: toolkitTools.map((t) => t.slug) };
+    }
     if (resolved) {
-      tool = resolved.slug;
-      args = await buildToolArgs(ctx.env, resolved, subTask.instruction, args);
+      tool = resolved.tool.slug;
+      args = await buildToolArgs(ctx.env, resolved.tool, subTask.instruction, args);
     }
   } catch {
     // best effort — executeTool's own catch below reports a failed tool
@@ -413,6 +425,16 @@ function contextBlocks(ctx: ExecuteContext, subTask: SubTask, toolOutcome: ToolO
       `Output of tool ${toolkit}.${tool}:\n${truncate(JSON.stringify(toolOutcome.output), MAX_TOOL_CONTEXT_CHARS)}`
     );
     toolDerived = true;
+  }
+
+  if (toolOutcome?.status === 'no_matching_tool') {
+    const { toolkit } = subTask.toolCall!;
+    blocks.push(
+      `The ${toolkit} integration has NO tool that can do what was asked, so nothing was executed. ` +
+        `Its only capabilities are: ${toolOutcome.available.join(', ') || '(none)'}. ` +
+        `Tell the user plainly, in one or two sentences, that this isn't possible through the ${toolkit} integration here, ` +
+        `and offer the closest thing it CAN do. Do not invent data.`
+    );
   }
 
   return { blocks, toolDerived };
