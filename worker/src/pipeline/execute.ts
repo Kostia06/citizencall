@@ -145,6 +145,16 @@ const SYSTEM_PROMPT_BY_KIND: Record<TaskKind, string> = {
 // pays for tokens actually produced.
 const REASONING_HEADROOM_TOKENS = 2048;
 
+// A stalled CHEAP rung must fail fast into escalation — observed live:
+// Qwen-1.5B sat 15.9s to emit one empty token before GLM took over, so the
+// user waited ~16 wasted seconds. The frontier rung keeps the default long
+// deadline (it's the last resort and reasons before it answers).
+const CHEAP_RUNG_TIMEOUT_MS = 15_000;
+
+function cheapRungDeadline(policy: Policy, model: ModelCandidate): { timeoutMs?: number } {
+  return model.id === policy.baselines.frontier ? {} : { timeoutMs: CHEAP_RUNG_TIMEOUT_MS };
+}
+
 function maxTokensFor(policy: Policy, model: ModelCandidate, kind: TaskKind, toolDerived = false): number {
   // Evidence-grounded classify answers like a summarize (verdict + bullets),
   // so it needs the summarize budget, not the 32-token label cap.
@@ -625,14 +635,14 @@ async function runModel(
       const coalescer = createDeltaCoalescer((text) => emitDelta(subTask.id, text));
       const result = await callFeatherlessStream(
         ctx.env,
-        { modelId: model.id, messages, maxTokens },
+        { modelId: model.id, messages, maxTokens, ...cheapRungDeadline(ctx.policy, model) },
         (text) => coalescer.push(text)
       );
       coalescer.end(); // flush the tail before verify/answer
       ({ content, promptTokens, completionTokens } = result);
       if (l1Allowed) await putExact(ctx.db, cacheParams, { content, promptTokens, completionTokens });
     } else {
-      const result = await callFeatherless(ctx.env, { modelId: model.id, messages, maxTokens });
+      const result = await callFeatherless(ctx.env, { modelId: model.id, messages, maxTokens, ...cheapRungDeadline(ctx.policy, model) });
       ({ content, promptTokens, completionTokens } = result);
       if (l1Allowed) await putExact(ctx.db, cacheParams, { content, promptTokens, completionTokens });
     }

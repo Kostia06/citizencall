@@ -12,6 +12,13 @@ export interface FeatherlessRequest {
   modelId: string;
   messages: FeatherlessMessage[];
   maxTokens: number;
+  /** Client-side deadline for the WHOLE call (including stream body).
+   * Defaults to CLIENT_TIMEOUT_MS. Cheap escalation rungs pass a short one:
+   * a stalled sub-2B model must fail fast into escalation, not sit for 16s
+   * producing one empty token (observed live). Timeout surfaces as
+   * FeatherlessCapacityError so executors treat it like any provider
+   * failure and escalate. */
+  timeoutMs?: number;
 }
 
 export interface FeatherlessResult {
@@ -52,7 +59,8 @@ async function liveCall(apiKey: string, req: FeatherlessRequest): Promise<Feathe
   // terminal and thrown immediately — see the SPEC.md §5.3 error table.
   for (let attempt = 0; ; attempt++) {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), CLIENT_TIMEOUT_MS);
+    const timeoutMs = req.timeoutMs ?? CLIENT_TIMEOUT_MS;
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
     let res: Response;
     try {
       res = await fetch(ENDPOINT, {
@@ -67,6 +75,11 @@ async function liveCall(apiKey: string, req: FeatherlessRequest): Promise<Feathe
         }),
         signal: controller.signal,
       });
+    } catch (err) {
+      if (err instanceof Error && err.name === 'AbortError') {
+        throw new FeatherlessCapacityError(`client timeout after ${timeoutMs}ms for ${req.modelId}`);
+      }
+      throw err;
     } finally {
       clearTimeout(timeout);
     }
@@ -127,7 +140,10 @@ async function liveStreamCall(
   // never replays partial deltas.
   for (let attempt = 0; ; attempt++) {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), CLIENT_TIMEOUT_MS);
+    const timeoutMs = req.timeoutMs ?? CLIENT_TIMEOUT_MS;
+    // The deadline covers the WHOLE stream (fetch + body) — a cheap rung
+    // that stalls mid-stream aborts into escalation instead of hanging.
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
     try {
       const res = await fetch(ENDPOINT, {
         method: 'POST',
@@ -160,6 +176,11 @@ async function liveStreamCall(
         Math.max(1, Math.ceil(req.messages.reduce((n, m) => n + m.content.length, 0) / 4));
       const completionTokens = parsed.usage?.completion_tokens ?? Math.max(1, Math.ceil(parsed.content.length / 4));
       return { content: parsed.content, promptTokens, completionTokens, latencyMs: Date.now() - started };
+    } catch (err) {
+      if (err instanceof Error && err.name === 'AbortError') {
+        throw new FeatherlessCapacityError(`client timeout after ${timeoutMs}ms for ${req.modelId}`);
+      }
+      throw err;
     } finally {
       clearTimeout(timeout);
     }
