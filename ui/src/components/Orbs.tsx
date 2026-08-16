@@ -3,7 +3,6 @@ import type { PointerEvent as ReactPointerEvent, ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { Reorder, motion, useDragControls, useMotionValue, useReducedMotion, useSpring } from 'framer-motion';
 import { magneticSnappy } from '../lib/motion';
-import { toggleThemeGlobal } from '../lib/theme';
 import { APPS } from '../store/apps';
 import type { Routine, UserPrefsButton } from '../api';
 
@@ -361,16 +360,8 @@ export default function Orbs({
         // bar itself (Bar.tsx splits the row around it) — never as an orb.
         return null;
       case 'toggle:theme':
-        return (
-          <Orb
-            as="button"
-            className={`${orbBase} text-ink/70`}
-            title={btn.label ?? 'Toggle dark / light mode'}
-            onClick={() => toggleThemeGlobal()}
-          >
-            <span className="text-lg leading-none">☾</span>
-          </Orb>
-        );
+        // Dark-only now — stale saved theme orbs just don't render.
+        return null;
       case 'toggle:user':
         return (
           <Orb

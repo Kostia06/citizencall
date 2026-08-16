@@ -1,8 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { MOCK } from '../api';
-import { useAuth } from '../auth/useAuth';
-import { useTheme } from '../lib/theme';
 import AuthNav from './AuthNav';
 
 // Roster stays routable at /roster (judge-facing demo cold-open, linked from
@@ -12,26 +10,6 @@ const LINKS = [
   { to: '/memory', label: 'Memory' },
   { to: '/settings', label: 'Settings' },
 ];
-
-function SunIcon() {
-  return (
-    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden>
-      <circle cx="12" cy="12" r="4.2" />
-      <path
-        strokeLinecap="round"
-        d="M12 2.5v2.4M12 19.1v2.4M4.9 4.9l1.7 1.7M17.4 17.4l1.7 1.7M2.5 12h2.4M19.1 12h2.4M4.9 19.1l1.7-1.7M17.4 6.6l1.7-1.7"
-      />
-    </svg>
-  );
-}
-
-function MoonIcon() {
-  return (
-    <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor" aria-hidden>
-      <path d="M20.4 14.7A8.6 8.6 0 1 1 9.3 3.6a7 7 0 0 0 11.1 11.1Z" />
-    </svg>
-  );
-}
 
 function MenuIcon() {
   return (
@@ -49,24 +27,7 @@ function CloseIcon() {
   );
 }
 
-/** Sun/moon theme toggle — dark/light mode slice. Lives in the nav so it's
- * reachable from every page; `useTheme` is the whole controller, this is
- * just the button. */
-function ThemeToggle({ className = '' }: { className?: string }) {
-  const { authedFetch } = useAuth();
-  const { theme, toggleTheme } = useTheme(authedFetch);
-  return (
-    <button
-      type="button"
-      onClick={toggleTheme}
-      aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
-      title={theme === 'dark' ? 'Switch to light' : 'Switch to dark'}
-      className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-ink/10 text-ink/50 transition-colors duration-200 hover:border-accent/40 hover:text-ink/80 ${className}`}
-    >
-      {theme === 'dark' ? <SunIcon /> : <MoonIcon />}
-    </button>
-  );
-}
+// Theme toggle removed — the app is dark-only by decision (lib/theme.ts).
 
 /** Shared top nav — identical chrome on Bar, Roster, Benchmark, and
  * Settings. Left: brand, home. Right (wide): nav links with a clear active
@@ -112,7 +73,7 @@ export default function TopNav() {
           );
         })}
         <div className="ml-2 flex items-center gap-3">
-          <ThemeToggle />
+          {/* dark-only */}
           {MOCK && (
             <span className="rounded-full border border-accent/30 bg-accent/10 px-2 py-0.5 text-[11px] text-accent-bright">
               MOCK
@@ -161,10 +122,6 @@ export default function TopNav() {
               );
             })}
             <div className="my-1 h-px bg-ink/10" />
-            <div className="flex items-center justify-between px-3 py-1.5">
-              <span className="text-[12px] text-ink/50">Theme</span>
-              <ThemeToggle />
-            </div>
             <div className="px-1 pt-1">
               <AuthNav />
             </div>
