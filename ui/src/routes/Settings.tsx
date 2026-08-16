@@ -465,6 +465,25 @@ export default function Settings() {
             >
               <ProvidersPanel authedFetch={authedFetch} />
             </SectionCard>
+
+            <SectionCard
+              title="macOS app"
+              subtitle="A Spotlight-style overlay bar — press ⌥Space anywhere. Shows just the answer; full steps stay here on the web."
+              action={
+                <a
+                  href="https://github.com/Kostia06/forge-hack/releases/tag/v0.1.0"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="rounded-lg border border-accent/40 px-3 py-1.5 text-[12.5px] text-accent-bright transition-colors hover:bg-accent/10"
+                >
+                  Download for macOS ↓
+                </a>
+              }
+            >
+              <p className="text-[11.5px] text-ink/35">
+                Apple Silicon, unsigned dev build — right-click → Open the first time.
+              </p>
+            </SectionCard>
           </div>
         </div>
       </motion.div>
