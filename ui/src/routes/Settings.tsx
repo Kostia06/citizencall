@@ -8,6 +8,7 @@ import ConnectionsPanel from '../components/settings/ConnectionsPanel';
 import CustomMcpsPanel from '../components/settings/CustomMcpsPanel';
 import RoutinesPanel from '../components/settings/RoutinesPanel';
 import ProvidersPanel from '../components/settings/ProvidersPanel';
+import SessionsPanel from '../components/settings/SessionsPanel';
 import TopNav from '../components/TopNav';
 import { ToastStack, useToasts } from '../components/Toast';
 import { AuthError, DEFAULT_PREFS, MOCK, storeApi } from '../api';
@@ -457,6 +458,13 @@ export default function Settings() {
               subtitle="Bring your own model key — it becomes the fallback when the built-in models fail a check."
             >
               <ProvidersPanel authedFetch={authedFetch} refreshToken={tabRefresh} />
+            </SectionCard>
+
+            <SectionCard
+              title="Devices & sessions"
+              subtitle="Everywhere you're signed in. Revoke one, or sign out of all of them."
+            >
+              <SessionsPanel refreshToken={tabRefresh} />
             </SectionCard>
 
             <SectionCard

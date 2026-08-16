@@ -292,7 +292,10 @@ export default function Bar() {
   function appendRestored(run: RestoredRun) {
     const afterTurnId = turns.length > 0 ? turns[turns.length - 1].id : null;
     stickToBottomRef.current = true;
-    setRestored((prev) => [...prev, { key: `restored-${prev.length}-${run.id}`, afterTurnId, run }]);
+    // Selecting a session REPLACES the restored view — accumulating each
+    // selection interleaved past sessions into one transcript (found live:
+    // switching sessions "mixed" them). Re-picking the same one is a no-op.
+    setRestored([{ key: `restored-${run.id}`, afterTurnId, run }]);
     setHistoryOpen(false);
   }
 
@@ -365,6 +368,20 @@ export default function Bar() {
         }),
       )
       .catch(() => push('Could not load that session'));
+  }
+
+  function handleDeleteSession(id: string) {
+    // Optimistic: drop the row (and its restored card, if showing) at once;
+    // re-sync the list from the server if the delete fails.
+    setLiveSessions((prev) => prev.filter((s) => s.id !== id));
+    setRestored((prev) => prev.filter((r) => r.run.id !== id));
+    storeApi
+      .deleteSession(authedFetch, id)
+      .then(() => push('Session deleted'))
+      .catch(() => {
+        push('Could not delete that session');
+        storeApi.listSessions(authedFetch).then(setLiveSessions).catch(() => undefined);
+      });
   }
 
   /** The last 6 on-screen turns (live + restored, in transcript order) as
@@ -618,6 +635,7 @@ export default function Bar() {
         sessions={sessions}
         loading={historyLoading}
         onSelect={handleSelectSession}
+        {...(!MOCK ? { onDelete: handleDeleteSession } : {})}
         onClose={() => setHistoryOpen(false)}
       />
 

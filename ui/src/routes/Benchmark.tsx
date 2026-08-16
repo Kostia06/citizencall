@@ -98,7 +98,10 @@ export default function Benchmark() {
                     }
                     reduceMotion={!!reduceMotion}
                   >
-                    <div className="mt-3 text-center">
+                    {/* Fixed height so every column's bar area matches — the
+                        CitizenCall column's third label line was shrinking its
+                        flex-1 bar area and lifting the bar off the baseline. */}
+                    <div className="mt-3 h-14 text-center">
                       <p
                         className={`text-[12px] font-medium leading-snug ${
                           isCitizenCall ? 'text-ink/85' : 'text-ink/50'

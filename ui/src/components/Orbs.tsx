@@ -288,8 +288,12 @@ export default function Orbs({
 
   // Unconnected toolkit orbs are HIDDEN on the live bar (user request —
   // reversed from the earlier dim-and-click-to-connect rendering); the
-  // settings arranger still shows every configured button.
+  // settings arranger still shows every configured button. Retired fixed
+  // actions (user/run/bypassCache/suggest/theme — orbs are connection-only
+  // now) hide the same way for stale saved prefs.
+  const RETIRED_ACTIONS = new Set(['toggle:user', 'toggle:theme', 'run', 'bypassCache', 'suggest']);
   const visibleButtons = buttons.filter((b) => {
+    if (RETIRED_ACTIONS.has(b.action)) return false;
     const slug = actionToolkit(b.action);
     return !slug || connectedSlugs.has(slug);
   });

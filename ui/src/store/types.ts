@@ -31,7 +31,6 @@ export const DEFAULT_PREFS: UserPrefs = {
   buttons: [
     { id: 'github', action: 'connect:github' },
     { id: 'gmail', action: 'connect:gmail' },
-    { id: 'user', action: 'toggle:user' },
   ],
   contextPrompt: '',
   suggestions: true,
@@ -63,12 +62,10 @@ export const KEYBINDING_ACTIONS = ['run', 'newline', 'bypassCache', 'focus', 'cl
 export const FIXED_BUTTON_ACTIONS = [
   'connect:github',
   'connect:gmail',
-  'toggle:user',
-  // 'toggle:theme' retired — dark-only (lib/theme.ts); stale saved buttons
-  // with that action are hidden by Orbs and ignored here.
-  'run',
-  'bypassCache',
-  'suggest',
+  // Retired (user request 2026-08-16): 'toggle:user', 'run', 'bypassCache',
+  // 'suggest' — orbs are connection-only now. 'toggle:theme' retired earlier
+  // (dark-only, lib/theme.ts). Stale saved buttons with any retired action
+  // are hidden by Orbs and render as '?' in the arranger until reassigned.
 ] as const;
 export type FixedButtonAction = (typeof FIXED_BUTTON_ACTIONS)[number];
 

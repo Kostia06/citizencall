@@ -26,12 +26,15 @@ export default function HistoryDrawer({
   sessions,
   loading,
   onSelect,
+  onDelete,
   onClose,
 }: {
   open: boolean;
   sessions: SessionSummary[];
   loading: boolean;
   onSelect(id: string): void;
+  /** Permanently removes one past run from history. Absent in MOCK mode. */
+  onDelete?(id: string): void;
   onClose(): void;
 }) {
   const reduceMotion = useReducedMotion();
@@ -93,21 +96,38 @@ export default function HistoryDrawer({
               )}
               {!loading &&
                 sessions.map((s) => (
-                  <button
-                    key={s.id}
-                    type="button"
-                    onClick={() => onSelect(s.id)}
-                    className="mb-1 block w-full rounded-xl border border-transparent px-3 py-2.5 text-left transition-colors hover:border-white/10 hover:bg-white/[0.05]"
-                  >
-                    <div className="truncate text-[13px] leading-snug text-white/80">{s.requestText}</div>
-                    <div className="mt-1 flex items-center gap-2 text-[10px] uppercase tracking-wide text-white/30">
-                      <span className={`h-1.5 w-1.5 rounded-full ${STATUS_DOT[s.status] ?? 'bg-white/30'}`} />
-                      <span>{formatWhen(s.createdAt)}</span>
-                      {s.totalCostUsd > 0 && (
-                        <span>{s.totalCostUsd >= 0.01 ? `$${s.totalCostUsd.toFixed(2)}` : `$${s.totalCostUsd.toFixed(4)}`}</span>
-                      )}
-                    </div>
-                  </button>
+                  <div key={s.id} className="group relative mb-1">
+                    <button
+                      type="button"
+                      onClick={() => onSelect(s.id)}
+                      className="block w-full rounded-xl border border-transparent px-3 py-2.5 text-left transition-colors hover:border-white/10 hover:bg-white/[0.05]"
+                    >
+                      <div className="truncate pr-7 text-[13px] leading-snug text-white/80">{s.requestText}</div>
+                      <div className="mt-1 flex items-center gap-2 text-[10px] uppercase tracking-wide text-white/30">
+                        <span className={`h-1.5 w-1.5 rounded-full ${STATUS_DOT[s.status] ?? 'bg-white/30'}`} />
+                        <span>{formatWhen(s.createdAt)}</span>
+                        {s.totalCostUsd > 0 && (
+                          <span>{s.totalCostUsd >= 0.01 ? `$${s.totalCostUsd.toFixed(2)}` : `$${s.totalCostUsd.toFixed(4)}`}</span>
+                        )}
+                      </div>
+                    </button>
+                    {onDelete && (
+                      <button
+                        type="button"
+                        aria-label="Delete this session"
+                        title="Delete this session"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onDelete(s.id);
+                        }}
+                        className="absolute right-2 top-2.5 hidden h-6 w-6 items-center justify-center rounded-md text-white/35 transition-colors hover:bg-white/10 hover:text-white/80 group-hover:flex"
+                      >
+                        <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden>
+                          <path d="M4 7h16M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2m3 0-1 13a1 1 0 0 1-1 1H8a1 1 0 0 1-1-1L6 7" />
+                        </svg>
+                      </button>
+                    )}
+                  </div>
                 ))}
             </div>
           </motion.aside>

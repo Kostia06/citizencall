@@ -104,6 +104,23 @@ storeRoutes.get('/sessions', async (c) => {
   );
 });
 
+// Delete one past run and its child rows — same actor scoping as the list
+// above, so a caller can only ever delete their own history. The ownership
+// check rides in the runs DELETE itself (user_id bind); child deletes are
+// gated on that row actually having been removed.
+storeRoutes.delete('/sessions/:id', async (c) => {
+  const actor = await resolveActor(c);
+  const runId = c.req.param('id');
+  const owned = await c.env.DB.prepare('DELETE FROM runs WHERE id=? AND user_id=?').bind(runId, actor.userId).run();
+  if ((owned.meta.changes ?? 0) === 0) return c.json({ error: 'Not found.' }, 404);
+  await c.env.DB.batch([
+    c.env.DB.prepare('DELETE FROM sub_tasks WHERE run_id=?').bind(runId),
+    c.env.DB.prepare('DELETE FROM hops WHERE run_id=?').bind(runId),
+    c.env.DB.prepare('DELETE FROM tool_calls WHERE run_id=?').bind(runId),
+  ]);
+  return c.body(null, 204);
+});
+
 // ---- Model providers (bring-your-own-key) ---------------------------------
 // Anon-friendly like /connections: an anonymous session can save a key and
 // claim-on-login re-parents the row. The API key is write-only — every read

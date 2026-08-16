@@ -586,6 +586,13 @@ export const storeApi = {
     );
   },
 
+  /** Permanently deletes one past run (and its trace rows) from the actor's
+   * history. Actor-scoped server-side — same identity rule as listSessions. */
+  async deleteSession(authedFetch: AuthedFetch, runId: string): Promise<void> {
+    const res = await authedFetch(`/api/sessions/${encodeURIComponent(runId)}`, { method: 'DELETE' });
+    if (!res.ok && res.status !== 404) throw new AuthError(await readJsonError(res), res.status);
+  },
+
   /** Loads one persisted run for read-only restore into the transcript. No
    * bearer needed — like the SSE stream, the unguessable runId is the
    * capability — but cookies ride so it works for anon actors either way. */
