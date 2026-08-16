@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { MOCK } from '../api';
 import { useAuth } from '../auth/useAuth';
@@ -76,6 +76,16 @@ function ThemeToggle({ className = '' }: { className?: string }) {
 export default function TopNav() {
   const location = useLocation();
   const [menuOpen, setMenuOpen] = useState(false);
+
+  // Esc closes the narrow-screen menu (audit PARTIAL).
+  useEffect(() => {
+    if (!menuOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setMenuOpen(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [menuOpen]);
 
   return (
     <nav className="relative flex items-center justify-between text-[12px] text-ink/40">

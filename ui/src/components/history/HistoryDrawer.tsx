@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import type { SessionSummary } from '../../api';
 
@@ -34,6 +35,17 @@ export default function HistoryDrawer({
   onClose(): void;
 }) {
   const reduceMotion = useReducedMotion();
+  // Global Esc while open — the drawer previously closed only when focus
+  // happened to be inside it (audit PARTIAL).
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open, onClose]);
+
   return (
     <AnimatePresence>
       {open && (
