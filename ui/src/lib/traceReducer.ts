@@ -33,8 +33,15 @@ export interface TraceState {
   subTaskOrder: string[];
   rungsBySubTask: Record<string, RungState[]>;
   lastToolCall?: { toolkit: string; tool: string; at: number };
-  /** The final sub-task's model output — the user-visible reply bubble. */
+  /** The final sub-task's model output — the user-visible reply bubble.
+   * On live runs this accumulates from `answer_delta` chunks, then the
+   * final `answer` event replaces it wholesale with the authoritative full
+   * text (so a dropped/duplicated delta can never corrupt the reply). */
   answerText?: string;
+  /** True once any `answer_delta` arrived — the answer painted live, so
+   * AnswerBubble must render it raw (caret while running) instead of
+   * replaying the client-side typewriter over already-seen text. */
+  answerStreamed?: boolean;
   /** Set by `memory_saved` — the agent stored a memory after this run.
    * Rendered (if at all) as a small "memory saved" note linking to /memory;
    * ConversationTurn may ignore it, the default case already tolerated it. */
@@ -77,10 +84,13 @@ function upsertRung(
   const rungs = state.rungsBySubTask[subTaskId] ?? [];
   const idx = matchRungIndex(rungs);
   const nextRungs = [...rungs];
+  // `subTaskId` spread LAST so it stays a definite string even when the
+  // Partial patch carries an (undefined) one — keeps the file compiling
+  // under exactOptionalPropertyTypes (worker tests import this reducer).
   if (idx === -1) {
-    nextRungs.push({ subTaskId, ...patch });
+    nextRungs.push({ ...patch, subTaskId });
   } else {
-    nextRungs[idx] = { ...nextRungs[idx], ...patch };
+    nextRungs[idx] = { ...nextRungs[idx], ...patch, subTaskId };
   }
   return {
     ...state,
@@ -155,10 +165,10 @@ export function traceReducer(state: TraceState, event: TraceEvent): TraceState {
       // escalatedFrom on a fresh empty rung so HopCard can render the arrow
       // immediately, before the route decision arrives.
       const subTaskId = Object.keys(state.rungsBySubTask).find((id) =>
-        state.rungsBySubTask[id].some((r) => r.hop?.modelId === event.from),
+        (state.rungsBySubTask[id] ?? []).some((r) => r.hop?.modelId === event.from),
       );
       if (!subTaskId) return state;
-      const rungs = state.rungsBySubTask[subTaskId];
+      const rungs = state.rungsBySubTask[subTaskId] ?? [];
       const failedRung = rungs.find((r) => r.hop?.modelId === event.from);
       return {
         ...state,
@@ -166,12 +176,19 @@ export function traceReducer(state: TraceState, event: TraceEvent): TraceState {
           ...state.rungsBySubTask,
           [subTaskId]: [...rungs, { subTaskId, escalatedFrom: failedRung?.hop?.id }],
         },
+        // The failed rung's streamed text is discarded — the escalation rung
+        // streams fresh deltas (or delivers a whole `answer`).
+        answerText: undefined,
         escalateTick: state.escalateTick + 1,
         escalateTarget: event.to,
       };
     }
 
+    case 'answer_delta':
+      return { ...state, answerText: (state.answerText ?? '') + event.text, answerStreamed: true };
+
     case 'answer':
+      // Reconcile: the full authoritative text replaces accumulated deltas.
       return { ...state, answerText: event.text };
 
     case 'memory_saved':
@@ -254,8 +271,8 @@ export function conversationReducer(state: ConversationState, action: Conversati
   }
 
   const lastIdx = state.turns.length - 1;
-  if (lastIdx < 0) return state;
   const lastTurn = state.turns[lastIdx];
+  if (!lastTurn) return state;
 
   if (action.type === 'stop_turn') {
     if (lastTurn.trace.status !== 'running') return state;

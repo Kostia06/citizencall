@@ -98,12 +98,16 @@ export type TraceEvent =
   | { t: 'hop_end'; hop: Hop }
   | { t: 'tool_call'; toolkit: string; tool: string; cacheHit: boolean; ms: number }
   | { t: 'escalate'; from: string; to: string; reason: Verdict }
-  // Connection-required pause: the run is waiting for the user to connect a
-  // toolkit (or skip). Status stays 'running'; run_resumed always follows.
+  // A streamed chunk of the FINAL sub-task's answer (live runs only; mirrors
+  // worker/src/types.ts). The `answer` event that follows carries the FULL
+  // text and the reducer reconciles to it, so deltas can never desync.
+  | { t: 'answer_delta'; subTaskId: string; text: string }
   | { t: 'answer'; subTaskId: string; text: string }
   // Agent auto-wrote a user memory after this run (worker memory-hook.ts);
   // arrives just before run_end. Rendered as a small note, viewable at /memory.
   | { t: 'memory_saved'; memoryId: string; title: string }
+  // Connection-required pause: the run is waiting for the user to connect a
+  // toolkit (or skip). Status stays 'running'; run_resumed always follows.
   | { t: 'connection_required'; toolkit: string; subTaskId: string }
   | { t: 'run_resumed'; toolkit: string; skipped: boolean }
   | {

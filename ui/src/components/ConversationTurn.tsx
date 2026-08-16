@@ -30,11 +30,17 @@ export default function ConversationTurn({
   animate = false,
   authedFetch,
   onStop,
+  onRegenerate,
+  regenerateDisabled = false,
 }: {
   turn: Turn;
   animate?: boolean;
   authedFetch?: AuthedFetch;
   onStop?: () => void;
+  /** Resubmits this turn's prompt as a NEW turn with the run cache bypassed
+   * (Bar.tsx wires it to handleSubmit with bypassCache=true). */
+  onRegenerate?: (prompt: string) => void;
+  regenerateDisabled?: boolean;
 }) {
   const reduceMotion = useReducedMotion();
   const trace = turn.trace;
@@ -68,7 +74,16 @@ export default function ConversationTurn({
       {showTyping && <TypingIndicator />}
       {showStatus && <StatusLine trace={trace} onStop={onStop} />}
       {gate && <ConnectionGateCard gate={gate} runId={trace.runId} authedFetch={authedFetch} />}
-      {hasAnswer && <AnswerBubble text={trace.answerText!} running={running} onStop={onStop} />}
+      {hasAnswer && (
+        <AnswerBubble
+          text={trace.answerText!}
+          running={running}
+          streamed={!!trace.answerStreamed}
+          onStop={onStop}
+          {...(onRegenerate ? { onRegenerate: () => onRegenerate(turn.prompt) } : {})}
+          regenerateDisabled={regenerateDisabled}
+        />
+      )}
       {showTraceLive && (
         <TracePipeline state={trace} className="mx-auto mt-4 w-full max-w-2xl" animate={animate} />
       )}

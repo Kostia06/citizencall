@@ -45,7 +45,17 @@ const STATUS_TINT: Record<string, string> = {
  * same conversation, just visibly historical. Runs with no stored answer
  * (still running when captured, or errored before one landed) fall back to
  * the plain meta card — there's nothing answer-first to show yet. */
-export default function RestoredTurn({ run }: { run: RestoredRun }) {
+export default function RestoredTurn({
+  run,
+  onRegenerate,
+  regenerateDisabled = false,
+}: {
+  run: RestoredRun;
+  /** Resubmits this restored run's prompt as a NEW live turn with the run
+   * cache bypassed — same wiring as ConversationTurn's regenerate. */
+  onRegenerate?: (prompt: string) => void;
+  regenerateDisabled?: boolean;
+}) {
   const reduceMotion = useReducedMotion();
   return (
     <motion.div
@@ -65,7 +75,12 @@ export default function RestoredTurn({ run }: { run: RestoredRun }) {
       </div>
       {run.answerText ? (
         <>
-          <AnswerBubble text={run.answerText} instant />
+          <AnswerBubble
+            text={run.answerText}
+            instant
+            {...(onRegenerate ? { onRegenerate: () => onRegenerate(run.requestText) } : {})}
+            regenerateDisabled={regenerateDisabled}
+          />
           <div className="mx-auto mt-1 w-full max-w-2xl px-2 text-[11px] text-white/35">
             <span className={STATUS_TINT[run.status] ?? 'text-white/50'}>{run.status}</span>
             <span className="mx-2 text-white/15">·</span>

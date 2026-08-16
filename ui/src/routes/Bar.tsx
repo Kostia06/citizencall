@@ -402,6 +402,15 @@ export default function Bar() {
     });
   }
 
+  // Regenerate (↻ beside Copy on a finished/restored answer) — resubmits
+  // that turn's prompt as a NEW turn with the run cache bypassed, so a fresh
+  // answer streams in instead of the cached replay. Guarded while a run is
+  // in flight (buttons are also disabled then).
+  function handleRegenerate(prompt: string) {
+    if (running) return;
+    handleSubmit(prompt, { bypassCache: true, source: 'text', attachments: [] });
+  }
+
   // `routine:<id>` orb click — fires the routine's saved prompt through the
   // exact same submit path as typing it. Routines list refreshes with auth
   // (a login can claim/expose different routines).
@@ -516,7 +525,7 @@ export default function Bar() {
             {restored
               .filter((r) => r.afterTurnId === null)
               .map((r) => (
-                <RestoredTurn key={r.key} run={r.run} />
+                <RestoredTurn key={r.key} run={r.run} onRegenerate={handleRegenerate} regenerateDisabled={running} />
               ))}
             {turns.map((turn) => (
               <div key={turn.id}>
@@ -525,11 +534,13 @@ export default function Bar() {
                   animate={turn.id === lastTurn?.id && running}
                   authedFetch={authedFetch}
                   onStop={turn.id === lastTurn?.id && running ? handleStop : undefined}
+                  onRegenerate={handleRegenerate}
+                  regenerateDisabled={running}
                 />
                 {restored
                   .filter((r) => r.afterTurnId === turn.id)
                   .map((r) => (
-                    <RestoredTurn key={r.key} run={r.run} />
+                    <RestoredTurn key={r.key} run={r.run} onRegenerate={handleRegenerate} regenerateDisabled={running} />
                   ))}
               </div>
             ))}
