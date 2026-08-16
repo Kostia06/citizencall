@@ -88,6 +88,11 @@ function systemPrompt(extraToolkits: string[], toolListing = ''): string {
     'Each element: {"kind": <kind>, "instruction": <imperative string>, "needsTools": <bool>,',
     `"toolkit": <${list}|null>, "tool": <tool slug|null>, "sensitive": <bool>}. Set needsTools=true and toolkit`,
     'when the step must read from or act on one of those tools. Keep instructions concise and self-contained.',
+    // Found live: "tell me latest message" with Discord connected planned no
+    // tool and the answer claimed "I don't have access to your messages".
+    'The listed toolkits are apps the user has CONNECTED — the agent does have access. When the request asks',
+    'about messages, mail, code, files, or notifications that one of the listed toolkits serves, plan that',
+    "toolkit's tool call instead of a plain answer.",
     // Executors receive ONLY the instruction string — a plan that says
     // "extract fields from this invoice" without the invoice sends the
     // executor nothing to extract (observed live: GLM-5.2 returned all-null

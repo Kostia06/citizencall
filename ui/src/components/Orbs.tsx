@@ -337,7 +337,10 @@ export default function Orbs({
       const routine = routines.find((r) => r.id === routineId);
       const name = btn.label ?? routine?.name ?? 'Routine';
       // Several special buttons side by side need distinct faces — the
-      // label/name initial reads better than a row of identical ⟳.
+      // label/name initial reads better than a row of identical ⟳. A button
+      // bound from an app orb keeps that app's logo (btn.icon = slug, set by
+      // ButtonEditor's Create & bind) so the Discord-reading button still
+      // LOOKS like Discord.
       const initial = (btn.label ?? routine?.name ?? '').trim().charAt(0).toUpperCase();
       return (
         <Orb
@@ -346,7 +349,9 @@ export default function Orbs({
           title={routine ? `Run "${name}"` : `${name} (routine not found)`}
           onClick={() => onRunRoutine?.(routineId)}
         >
-          {initial ? (
+          {btn.icon ? (
+            <ToolkitLogo slug={btn.icon} />
+          ) : initial ? (
             <span className="text-[13px] font-semibold leading-none">{initial}</span>
           ) : (
             <span className="text-lg leading-none">⟳</span>

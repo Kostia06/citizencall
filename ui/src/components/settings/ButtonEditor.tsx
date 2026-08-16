@@ -253,14 +253,28 @@ export default function ButtonEditor({
 
   async function createSpecial() {
     if (!onCreateSpecial || !selected || specialBusy) return;
-    const prompt = specialPrompt.trim();
+    let prompt = specialPrompt.trim();
     if (!prompt) return;
+    // Binding onto an app orb keeps the app in play: the planner only routes
+    // at toolkits the prompt names or strongly implies, so a generic prompt
+    // ("tell me latest message") fired from the Discord orb answered "I
+    // don't have access" (found live). Bake the app into the prompt, and
+    // remember the slug so the orb keeps the app's logo.
+    const slug = toolkitSlug(selected.action) ?? (selected.action.startsWith('connect:') ? selected.action.slice(8) : null);
+    const app = slug ? APPS.find((a) => a.slug === slug) : null;
+    if (app && !prompt.toLowerCase().includes(app.slug) && !prompt.toLowerCase().includes(app.name.toLowerCase())) {
+      prompt = `${prompt} on ${app.name}`;
+    }
     const name = selected.label?.trim() || (prompt.length > 28 ? `${prompt.slice(0, 28)}…` : prompt);
     setSpecialBusy(true);
     const routine = await onCreateSpecial(name, prompt);
     setSpecialBusy(false);
     if (!routine) return;
-    update(selected.id, { action: routineAction(routine.id), label: selected.label ?? routine.name });
+    update(selected.id, {
+      action: routineAction(routine.id),
+      label: selected.label ?? routine.name,
+      ...(slug ? { icon: slug } : {}),
+    });
     setSpecialPrompt('');
   }
 
