@@ -117,6 +117,10 @@ before starting work; update it when you finish.
 
 - [x] 2026-08-16 — **Judge-readiness wave**: landing page at /welcome (hero = the pill w/ typewriter, first-visit anon redirect); one-click Understudy.dmg on release v0.1.0, linked from Settings + landing; loop validation found+fixed 3 pipeline defects (escalate event ordering, quoted source text now threaded to executors — was all-null extractions, verifier tolerates ```json fences); benchmarks internally consistent; gmail hint scoped to personal-mail phrasing ("regex to validate an email address" no longer forces a gmail connect card); plan cache WARMED for anon judges (35 prompts, warm answers 1.7-3.1s measured) — after purging 5 pre-fix poisoned gmail plans from prod D1. Deployed 64c9ae1a; main = 948cfcd; 404 tests green.
 
+- [x] 2026-08-16 — **Judge dry-run + first-impression fixes**: walked the full flow as a fresh anon judge (landing → first prompt → reasoning → tool ask → benchmark). Found+fixed the worst first impression: "what can you do" got degenerate looping sludge from rung-0 THAT VERIFY PASSED → (a) deterministic capability fast path (product-true canned answer, 0.7s, $0.00), (b) verify now fails degenerate repetition (dup-line ratio + repeated 5-gram shingle; legit lists/code/JSON pass), (c) idle starter-suggestions no longer render over the first answer. Re-verified live: capability 0.7s, warmed reasoning 5.5s, connect card 0.2s, benchmark consistent.
+- [x] 2026-08-16 — **Dark-only by decision**: light theme cut — data-theme pinned to dark pre-paint, TopNav toggle + toggle:theme orb action retired (stale saved orbs hidden), defaults now [github, gmail, user], −123 LOC of theme machinery. Kills the whole light-parity maintenance class.
+- [x] 2026-08-16 — Deployed 02117c64; main = e837723; 425 tests / 58 files green.
+
 ## Blocked
 
 - _Nothing blocked._
