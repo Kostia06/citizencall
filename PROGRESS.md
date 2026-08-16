@@ -99,6 +99,12 @@ before starting work; update it when you finish.
 
 - [x] 2026-08-16 — **Answer streaming + regenerate** (last OSS-plan item): real Featherless SSE deltas for the final sub-task → throttled `answer_delta` events → live-growing bubble (typewriter kept for replays); escalate clears the draft; final `answer` reconciles (cap raised to 12k so streams never shrink); ↻ regenerate reruns with noCache. LIVE: 5 deltas concat===answer locally, incremental bubble growth verified in the PROD browser, regenerate skipped the run cache. 52 files / 340 worker tests green.
 
+- [x] 2026-08-16 — **MCP call transport**: `mcp-client.ts` JSON-RPC Streamable HTTP client (plain-JSON + SSE responses, session reuse, SSRF guard), planned tool resolved against real `tools/list`; LIVE e2e vs mock server ("secret number is 42417", full lifecycle + session reuse in the mock's log). 368 worker tests green.
+- [x] 2026-08-16 — **Bar-button overhaul**: root-caused "order never changes" — `/api/settings` was auth-gated while sibling store routes were resolveActor, so anon/unverified saves 401'd silently → settings now anon-friendly (claimed on login) + Save mirrors to localStorage; unconnected app orbs hidden on the live bar; ▶/⚡/✦ orbs actually run/bypass/toggle-suggestions, ◑ opens account; input field is a draggable arranger slot (left/middle/right among orbs). PROD round-trip verified.
+- [x] 2026-08-16 — **Spotlight = the product for macOS** (iOS/Expo dropped by decision): overlay is result-only — streamed compact answer + Copy + "View steps on web ↗", session threading across prompts, layered Esc; steps stay recorded server-side for the web history drawer. Browser-verified with screenshots.
+- [x] 2026-08-16 — **Live STT time-to-first-word fix**: first interim POST now fires ~1.1s after recording starts (self-scheduling chain, was a 2.5s interval + round trip that always lost to short dictations); verified in Chromium, Playwright Firefox, AND the user's real Zen.app via BiDi with synthesized speech.
+- [x] 2026-08-16 — Deployed all of the above to citizencall.dev (version 6582da45); `main` fast-forwarded to `6f3a72c`.
+
 ## Blocked
 
 - _Nothing blocked._
