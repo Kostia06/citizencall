@@ -13,6 +13,7 @@ import { ToastStack, useToasts } from '../components/Toast';
 import { AuthError, DEFAULT_PREFS, MOCK, storeApi } from '../api';
 import type { Connection, Routine, UserPrefs } from '../api';
 import { useAuth } from '../auth/useAuth';
+import { MACOS_DMG_URL } from '../lib/downloads';
 import { entranceStandard, entranceStandardReduced } from '../lib/motion';
 import { syncThemeFromPrefs } from '../lib/theme';
 
@@ -471,12 +472,12 @@ export default function Settings() {
               subtitle="A Spotlight-style overlay bar — press ⌥Space anywhere. Shows just the answer; full steps stay here on the web."
               action={
                 <a
-                  href="https://github.com/Kostia06/forge-hack/releases/tag/v0.1.0"
+                  href={MACOS_DMG_URL}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="rounded-lg border border-accent/40 px-3 py-1.5 text-[12.5px] text-accent-bright transition-colors hover:bg-accent/10"
                 >
-                  Download for macOS ↓
+                  Download for macOS (.dmg)
                 </a>
               }
             >

@@ -8,7 +8,8 @@
     "start": "electron .",
     "start:prod": "UNDERSTUDY_URL=https://citizencall.dev/spotlight electron .",
     "dev": "node ./wait-for-ui.mjs && electron .",
-    "dist": "electron-packager . Understudy --platform=darwin --arch=arm64 --overwrite --out=dist --ignore=\"^/dist($|/)\" && ditto -c -k --keepParent dist/Understudy-darwin-arm64/Understudy.app dist/Understudy-macos-arm64.zip"
+    "dist": "electron-packager . Understudy --platform=darwin --arch=arm64 --overwrite --out=dist --ignore=\"^/dist($|/)\" && ditto -c -k --keepParent dist/Understudy-darwin-arm64/Understudy.app dist/Understudy-macos-arm64.zip",
+    "dist:dmg": "hdiutil create -volname \"Understudy\" -srcfolder dist/Understudy-darwin-arm64/Understudy.app -ov -format UDZO dist/Understudy.dmg"
   },
   "devDependencies": {
     "@electron/packager": "^18.3.6",

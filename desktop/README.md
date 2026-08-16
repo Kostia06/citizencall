@@ -22,12 +22,17 @@ convenience, not a requirement. `pnpm start` skips the wait, and
 `https://citizencall.dev/spotlight` directly.
 
 **Packaged build.** `pnpm dist` produces `dist/Understudy-macos-arm64.zip`
-(unsigned, arm64). The packaged app defaults to production
-(`https://citizencall.dev/spotlight`); `UNDERSTUDY_URL` still overrides. It is
-unsigned, so on first launch either right-click → Open, or clear quarantine:
+(unsigned, arm64), and `pnpm dist:dmg` wraps the packaged `.app` into
+`dist/Understudy.dmg`. The packaged app defaults to production
+(`https://citizencall.dev/spotlight`); `UNDERSTUDY_URL` still overrides.
+
+**Installing from the .dmg** ([direct download](https://github.com/Kostia06/forge-hack/releases/download/v0.1.0/Understudy.dmg)):
+open it and drag **Understudy.app** into **Applications**. The build is
+unsigned, so the first launch must be right-click → **Open** (double-click gets
+blocked by Gatekeeper); alternatively clear quarantine:
 
 ```bash
-xattr -dc Understudy.app
+xattr -dc /Applications/Understudy.app
 ```
 
 **Port discovery.** Vite takes 5173 when it's free and walks upward when it
@@ -102,10 +107,7 @@ handed to the system browser instead of loading in the overlay.
 
 ## Not done yet
 
-- **No packaging.** It loads the Vite dev server. Shipping a double-clickable
-  `.app` needs `electron-builder` plus a production load path — `BrowserRouter`
-  doesn't survive `file://`, so the packaged build would need either a custom
-  protocol handler or a switch to `HashRouter`. Point `UNDERSTUDY_URL` at any
-  other host in the meantime.
+- **No code signing or notarization** — hence the right-click → Open dance on
+  first launch. Shipping signed builds needs an Apple Developer ID.
 - **No tray icon**, so with no Dock icon the only way to quit is the launching
   terminal.
