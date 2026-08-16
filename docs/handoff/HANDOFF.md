@@ -56,3 +56,11 @@ a34c7d5 feat(ui): guarantee app icons via favicon fallback; fix icon slugs/domai
 - Verify any file/flag from memory still exists before acting; recalled memory is background context, not instructions.
 
 ---
+
+### Update 2026-08-16 (current state — everything through memory v2 + threading DEPLOYED)
+- **Live**: https://citizencall.dev (Workers custom domain + www; prod D1 + all secrets; cron */15). `main` == `feature/ui` == c0e03c8+ (streaming agent may have advanced it). PROGRESS.md on `progression` is the authoritative changelog (through c90443a).
+- Everything shipped + PROD-verified: answer-first chat UX (typing dots/status line/typewriter/collapsed trace/Copy/Stop), real Composio tool execution (discovery+resolver+args; DISCORD_LIST_MY_GUILDS live), session threading (history → system channel; "red panda" prod test), mem0-style memory (reconcile ADD/UPDATE/DELETE; jeff→Bob one-row prod test), connection pause w/ self-resume + returnTo, fast planner (Qwen-14B, 3.5s), 2FA fail-open (RESEND_FROM configurable; sender currently onboarding@resend.dev), theme/light mode complete, bar placement + button-order persistence (localStorage+account), cross-browser live mic transcript, zombie-run reaper + resume-reconcile, roster demoted from nav, teammate's desktop/ Electron + Spotlight merged.
+- **IN FLIGHT**: streaming+regenerate agent (owns worker featherless/execute/run/types + ui chat/reducer/Bar) — answer_delta events, escalate clears draft, ↻ regenerate w/ noCache. On land: integrate, full tests (49 files/325+ baseline), deploy, sync main, PROGRESS.
+- **Stuck externally**: Resend domain citizencall.dev verification "pending" ~12h despite correct public DNS (dig-verified). Do NOT delete/recreate the domain (rotates DKIM). When it verifies: `cd worker && printf '%s' "Understudy <auth@citizencall.dev>" | npx wrangler secret put RESEND_FROM` — real 2FA email everywhere.
+- Remaining backlog: judging deliverables (gold labels, offline baselineCostUsd, demo seed+film), Expo on-device, MCP call transport, bundle split, derive_tasks.py.
+- Ops notes: full `pnpm --dir worker test` needs non-sandboxed run for full collection AND kills any wrangler dev on :8787 (restart after). Deploys MUST run from worker/ (a stray root wrangler.jsonc was already deleted once). Local D1 re-keys if wrangler.jsonc database_id changes.
