@@ -129,9 +129,13 @@ authRoutes.post('/login', async (c) => {
   if (await isTwofaEnabled(c.env.DB, user.id)) {
     // Second factor required: no tokens yet, only an opaque challenge.
     const { challengeId, code } = await createChallenge(c.env.DB, user.id, now());
-    await sendTwofaCodeEmail(c.env, user.email, code);
+    const delivered = await sendTwofaCodeEmail(c.env, user.email, code);
     const body: Record<string, unknown> = { requires2fa: true, challengeId };
-    if (shouldExposeDevCode(c.env)) {
+    // Fail-OPEN when the email could not deliver (unverified sender domain,
+    // Resend outage, stub mode): surfacing the code beats locking every
+    // user out of login — 2FA still gates bots/typos, and flips to real
+    // email-only the moment delivery works.
+    if (shouldExposeDevCode(c.env) || !delivered) {
       console.log(`[2fa] dev code for ${user.email}: ${code}`);
       body.devCode = code;
     }
@@ -168,8 +172,8 @@ authRoutes.post('/2fa/resend', async (c) => {
     const result = await resendChallenge(c.env.DB, challengeId, now());
     if (result.status === 'ok') {
       const user = await getUserById(c.env.DB, result.userId);
-      if (user) await sendTwofaCodeEmail(c.env, user.email, result.code);
-      if (shouldExposeDevCode(c.env)) {
+      const delivered = user ? await sendTwofaCodeEmail(c.env, user.email, result.code) : false;
+      if (shouldExposeDevCode(c.env) || !delivered) {
         console.log(`[2fa] dev code (resend): ${result.code}`);
         body.devCode = result.code;
       }
