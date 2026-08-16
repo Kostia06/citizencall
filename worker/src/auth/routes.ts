@@ -8,7 +8,7 @@ import {
   consumeEmailToken, createEmailToken, createUser, getUserByEmail,
   getUserById, setEmailVerified, updatePassword,
 } from './users';
-import { sendResetEmail, sendTwofaCodeEmail, sendVerifyEmail } from './email';
+import { sendResetEmail, sendTwofaCodeEmail, sendVerifyEmail, sendWelcomeEmail } from './email';
 import { checkAndIncrement } from './throttle';
 import { requireAuth } from './middleware';
 import { authSecret } from './secret';
@@ -83,6 +83,15 @@ authRoutes.post('/signup', async (c) => {
   // safely follow. NOT done on the duplicate-email path above — that caller
   // hasn't authenticated as the existing account.
   await claimAnonSession(c, user.id);
+  // Welcome email — strictly best-effort and off the response path; a
+  // Resend hiccup must never slow or fail a signup. Accessing executionCtx
+  // THROWS where none exists (vitest app.request), hence the try.
+  const welcome = sendWelcomeEmail(c.env, email).catch(() => false);
+  try {
+    c.executionCtx.waitUntil(welcome);
+  } catch {
+    /* no execution context (tests) — the promise still runs detached */
+  }
   return c.json({ ok: true }, 201);
 });
 
