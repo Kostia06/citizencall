@@ -214,12 +214,11 @@ function OrbSlot({
 
 /** The bar orbs — SPEC.md §6, now driven by prefs.buttons: saved order,
  * per-button actions (fixed, `toolkit:<slug>` from the settings arranger, or
- * `routine:<id>`), and hold-drag reordering persisted by the parent. Only
- * REAL, actionable orbs render: a toolkit-bound orb for an app the user
- * hasn't connected is dropped entirely rather than shown dimmed as a
- * "connect me" prompt (that's ConnectionsPanel's job now) — non-toolkit
- * actions (roster, user, run, routines…) always render. They carry demo
- * weight, not decoration. */
+ * `routine:<id>`), and hold-drag reordering persisted by the parent.
+ * The settings arranger is the single source of truth: EVERY configured
+ * button renders here, in its saved order — hiding unconnected-toolkit orbs
+ * made the live bar visibly disagree with the arranger ("buttons aren't
+ * synced"). Unconnected toolkit orbs render dimmed and click-to-connect. */
 export default function Orbs({
   buttons,
   connectedSlugs,
@@ -259,24 +258,11 @@ export default function Orbs({
     pollTimers.current.timeout = window.setTimeout(stopConnectPoll, CONNECT_POLL_WINDOW_MS);
   }
 
-  const visibleButtons = buttons.filter((btn) => {
-    const slug = actionToolkit(btn.action);
-    return !slug || connectedSlugs.has(slug);
-  });
+  // Arranger = source of truth: render every configured button, in order.
+  const visibleButtons = buttons;
 
-  /** Reordering only ever drags the VISIBLE orbs, so `onReorder` must not
-   * receive that shorter list as the new saved order — that would silently
-   * drop every hidden (unconnected-toolkit) button from prefs.buttons.
-   * Hidden buttons are appended back, order preserved among themselves; once
-   * their toolkit connects they reappear (at the end) rather than vanish. */
-  function handleReorder(nextVisible: UserPrefsButton[]) {
-    if (nextVisible.length === buttons.length) {
-      onReorder(nextVisible);
-      return;
-    }
-    const visibleIds = new Set(nextVisible.map((b) => b.id));
-    const hidden = buttons.filter((b) => !visibleIds.has(b.id));
-    onReorder([...nextVisible, ...hidden]);
+  function handleReorder(next: UserPrefsButton[]) {
+    onReorder(next);
   }
 
   function renderOrb(btn: UserPrefsButton) {

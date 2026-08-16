@@ -21,6 +21,8 @@ export interface UserPrefs {
    * avoid a store/types -> lib dependency. Written by the TopNav toggle via
    * `putSettings({ theme })`, read back by `syncThemeFromPrefs` on load. */
   theme?: 'dark' | 'light';
+  /** Horizontal placement of the command-bar cluster (input + orbs). */
+  barAlignment?: 'left' | 'center' | 'right';
 }
 
 export const DEFAULT_PREFS: UserPrefs = {

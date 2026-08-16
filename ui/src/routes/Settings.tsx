@@ -195,6 +195,28 @@ export default function Settings() {
             connections={connections}
             routines={routines}
           />
+          {/* Placement — where the whole input cluster (bar + orbs) sits on
+              the home screen. */}
+          <div className="mt-4 flex items-center gap-3">
+            <span className="text-[12.5px] text-white/50">Bar placement</span>
+            <div className="flex overflow-hidden rounded-lg border border-white/10">
+              {(['left', 'center', 'right'] as const).map((a) => (
+                <button
+                  key={a}
+                  type="button"
+                  onClick={() => setDraft((d) => ({ ...d, barAlignment: a }))}
+                  aria-pressed={(draft.barAlignment ?? 'center') === a}
+                  className={`px-3 py-1.5 text-[12px] capitalize transition-colors ${
+                    (draft.barAlignment ?? 'center') === a
+                      ? 'bg-accent/20 text-accent-bright'
+                      : 'text-white/45 hover:bg-white/5 hover:text-white/80'
+                  }`}
+                >
+                  {a === 'center' ? 'middle' : a}
+                </button>
+              ))}
+            </div>
+          </div>
         </SectionCard>
 
         <SectionCard title="Suggestions" subtitle="Context-aware next-action ghost text in the command bar.">

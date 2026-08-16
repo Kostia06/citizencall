@@ -46,6 +46,7 @@ export default function Bar() {
   const [contextPrompt, setContextPrompt] = useState('');
   const [suggestionsEnabled, setSuggestionsEnabled] = useState(true);
   const [barButtons, setBarButtons] = useState<UserPrefsButton[]>(DEFAULT_PREFS.buttons);
+  const [barAlignment, setBarAlignment] = useState<'left' | 'center' | 'right'>('center');
   const reorderSaveRef = useRef<number | undefined>(undefined);
   const runHandleRef = useRef<RunHandle | null>(null);
   const liveTimeoutRef = useRef<number | undefined>(undefined);
@@ -93,6 +94,7 @@ export default function Bar() {
           setContextPrompt(prefs.contextPrompt);
           setSuggestionsEnabled(prefs.suggestions);
           if (prefs.buttons.length > 0) setBarButtons(prefs.buttons);
+          setBarAlignment(prefs.barAlignment ?? 'center');
         }
       })
       .catch(() => undefined);
@@ -287,6 +289,10 @@ export default function Bar() {
     handleSubmit(routine.prompt, { bypassCache: false, source: 'text', attachments: [] });
   }
 
+  // "Bar placement" (settings) — the input cluster + transcript sit left,
+  // middle, or right of the screen. max-w stays; only the margins move.
+  const alignClass = barAlignment === 'left' ? 'mr-auto ml-0' : barAlignment === 'right' ? 'ml-auto mr-0' : 'mx-auto';
+
   return (
     <div className="relative flex h-screen w-full flex-col overflow-hidden px-6">
       {/* pinned top nav */}
@@ -303,7 +309,7 @@ export default function Bar() {
       <motion.div
         layout
         transition={reduceMotion ? layoutFlowReduced : layoutFlow}
-        className={`mx-auto flex w-full max-w-2xl shrink-0 flex-col ${
+        className={`${alignClass} flex w-full max-w-2xl shrink-0 flex-col ${
           hasContent ? 'pt-24 pb-4' : 'flex-1 items-center justify-center'
         }`}
       >
@@ -366,7 +372,7 @@ export default function Bar() {
         <div
           ref={transcriptRef}
           onScroll={handleTranscriptScroll}
-          className="transcript-scroll mx-auto min-h-0 w-full max-w-2xl flex-1 overflow-y-auto pb-8"
+          className={`transcript-scroll ${alignClass} min-h-0 w-full max-w-2xl flex-1 overflow-y-auto pb-8`}
         >
           {restored
             .filter((r) => r.afterTurnId === null)

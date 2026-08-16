@@ -7,6 +7,8 @@ export interface UserPrefs {
   suggestions: boolean;
   /** UI theme; absent = follow prefers-color-scheme (UI-side default dark). */
   theme?: 'dark' | 'light';
+  /** Horizontal placement of the command-bar cluster (input + orbs). */
+  barAlignment?: 'left' | 'center' | 'right';
 }
 
 export const DEFAULT_PREFS: UserPrefs = {
@@ -25,7 +27,7 @@ export const DEFAULT_PREFS: UserPrefs = {
 // The UI's Save sends the FULL draft, so every field the UI can hold must be
 // allowed here — an unknown key 400s the whole PUT (found in review: the
 // suggestions toggle and theme choice silently failed to persist live).
-const ALLOWED_KEYS = new Set(['version', 'keybindings', 'buttons', 'contextPrompt', 'suggestions', 'theme']);
+const ALLOWED_KEYS = new Set(['version', 'keybindings', 'buttons', 'contextPrompt', 'suggestions', 'theme', 'barAlignment']);
 
 export function validatePrefsPatch(patch: unknown): { ok: true; value: Partial<UserPrefs> } | { ok: false; reason: string } {
   if (typeof patch !== 'object' || patch === null) return { ok: false, reason: 'Body must be an object.' };
@@ -36,6 +38,7 @@ export function validatePrefsPatch(patch: unknown): { ok: true; value: Partial<U
   if ('contextPrompt' in p && typeof p.contextPrompt !== 'string') return { ok: false, reason: 'contextPrompt must be a string.' };
   if ('suggestions' in p && typeof p.suggestions !== 'boolean') return { ok: false, reason: 'suggestions must be a boolean.' };
   if ('theme' in p && p.theme !== 'dark' && p.theme !== 'light') return { ok: false, reason: "theme must be 'dark' or 'light'." };
+  if ('barAlignment' in p && !['left', 'center', 'right'].includes(p.barAlignment as string)) return { ok: false, reason: "barAlignment must be 'left', 'center' or 'right'." };
   return { ok: true, value: p as Partial<UserPrefs> };
 }
 
@@ -48,5 +51,6 @@ export function mergePrefs(base: UserPrefs, patch: Partial<UserPrefs>): UserPref
     contextPrompt: patch.contextPrompt ?? base.contextPrompt,
     suggestions: patch.suggestions ?? base.suggestions ?? true,
     ...(patch.theme ?? base.theme ? { theme: patch.theme ?? base.theme } : {}),
+    ...(patch.barAlignment ?? base.barAlignment ? { barAlignment: patch.barAlignment ?? base.barAlignment } : {}),
   };
 }
