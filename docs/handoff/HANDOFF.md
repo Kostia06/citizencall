@@ -696,3 +696,14 @@ Repo /Users/kostiailn/Projects/forge-hack, branch feature/ui. Dev: vite :5173, w
 2. Packaged-app update recipe is in the summary above (Node 26 packager bug — do NOT trust `pnpm dist` until Node is downgraded or packager fixed).
 3. Resend domain still pending (id cb283894-…-b80bbdb7b994, NEVER recreate). When verified: `cd worker && printf '%s' "CitizenCall <auth@citizencall.dev>" | npx wrangler secret put RESEND_FROM`.
 4. Remaining human-gated: demo filming (voice in Chrome), gold-label pass. Everything else shipped.
+
+## Handoff: 2026-08-16T13:55:00Z (closing stamp — session complete)
+
+### Model Summary
+- SESSION CLOSED with everything shipped and verified. Prod citizencall.dev = version `5a588685`, deployed from HEAD; `main` == `feature/ui` == remote (see git log; last content commit before records: cache-keeper pair cc4a5d5/07b4734).
+- Cache keeper VERIFIED LIVE on prod: cron tick re-mints ≤5 expiring plans from 69 curated prompts (anon-keyed), refreshes 12 toolkits' tool lists + catalog, resolves auth configs (negative cache). Seed: plan_cache 76→149, toolkit_tools 6→19, 11/12 auth configs. Fresh-anon: plan hits 0.76–2.5s, connect card ≤1.2s. Full suite 59 files green.
+- FINAL Electron test on the packaged app vs this prod version: dark pinned, autofocus, pill solid rgb(28,28,30), "what can you do" answered 0.7s in the solid card, Esc collapse works. Release v0.1.0's CitizenCall.dmg/zip contain this exact bundle.
+- NOTHING in flight. Human-gated only: Resend domain verification (then RESEND_FROM secret = "CitizenCall <auth@citizencall.dev>"), demo filming (voice in Chrome), optional gold-label pass.
+
+### Handoff Context (paste into next session)
+State is CLOSED — resume only for new asks. Repo /Users/kostiailn/Projects/forge-hack, branch feature/ui == main. Prod deploy recipe: `cd ui && pnpm build` then `cd worker && npx wrangler deploy`. Packaged-app update recipe + Node-26 packager bug: see the 13:15 entry above. Cache keeper runs itself (cron */15) — check `wrangler d1 execute understudy --remote` plan_cache/toolkit_tools counts if judges report slowness. All hard-won gotchas: 13:15 entry + mem0 ("forge-hack").
