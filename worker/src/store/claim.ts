@@ -46,9 +46,12 @@ export async function claimAnonActor(db: D1Database, fromUserId: string, toUserI
   // schema), not the store schema — some test environments apply only the
   // auth+store schemas, so probe for the table instead of assuming it.
   // Same probe-then-update for the lazily-provisioned tables other
-  // sub-systems own: routines (routines/store) and memories (memory/store) —
-  // both have uuid PKs, so a plain user_id re-parent is safe and idempotent.
-  for (const table of ['runs', 'user_routines', 'user_memories']) {
+  // sub-systems own: routines (routines/store), memories (memory/store) and
+  // model providers (store/user-providers) — all have uuid PKs, so a plain
+  // user_id re-parent is safe and idempotent. user_providers goes through
+  // the probe (not the batch above) so a deployed DB that predates the table
+  // can still log users in — the batch is atomic and would fail whole.
+  for (const table of ['runs', 'user_routines', 'user_memories', 'user_providers']) {
     const exists = await db
       .prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name=?`)
       .bind(table)

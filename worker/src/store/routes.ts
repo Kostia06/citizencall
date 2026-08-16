@@ -19,6 +19,8 @@ import { listConnections, revokeConnection } from './connections';
 import { claimAnonActor } from './claim';
 import { createMcp, deleteMcp, getMcp, listMcps, updateMcp } from './mcps';
 import { listToolOverrides, setToolOverride } from './tools';
+import { createProvider, deleteProvider, listProviders, maskApiKey, setProviderEnabled } from './user-providers';
+import type { UserProvider } from '../providers/user-models';
 
 type Vars = { authUserId?: string; authSessionId?: string; authEmailVerified?: boolean };
 type StoreContext = Context<{ Bindings: Env; Variables: Vars }>;
@@ -100,6 +102,78 @@ storeRoutes.get('/sessions', async (c) => {
       status: r.status,
     }))
   );
+});
+
+// ---- Model providers (bring-your-own-key) ---------------------------------
+// Anon-friendly like /connections: an anonymous session can save a key and
+// claim-on-login re-parents the row. The API key is write-only — every read
+// path returns it masked to `…last4`; the full key never leaves the server
+// after creation.
+
+// min(8): a masked key echoes its last 4 chars, which must never be most of
+// the key. Real provider keys are all far longer.
+const providerCreateSchema = z
+  .object({
+    kind: z.enum(['anthropic', 'openai', 'custom']),
+    model: z.string().trim().min(1, 'model required').max(120),
+    apiKey: z.string().trim().min(8, 'apiKey too short').max(500),
+    baseUrl: z
+      .string()
+      .url()
+      .refine((u) => /^https:\/\//i.test(u), { message: 'baseUrl must be https' })
+      .optional(),
+    enabled: z.boolean().optional(),
+  })
+  .strict()
+  .superRefine((v, rctx) => {
+    // base_url is what a 'custom' provider IS; on the fixed-endpoint kinds a
+    // stray baseUrl would be silently ignored — reject it loudly instead.
+    if (v.kind === 'custom' && !v.baseUrl) {
+      rctx.addIssue({ code: 'custom', path: ['baseUrl'], message: 'baseUrl required for custom providers' });
+    }
+    if (v.kind !== 'custom' && v.baseUrl) {
+      rctx.addIssue({ code: 'custom', path: ['baseUrl'], message: `baseUrl not allowed for ${v.kind}` });
+    }
+  });
+
+function maskedProvider(p: UserProvider) {
+  return {
+    id: p.id,
+    kind: p.kind,
+    baseUrl: p.baseUrl,
+    model: p.model,
+    apiKeyMasked: maskApiKey(p.apiKey),
+    enabled: p.enabled,
+    createdAt: p.createdAt,
+  };
+}
+
+storeRoutes.get('/providers', async (c) => {
+  const actor = await resolveActor(c);
+  return c.json((await listProviders(c.env.DB, actor.userId)).map(maskedProvider));
+});
+
+storeRoutes.post('/providers', async (c) => {
+  const parsed = providerCreateSchema.safeParse(await jsonBody(c));
+  if (!parsed.success) return c.json({ error: 'invalid provider', details: parsed.error.flatten() }, 400);
+  const actor = await resolveActor(c);
+  const { kind, model, apiKey, baseUrl, enabled } = parsed.data;
+  const created = await createProvider(c.env.DB, { userId: actor.userId, kind, model, apiKey, baseUrl, enabled, now: now() });
+  return c.json(maskedProvider(created), 201);
+});
+
+storeRoutes.patch('/providers/:id', async (c) => {
+  const b = await jsonBody(c);
+  if (typeof b.enabled !== 'boolean') return c.json({ error: 'enabled (boolean) required' }, 400);
+  const actor = await resolveActor(c);
+  const ok = await setProviderEnabled(c.env.DB, actor.userId, c.req.param('id'), b.enabled);
+  return ok ? c.body(null, 200) : c.json({ error: 'Not found.' }, 404);
+});
+
+storeRoutes.delete('/providers/:id', async (c) => {
+  const actor = await resolveActor(c);
+  const ok = await deleteProvider(c.env.DB, actor.userId, c.req.param('id'));
+  return ok ? c.body(null, 204) : c.json({ error: 'Not found.' }, 404);
 });
 
 // Custom MCP entry validation: name required, url must be http(s), headers

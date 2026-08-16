@@ -25,7 +25,9 @@ CREATE TABLE IF NOT EXISTS user_connections(user_id TEXT NOT NULL, toolkit TEXT 
 CREATE TABLE IF NOT EXISTS user_mcps(id TEXT PRIMARY KEY, user_id TEXT NOT NULL, name TEXT NOT NULL, config_json TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 1, created_at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS user_tools(user_id TEXT NOT NULL, toolkit TEXT NOT NULL, tool TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 1, PRIMARY KEY(user_id, toolkit, tool));
 CREATE TABLE IF NOT EXISTS user_settings(user_id TEXT PRIMARY KEY, prefs_json TEXT NOT NULL, updated_at INTEGER NOT NULL);
-CREATE INDEX IF NOT EXISTS idx_user_mcps_user ON user_mcps(user_id);`;
+CREATE TABLE IF NOT EXISTS user_providers(id TEXT PRIMARY KEY, user_id TEXT NOT NULL, kind TEXT NOT NULL CHECK(kind IN ('anthropic','openai','custom')), base_url TEXT, model TEXT NOT NULL, api_key TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 1, created_at INTEGER NOT NULL);
+CREATE INDEX IF NOT EXISTS idx_user_mcps_user ON user_mcps(user_id);
+CREATE INDEX IF NOT EXISTS idx_user_providers_user ON user_providers(user_id);`;
 
 export async function applyStoreSchema(db: D1Database): Promise<void> {
   for (const stmt of STORE_SCHEMA.split(';').map((s) => s.trim()).filter(Boolean)) {

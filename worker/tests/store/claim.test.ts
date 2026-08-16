@@ -11,6 +11,7 @@ import { createUser, setEmailVerified } from '../../src/auth/users';
 import { hashPassword } from '../../src/auth/password';
 import { ensureTwofaSchema } from '../../src/auth/twofa';
 import { createState } from '../../src/providers/composio';
+import { createProvider, listProviders } from '../../src/store/user-providers';
 
 const jsonHeaders = { 'Content-Type': 'application/json' };
 const PASSWORD = 'correct horse battery staple 9!';
@@ -249,4 +250,23 @@ it('signup on an EXISTING email must NOT claim (caller never authenticated)', as
     .bind(anonId)
     .first<{ connected_account_id: string }>();
   expect(row!.connected_account_id).toBe('ca_no_steal');
+});
+
+it('login re-keys user_providers rows onto the account', async () => {
+  const { cookie, anonId } = await connectAnon();
+  await createProvider(env.DB, {
+    userId: anonId,
+    kind: 'openai',
+    model: 'gpt-4o-mini',
+    apiKey: 'sk-test-claim-abcdef1234',
+    now: 1,
+  });
+
+  const userId = await makeLoginUser('claim-provider@example.com');
+  await login('claim-provider@example.com', cookie);
+
+  expect(await listProviders(env.DB, anonId)).toHaveLength(0); // nothing left behind
+  const claimed = await listProviders(env.DB, userId);
+  expect(claimed).toHaveLength(1);
+  expect(claimed[0]).toMatchObject({ kind: 'openai', model: 'gpt-4o-mini', apiKey: 'sk-test-claim-abcdef1234' });
 });
