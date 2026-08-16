@@ -16,7 +16,7 @@
     "not_found_handling": "single-page-application",
     // "/__scheduled" keeps `wrangler dev --test-scheduled`'s cron-trigger
     // endpoint reachable instead of being swallowed by the SPA fallback.
-    "run_worker_first": ["/api/*", "/oauth/*", "/auth/*", "/__scheduled"]
+    "run_worker_first": ["/api/*", "/oauth/*", "/auth/*", "/v1/*", "/__scheduled"]
   },
   "durable_objects": {
     "bindings": [{ "name": "RUN", "class_name": "RunDO" }]

@@ -570,6 +570,26 @@ export interface RunDetail {
   toolCalls: unknown[];
 }
 
+/** One row of GET /api/keys — masked key + usage counters. */
+export interface ApiKeySummary {
+  id: string;
+  name: string;
+  masked: string;
+  createdAt: number;
+  lastUsedAt: number | null;
+  requests: number;
+  costUsd: number;
+}
+
+/** POST /api/keys response — `key` is shown exactly once. */
+export interface CreatedApiKey {
+  id: string;
+  name: string;
+  key: string;
+  masked: string;
+  createdAt: number;
+}
+
 export const storeApi = {
   /** The actor's recent runs for the history drawer. Works logged-out too —
    * the `__Host-anon` cookie scopes the list to this browser's anonymous
@@ -584,6 +604,27 @@ export const storeApi = {
       },
       async () => [],
     );
+  },
+
+  // ---- Developer API keys (Settings → Personal). Full-auth only. ----------
+  async listApiKeys(authedFetch: AuthedFetch): Promise<ApiKeySummary[]> {
+    const res = await authedFetch('/api/keys');
+    if (!res.ok) throw new AuthError(await readJsonError(res), res.status);
+    return res.json();
+  },
+  /** The returned `key` is the ONLY time the full value is available. */
+  async createApiKey(authedFetch: AuthedFetch, name: string): Promise<CreatedApiKey> {
+    const res = await authedFetch('/api/keys', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name }),
+    });
+    if (!res.ok) throw new AuthError(await readJsonError(res), res.status);
+    return res.json();
+  },
+  async deleteApiKey(authedFetch: AuthedFetch, id: string): Promise<void> {
+    const res = await authedFetch(`/api/keys/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    if (!res.ok && res.status !== 404) throw new AuthError(await readJsonError(res), res.status);
   },
 
   /** Permanently deletes one past run (and its trace rows) from the actor's

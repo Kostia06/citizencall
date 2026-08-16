@@ -18,6 +18,7 @@ import { validatePrefsPatch } from './prefs';
 import { listConnections, revokeConnection } from './connections';
 import { claimAnonActor } from './claim';
 import { createMcp, deleteMcp, getMcp, listMcps, updateMcp } from './mcps';
+import { createApiKey, deleteApiKey, listApiKeys } from './api-keys';
 import { listToolOverrides, setToolOverride } from './tools';
 import { createProvider, deleteProvider, listProviders, maskApiKey, setProviderEnabled } from './user-providers';
 import type { UserProvider } from '../providers/user-models';
@@ -119,6 +120,26 @@ storeRoutes.delete('/sessions/:id', async (c) => {
     c.env.DB.prepare('DELETE FROM tool_calls WHERE run_id=?').bind(runId),
   ]);
   return c.body(null, 204);
+});
+
+// ---- Developer API keys ----------------------------------------------------
+// Full-auth gated like /mcps (a programmatic key is a credential — anon
+// sessions don't get to mint one). The full key appears ONLY in the create
+// response; list rows are masked to …last4 with usage counters.
+
+const keyCreateSchema = z.object({ name: z.string().trim().min(1).max(60) }).strict();
+
+storeRoutes.get('/keys', ...gate, async (c) => c.json(await listApiKeys(c.env.DB, uid(c))));
+
+storeRoutes.post('/keys', ...gate, async (c) => {
+  const parsed = keyCreateSchema.safeParse(await jsonBody(c));
+  if (!parsed.success) return c.json({ error: 'invalid key', details: parsed.error.flatten() }, 400);
+  return c.json(await createApiKey(c.env.DB, { userId: uid(c), name: parsed.data.name, now: now() }), 201);
+});
+
+storeRoutes.delete('/keys/:id', ...gate, async (c) => {
+  const ok = await deleteApiKey(c.env.DB, uid(c), c.req.param('id'));
+  return ok ? c.body(null, 204) : c.json({ error: 'Not found.' }, 404);
 });
 
 // ---- Model providers (bring-your-own-key) ---------------------------------

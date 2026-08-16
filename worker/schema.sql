@@ -61,3 +61,15 @@ CREATE INDEX IF NOT EXISTS idx_twofa_user ON twofa_challenges(user_id);
 
 -- /api/sessions lists an actor's runs — unindexed user_id scans got slow.
 CREATE INDEX IF NOT EXISTS idx_runs_user ON runs(user_id, created_at DESC);
+
+-- Developer API keys (store/api-keys.ts — also lazily provisioned).
+CREATE TABLE IF NOT EXISTS api_keys(
+  id TEXT PRIMARY KEY, user_id TEXT NOT NULL, name TEXT NOT NULL,
+  key_hash TEXT NOT NULL UNIQUE, last4 TEXT NOT NULL,
+  created_at INTEGER NOT NULL, last_used_at INTEGER,
+  requests INTEGER NOT NULL DEFAULT 0, cost_usd REAL NOT NULL DEFAULT 0);
+CREATE INDEX IF NOT EXISTS idx_api_keys_user ON api_keys(user_id);
+
+-- MCP caches (cache/mcp.ts — also lazily provisioned).
+CREATE TABLE IF NOT EXISTS mcp_tools_cache(url_hash TEXT PRIMARY KEY, tools_json TEXT NOT NULL, created_at INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS mcp_select_cache(key TEXT PRIMARY KEY, value_json TEXT NOT NULL, created_at INTEGER NOT NULL);

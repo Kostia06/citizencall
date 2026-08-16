@@ -19,6 +19,7 @@ import { routineRoutes } from './routines/routes';
 import { scheduled } from './routines/scheduler';
 import { upsertConnection } from './store/connections';
 import { checkAndIncrement } from './auth/throttle';
+import { recordApiKeyCost, resolveApiKey } from './store/api-keys';
 import { suggestNextAction } from './pipeline/suggest';
 import { historySchema } from './pipeline/conversation';
 import funnelFixture from '../../artifacts/funnel.example.json';
@@ -119,6 +120,105 @@ app.get('/api/run/:id', async (c) => {
   return c.json(run);
 });
 
+// ---- Public developer API (/v1) -------------------------------------------
+// Bearer auth with a `cc_live_…` key (Settings → Personal → API keys). The
+// key resolves to its owner, so /v1 runs execute with that user's
+// connections, memories, and custom MCPs — same identity model as the UI.
+
+const askRequestSchema = z.object({
+  text: z.string().min(1).max(4000),
+  noCache: z.boolean().optional(),
+});
+
+type ApiKeyIdentity = { userId: string; keyId: string };
+
+async function apiKeyFromRequest(c: { req: { header(n: string): string | undefined }; env: Env }): Promise<ApiKeyIdentity | null> {
+  const auth = c.req.header('Authorization');
+  const key = auth?.startsWith('Bearer ') ? auth.slice(7).trim() : null;
+  if (!key) return null;
+  return resolveApiKey(c.env.DB, key, Date.now());
+}
+
+/** Public run view — the internal doc minus other-user-irrelevant fields. */
+function publicRunView(doc: NonNullable<Awaited<ReturnType<typeof getRun>>>) {
+  const { run, hops } = doc as unknown as {
+    run: {
+      id: string;
+      request_text: string;
+      status: string;
+      answer_text: string | null;
+      total_cost_usd: number;
+      total_ms: number;
+      created_at: number;
+    };
+    hops: Array<{ model_id: string; verdict: string | null; latency_ms: number | null }>;
+  };
+  return {
+    id: run.id,
+    status: run.status,
+    text: run.request_text,
+    answer: run.answer_text,
+    costUsd: run.total_cost_usd,
+    totalMs: run.total_ms,
+    createdAt: run.created_at,
+    steps: hops.map((h) => ({ model: h.model_id, verdict: h.verdict, ms: h.latency_ms })),
+  };
+}
+
+// Blocking ask: starts a run and waits (up to ~50s of wall clock, cheap on
+// Workers) for it to settle. A run still going at the deadline returns 202
+// with the id — poll GET /v1/runs/:id. Completed runs bill their measured
+// cost to the key here; runs finishing after the 202 are not re-billed (the
+// status endpoint is a read, never a charge).
+app.post('/v1/ask', async (c) => {
+  const identity = await apiKeyFromRequest(c);
+  if (!identity) return c.json({ error: 'invalid or missing API key' }, 401);
+
+  const throttle = await checkAndIncrement(c.env.DB, `v1:key:${identity.keyId}`, Date.now(), {
+    windowMs: 60_000,
+    max: 30,
+  });
+  if (!throttle.allowed) {
+    c.header('Retry-After', String(Math.ceil(throttle.retryAfterMs / 1000)));
+    return c.json({ error: 'rate limited' }, 429);
+  }
+
+  const parsed = askRequestSchema.safeParse(await c.req.json().catch(() => null));
+  if (!parsed.success) return c.json({ error: 'invalid request', details: parsed.error.flatten() }, 400);
+
+  const runId = crypto.randomUUID();
+  const stub = c.env.RUN.get(c.env.RUN.idFromName(runId));
+  await stub.fetch('https://run.do/start', {
+    method: 'POST',
+    body: JSON.stringify({
+      runId,
+      userId: identity.userId,
+      text: parsed.data.text,
+      source: 'text',
+      noCache: parsed.data.noCache ?? false,
+    }),
+  });
+
+  for (let waited = 0; waited < 50_000; waited += 1500) {
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    const doc = await getRun(c.env.DB, runId);
+    const status = doc?.run?.status as string | undefined;
+    if (doc && status && status !== 'running') {
+      await recordApiKeyCost(c.env.DB, identity.keyId, Number(doc.run.total_cost_usd ?? 0)).catch(() => undefined);
+      return c.json(publicRunView(doc));
+    }
+  }
+  return c.json({ id: runId, status: 'running' }, 202);
+});
+
+app.get('/v1/runs/:id', async (c) => {
+  const identity = await apiKeyFromRequest(c);
+  if (!identity) return c.json({ error: 'invalid or missing API key' }, 401);
+  const doc = await getRun(c.env.DB, c.req.param('id'));
+  if (!doc || doc.run.user_id !== identity.userId) return c.json({ error: 'not found' }, 404);
+  return c.json(publicRunView(doc));
+});
+
 // Live report: policy ladders + alternates + real catalog prices merged with
 // aggregate run/hop stats from D1 (zeros when no runs yet) — reporting.ts.
 app.get('/api/roster', async (c) => c.json(await buildRosterReport(c.env.DB)));
@@ -127,7 +227,12 @@ app.get('/api/roster', async (c) => c.json(await buildRosterReport(c.env.DB)));
 // committed example fixture keeps the route live before the harness has
 // produced a real one — same pattern as policy.ts.
 app.get('/api/benchmark', async (c) => c.json(await buildBenchmarkReport(c.env.DB)));
-app.get('/api/funnel', (c) => c.json(funnelFixture));
+app.get('/api/funnel', (c) => {
+  // Harness artifact — changes only on deploy. Let the browser and CF edge
+  // hold it for an hour instead of re-serializing per pageview.
+  c.header('Cache-Control', 'public, max-age=3600');
+  return c.json(funnelFixture);
+});
 
 const suggestRequestSchema = z.object({ context: z.array(z.string()).max(50) });
 
@@ -159,7 +264,12 @@ app.post('/api/suggest', async (c) => {
 // returns 100+ apps (live from Composio when COMPOSIO_API_KEY is set and
 // reachable, otherwise the bundled fallback list), so the UI never renders
 // an empty picker.
-app.get('/api/toolkits', async (c) => c.json(await getToolkitCatalog(c.env)));
+app.get('/api/toolkits', async (c) => {
+  // Global catalog, identical for every user — edge/browser-cacheable for
+  // 10 minutes (the worker-side catalog cache already refreshes daily).
+  c.header('Cache-Control', 'public, max-age=600');
+  return c.json(await getToolkitCatalog(c.env));
+});
 
 // Any Composio catalog slug (1,200+ toolkits), not a hardcoded allowlist —
 // the slug is validated for shape here and resolved against Composio's
