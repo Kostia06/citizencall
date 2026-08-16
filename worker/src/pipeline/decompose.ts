@@ -20,6 +20,7 @@ import type { Env } from '../env';
 import { getPlan, normalizePlanKey } from '../cache/plan';
 import { findNearPlan, putPlanIndexed } from '../cache/planSemantic';
 import { callFeatherless } from '../providers/featherless';
+import { getToolkitTools } from '../providers/composio-tools';
 import type { Plan, Policy, SubTask, TaskKind } from '../types';
 
 const MAX_SUBTASKS = 4;
@@ -52,6 +53,11 @@ const SubTaskDraft = z.object({
   // sub-task in resolveTool rather than nulling the whole plan — one
   // hallucinated toolkit name shouldn't discard an otherwise-good plan.
   toolkit: z.string().nullish(),
+  // Real Composio tool slug (e.g. DISCORD_LIST_MY_GUILDS) when the planner
+  // saw a tool listing for the toolkit. Tolerant free string: the executor's
+  // resolver (providers/composio-tools.ts) maps unknown/invented names onto
+  // the toolkit's nearest real tool, so a bad pick degrades, never discards.
+  tool: z.string().nullish(),
   sensitive: z.boolean().optional().default(false),
 });
 type SubTaskDraft = z.infer<typeof SubTaskDraft>;
@@ -59,7 +65,7 @@ const PlanDraft = z.array(SubTaskDraft).min(1).max(MAX_SUBTASKS);
 
 const BUILTIN_TOOLKITS = ['github', 'gmail'] as const;
 
-function systemPrompt(extraToolkits: string[]): string {
+function systemPrompt(extraToolkits: string[], toolListing = ''): string {
   const toolkits = [...BUILTIN_TOOLKITS, ...extraToolkits];
   const list = toolkits.map((t) => `"${t}"`).join('|');
   return [
@@ -67,9 +73,40 @@ function systemPrompt(extraToolkits: string[]): string {
     `of 1 to ${MAX_SUBTASKS} sub-tasks. Each sub-task kind is one of: classify, extract_fields,`,
     'summarize, normalize. Reply with ONLY a JSON array, no prose and no code fences.',
     'Each element: {"kind": <kind>, "instruction": <imperative string>, "needsTools": <bool>,',
-    `"toolkit": <${list}|null>, "sensitive": <bool>}. Set needsTools=true and toolkit`,
-    'when the step must read from one of those tools. Keep instructions concise and self-contained.',
+    `"toolkit": <${list}|null>, "tool": <tool slug|null>, "sensitive": <bool>}. Set needsTools=true and toolkit`,
+    'when the step must read from or act on one of those tools. Keep instructions concise and self-contained.',
+    ...(toolListing
+      ? [
+          'Available tools per toolkit. When a step uses a toolkit, set "tool" to the ONE exact slug',
+          'whose description best matches what the step does — never the first listed — or null if none fits:',
+          toolListing,
+        ]
+      : []),
   ].join(' ');
+}
+
+// The planner's tool vocabulary: real Composio tool slugs for the run's
+// toolkits, so plans name executable tools (GITHUB_LIST_COMMITS) instead of
+// invented ones ('call'). Bounded hard — prompt size is a cost lever — and
+// any discovery failure yields '' (the planner works fine without a listing;
+// the executor's resolver covers the gap).
+const MAX_LISTED_TOOLKITS = 4;
+const MAX_LISTED_TOOLS = 8;
+
+async function buildToolListing(env: Env, toolkits: string[]): Promise<string> {
+  const unique = [...new Set(toolkits)].slice(0, MAX_LISTED_TOOLKITS);
+  const sections: string[] = [];
+  for (const toolkit of unique) {
+    try {
+      const tools = await getToolkitTools(env, toolkit);
+      if (tools.length === 0) continue;
+      const lines = tools.slice(0, MAX_LISTED_TOOLS).map((t) => `${t.slug}: ${t.description || t.name}`);
+      sections.push(`[${toolkit}] ${lines.join(' | ')}`);
+    } catch {
+      // discovery down for this toolkit — list the others
+    }
+  }
+  return sections.join(' ');
 }
 
 export interface DecomposeResult {
@@ -161,8 +198,11 @@ const FAST_PLANNER_MAX_TOKENS = 700; // non-reasoning: the JSON fits comfortably
 // Returns null (not throws) on any failure so the caller falls back to the
 // heuristic. A planning misfire must never take down the whole run.
 async function modelPlan(env: Env, policy: Policy, text: string, extraToolkits: string[]): Promise<Plan | null> {
+  // Mentioned/MCP toolkits first — they're what this prompt is actually
+  // about — then the builtins, within the listing cap.
+  const toolListing = await buildToolListing(env, [...extraToolkits, ...BUILTIN_TOOLKITS]);
   const messages = [
-    { role: 'system' as const, content: systemPrompt(extraToolkits) },
+    { role: 'system' as const, content: systemPrompt(extraToolkits, toolListing) },
     { role: 'user' as const, content: text },
   ];
 
@@ -209,7 +249,7 @@ export function planFromContent(content: string, extraToolkits: string[] = []): 
 
 function buildSubTask(d: SubTaskDraft, idx: number, id: string, allowedToolkits: ReadonlySet<string>): SubTask {
   const hint = d.needsTools && d.toolkit && allowedToolkits.has(d.toolkit) ? d.toolkit : null;
-  const tool = resolveTool(d.instruction, hint);
+  const tool = resolveTool(d.instruction, hint, d.tool ?? null);
   return {
     id,
     idx,
@@ -223,13 +263,16 @@ function buildSubTask(d: SubTaskDraft, idx: number, id: string, allowedToolkits:
   };
 }
 
-function resolveTool(instruction: string, toolkitHint: string | null) {
+function resolveTool(instruction: string, toolkitHint: string | null, toolHint: string | null = null) {
   // The model's own toolkit pick wins over the text patterns — "send a
   // discord message about the repo" must stay discord, not get hijacked to
   // github because "repo" matched a hint regex. Patterns are the fallback
   // for plans where the model flagged needsTools but named no toolkit.
-  // MCP/catalog toolkits have no per-tool catalog yet — 'call' is the single
-  // generic tool name the MCP transport (pipeline/mcp.ts) dispatches on.
+  // A model-picked tool slug (from the system prompt's real-tool listing)
+  // wins over the static defaults; 'call' remains the generic placeholder
+  // the executor's resolver (providers/composio-tools.ts) maps to a real
+  // slug at run time.
+  if (toolkitHint && toolHint) return { toolkit: toolkitHint, tool: toolHint };
   if (toolkitHint) return DEFAULT_TOOL[toolkitHint] ?? { toolkit: toolkitHint, tool: 'call' };
   const byText = TOOL_HINTS.find((h) => h.pattern.test(instruction));
   if (byText) return { toolkit: byText.toolkit, tool: byText.tool };

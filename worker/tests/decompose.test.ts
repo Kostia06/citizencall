@@ -54,4 +54,40 @@ describe('planFromContent', () => {
     const five = Array.from({ length: 5 }, (_, i) => ({ kind: 'summarize', instruction: `step ${i}` }));
     expect(planFromContent(JSON.stringify(five))).toBeNull();
   });
+
+  it('honors a model-picked real tool slug over the static defaults', () => {
+    const content = JSON.stringify([
+      {
+        kind: 'summarize',
+        instruction: 'Summarize open pull requests',
+        needsTools: true,
+        toolkit: 'github',
+        tool: 'GITHUB_LIST_PULL_REQUESTS',
+      },
+    ]);
+    const plan = planFromContent(content);
+    expect(plan!.subTasks[0]!.toolCall).toEqual({ toolkit: 'github', tool: 'GITHUB_LIST_PULL_REQUESTS', args: {} });
+  });
+
+  it('keeps a real tool slug for a non-builtin toolkit in the vocabulary', () => {
+    const content = JSON.stringify([
+      {
+        kind: 'summarize',
+        instruction: 'Check discord messages',
+        needsTools: true,
+        toolkit: 'discord',
+        tool: 'DISCORD_LIST_MY_GUILDS',
+      },
+    ]);
+    const plan = planFromContent(content, ['discord']);
+    expect(plan!.subTasks[0]!.toolCall).toEqual({ toolkit: 'discord', tool: 'DISCORD_LIST_MY_GUILDS', args: {} });
+  });
+
+  it('still defaults to the static tool when the model names no tool', () => {
+    const content = JSON.stringify([
+      { kind: 'summarize', instruction: 'Summarize the repo activity', needsTools: true, toolkit: 'github' },
+    ]);
+    const plan = planFromContent(content);
+    expect(plan!.subTasks[0]!.toolCall).toEqual({ toolkit: 'github', tool: 'list_commits', args: {} });
+  });
 });

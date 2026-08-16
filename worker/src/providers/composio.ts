@@ -1,7 +1,7 @@
 // Composio wrapper for GitHub + Gmail (SPEC.md §5.3). `@composio/core` runs on
 // workerd via package `imports` conditions — verified, no `nodejs_compat`.
 //
-// The SDK's public surface (composio.connectedAccounts.link / tools.execute)
+// The SDK's public surface (composio.connectedAccounts.link)
 // is intentionally accessed through a narrow local type rather than the
 // package's full generated types: those types are provider-generic and shift
 // between minor versions, and pinning to them here would make this file
@@ -20,12 +20,8 @@ interface ComposioClient {
     link(userId: string, authConfigId: string, options?: Record<string, unknown>): Promise<{ redirectUrl: string }>;
     get(connectedAccountId: string): Promise<{ status: string; id: string }>;
   };
-  tools: {
-    execute(
-      toolSlug: string,
-      params: { userId: string; arguments: Record<string, unknown> }
-    ): Promise<{ successful: boolean; data: unknown; error?: string | null }>;
-  };
+  // NOTE: tools.execute is deliberately NOT used — see executeTool below for
+  // why execution goes through the raw v3 REST endpoint instead.
 }
 
 async function client(apiKey: string): Promise<ComposioClient> {
@@ -154,10 +150,28 @@ export async function executeTool(
   const started = Date.now();
   if (!env.COMPOSIO_API_KEY) return stubExecuteTool(params, started);
 
-  const c = await client(env.COMPOSIO_API_KEY);
-  const slug = `${params.toolkit}_${params.tool}`.toUpperCase();
-  const result = await c.tools.execute(slug, { userId: params.userId, arguments: params.args });
-  return { ok: result.successful, output: result.data, latencyMs: Date.now() - started };
+  // Resolved tools arrive as full slugs (DISCORD_LIST_MY_GUILDS) — don't
+  // prefix those twice; legacy short names (list_commits) still get the
+  // toolkit prepended.
+  const upper = params.tool.toUpperCase();
+  const prefix = `${params.toolkit.toUpperCase()}_`;
+  const slug = upper.startsWith(prefix) ? upper : `${prefix}${upper}`;
+
+  // Direct REST, not sdk.tools.execute: @composio/core 0.16.0 refuses manual
+  // execution without a pinned toolkit version ("Toolkit version not
+  // specified…", and 'latest' is rejected too) — THAT was the live "tool
+  // error" every connected-app run died on. The raw v3 endpoint resolves the
+  // default version server-side and executes against the user's connected
+  // account (verified live 2026-08-15: real discord guilds back).
+  const res = await fetch(`https://backend.composio.dev/api/v3/tools/execute/${slug}`, {
+    method: 'POST',
+    headers: { 'x-api-key': env.COMPOSIO_API_KEY, 'content-type': 'application/json' },
+    body: JSON.stringify({ user_id: params.userId, arguments: params.args }),
+  });
+  if (!res.ok) throw new Error(`Composio execute ${slug} -> ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  const result = (await res.json()) as { successful: boolean; data: unknown; error?: string | null };
+  const output = result.successful ? result.data : { error: result.error ?? 'tool failed', data: result.data };
+  return { ok: result.successful, output, latencyMs: Date.now() - started };
 }
 
 // Deterministic stub keyed on toolkit/tool so demo seed data (a repo with a

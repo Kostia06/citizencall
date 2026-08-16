@@ -20,6 +20,7 @@ import {
   FeatherlessPlanError,
 } from '../providers/featherless';
 import { executeTool } from '../providers/composio';
+import { buildToolArgs, getToolkitTools, resolveTool } from '../providers/composio-tools';
 import { getExact, putExact } from '../cache/exact';
 import { getTool, putTool, toolCacheKey } from '../cache/tool';
 import { recordVerdict } from '../cache/verdict';
@@ -247,10 +248,10 @@ type ToolOutcome =
 
 async function runTool(ctx: ExecuteContext, subTask: SubTask): Promise<ToolOutcome | undefined> {
   if (!subTask.needsTools || !subTask.toolCall) return undefined;
-  const { toolkit, tool } = subTask.toolCall;
+  const { toolkit, tool: plannedTool } = subTask.toolCall;
 
   const skip = (reason: string): ToolOutcome => {
-    ctx.emit(asTraceEvent({ t: 'tool_skipped', toolkit, tool, reason }));
+    ctx.emit(asTraceEvent({ t: 'tool_skipped', toolkit, tool: plannedTool, reason }));
     return { status: 'skipped' };
   };
 
@@ -258,12 +259,12 @@ async function runTool(ctx: ExecuteContext, subTask: SubTask): Promise<ToolOutco
   // otherwise skip cleanly (pipeline/mcp.ts explains why there is no default
   // transport yet).
   if (ctx.mcpToolkits?.has(toolkit)) {
-    if (await isToolDisabled(ctx, toolkit, tool)) return skip('disabled by user');
+    if (await isToolDisabled(ctx, toolkit, plannedTool)) return skip('disabled by user');
     if (!ctx.mcpTransport) return skip('mcp transport not implemented');
     const started = Date.now();
-    const result = await ctx.mcpTransport.call(toolkit, tool, subTask.toolCall.args);
+    const result = await ctx.mcpTransport.call(toolkit, plannedTool, subTask.toolCall.args);
     const call = await buildCallRow(ctx, subTask, false, Date.now() - started);
-    ctx.emit({ t: 'tool_call', toolkit, tool, cacheHit: false, ms: call.latencyMs });
+    ctx.emit({ t: 'tool_call', toolkit, tool: plannedTool, cacheHit: false, ms: call.latencyMs });
     return { status: 'ran', ok: result.ok, output: result.output, call };
   }
 
@@ -272,7 +273,7 @@ async function runTool(ctx: ExecuteContext, subTask: SubTask): Promise<ToolOutco
   // this user instead of firing a doomed Composio call.
   if (!(await isComposioToolkit(ctx.env, toolkit))) return skip('toolkit not available for this user');
 
-  if (await isToolDisabled(ctx, toolkit, tool)) return skip('disabled by user');
+  if (await isToolDisabled(ctx, toolkit, plannedTool)) return skip('disabled by user');
 
   // Live mode only: a Composio call executes against the actor's connected
   // account, so a missing/revoked connection is checked before any network
@@ -298,7 +299,26 @@ async function runTool(ctx: ExecuteContext, subTask: SubTask): Promise<ToolOutco
     }
   }
 
-  const params = { userId: ctx.userId, toolkit, tool, args: subTask.toolCall.args };
+  // Resolve the PLANNED tool name against the toolkit's real Composio tools
+  // (the actual fix for the live failure: a planned discord/'call' is not a
+  // Composio slug and died as "tool error"). Discovery unavailable (stub
+  // mode, Composio down with no cached row) resolves to nothing and the
+  // planned name executes as before; any resolution error degrades the same
+  // way rather than failing the run.
+  let tool = plannedTool;
+  let args = subTask.toolCall.args;
+  try {
+    const toolkitTools = await getToolkitTools(ctx.env, toolkit);
+    const resolved = resolveTool(toolkitTools, toolkit, plannedTool, subTask.instruction);
+    if (resolved) {
+      tool = resolved.slug;
+      args = await buildToolArgs(ctx.env, resolved, subTask.instruction, args);
+    }
+  } catch {
+    // best effort — executeTool's own catch below reports a failed tool
+  }
+
+  const params = { userId: ctx.userId, toolkit, tool, args };
   const started = Date.now();
 
   const cached = await getTool<{ ok: boolean; output: unknown }>(ctx.db, params);
@@ -322,7 +342,7 @@ async function runTool(ctx: ExecuteContext, subTask: SubTask): Promise<ToolOutco
   }
 
   const latencyMs = Date.now() - started;
-  const call = await buildCallRow(ctx, subTask, Boolean(cached), latencyMs);
+  const call = await buildCallRow(ctx, subTask, Boolean(cached), latencyMs, { tool, args });
   ctx.emit({ t: 'tool_call', toolkit, tool, cacheHit: Boolean(cached), ms: latencyMs });
   return { status: 'ran', ok, output, call };
 }
@@ -346,9 +366,14 @@ async function buildCallRow(
   ctx: ExecuteContext,
   subTask: SubTask,
   cacheHit: boolean,
-  latencyMs: number
+  latencyMs: number,
+  // The Composio path executes the RESOLVED tool/args, not the planned ones —
+  // the call row must hash and report what actually ran.
+  resolved?: { tool: string; args: Record<string, unknown> }
 ): Promise<ToolCallResult> {
-  const { toolkit, tool, args } = subTask.toolCall!;
+  const { toolkit, tool: plannedTool, args: plannedArgs } = subTask.toolCall!;
+  const tool = resolved?.tool ?? plannedTool;
+  const args = resolved?.args ?? plannedArgs;
   const argsHash = await toolCacheKey({ userId: ctx.userId, toolkit, tool, args });
   return { subTaskId: subTask.id, toolkit, tool, argsHash, cacheHit, latencyMs };
 }
