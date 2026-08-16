@@ -354,9 +354,9 @@ function obviousDefault(name: string, param: ToolkitToolParam): unknown {
   return undefined;
 }
 
-type ArgsModel = (system: string, user: string) => Promise<string>;
+export type ArgsModel = (system: string, user: string) => Promise<string>;
 
-function defaultArgsModel(env: Env): ArgsModel {
+export function defaultArgsModel(env: Env): ArgsModel {
   return async (system, user) => {
     const result = await callFeatherless(env, {
       modelId: cheapestAvailableModel(),

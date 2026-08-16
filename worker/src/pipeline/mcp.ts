@@ -10,6 +10,9 @@
 // path in execute.ts.
 import { listMcps } from '../store/mcps';
 import { isBlockedMcpUrl, McpHttpClient, type McpToolDef } from '../providers/mcp-client';
+import { buildToolArgs, defaultArgsModel, parseArgsJson, type ArgsModel, type ToolkitTool } from '../providers/composio-tools';
+import { callFeatherless } from '../providers/featherless';
+import type { Env } from '../env';
 
 export interface McpToolkit {
   id: string;
@@ -24,10 +27,15 @@ export interface McpToolkit {
 export interface McpCallResult {
   ok: boolean;
   output: unknown;
+  /** Name of the MCP tool that actually ran (planned names like 'call' are
+   * resolved against the server's tools/list). Absent when no call was made. */
+  tool?: string;
+  /** The arguments the resolved tool actually received. */
+  args?: Record<string, unknown>;
 }
 
 export interface McpTransport {
-  call(toolkit: string, tool: string, args: Record<string, unknown>): Promise<McpCallResult>;
+  call(toolkit: string, tool: string, args: Record<string, unknown>, instruction?: string): Promise<McpCallResult>;
 }
 
 // Display names are arbitrary user strings; planner toolkit tokens must be
@@ -80,9 +88,16 @@ export function matchMcpTool(tools: McpToolDef[], planned: string, instruction =
   const wanted = nameTokens(planned === 'call' ? instruction : `${planned} ${instruction}`);
   let best: { tool: McpToolDef; score: number } | null = null;
   for (const tool of tools) {
-    const haystack = nameTokens(`${tool.name} ${tool.description}`);
+    // Name tokens weigh 3× description tokens: a wordy description sharing
+    // generic words ('idea', 'check') must not out-score a tool whose NAME
+    // states the intent (found live: novelty check resolved suggest_names).
+    const name = nameTokens(tool.name);
+    const description = nameTokens(tool.description);
     let score = 0;
-    for (const token of wanted) if (haystack.has(token)) score++;
+    for (const token of wanted) {
+      if (name.has(token)) score += 3;
+      else if (description.has(token)) score++;
+    }
     if (score > (best?.score ?? 0)) best = { tool, score };
   }
   return best?.tool ?? tools[0] ?? null;
@@ -96,6 +111,15 @@ export interface BuildMcpTransportOptions {
   allowLocalhost: boolean;
   /** Injectable client factory for tests. */
   clientFactory?: (url: string, headers: Record<string, string>) => McpHttpClient;
+  /** Enables required-arg filling from the tool's input schema (the planner
+   * has no MCP tool vocabulary, so planned args are usually empty). Either
+   * an env (prod: cheap Featherless model) or an injected model (tests). */
+  env?: Env;
+  argsModel?: ArgsModel;
+  /** Model for tool selection + arg filling. Selection is routing-critical —
+   * the cheapest (sub-1B) model picks wrong tools on synonym phrasings, so
+   * run.ts passes the summarize rung-0 here. Defaults to the cheapest model. */
+  selectionModelId?: string;
 }
 
 /** Real McpTransport over the user's enabled MCP rows. One client per
@@ -105,8 +129,16 @@ export function buildMcpTransport(servers: readonly McpToolkit[], opts: BuildMcp
   const makeClient = opts.clientFactory ?? ((url, headers) => new McpHttpClient(url, headers));
   const clients = new Map<string, McpHttpClient>();
 
+  const argsModel =
+    opts.argsModel ??
+    (opts.env
+      ? opts.selectionModelId
+        ? fixedArgsModel(opts.env, opts.selectionModelId)
+        : defaultArgsModel(opts.env)
+      : undefined);
+
   return {
-    async call(toolkit, tool, args): Promise<McpCallResult> {
+    async call(toolkit, tool, args, instruction = ''): Promise<McpCallResult> {
       const server = servers.find((s) => s.toolkit === toolkit);
       if (!server) return { ok: false, output: `no MCP server configured for toolkit '${toolkit}'` };
       if (!server.url) return { ok: false, output: `MCP server '${server.name}' has no URL configured` };
@@ -124,14 +156,128 @@ export function buildMcpTransport(servers: readonly McpToolkit[], opts: BuildMcp
       // use just failed) — surface the error instead of a doomed call.
       const listed = await client.listTools();
       if (!listed.ok) return { ok: false, output: listed.error };
-      const resolved = matchMcpTool(listed.value, tool, argsInstruction(args));
+
+      // Tool resolution, strongest signal first:
+      //  1. exact planned-name match (the planner named a real tool);
+      //  2. one cheap-model call that picks the tool AND fills args from the
+      //     schema catalog — keyword overlap cannot bridge synonyms (found
+      //     live: 'originality' never matched check_novelty, and 'hackathon'
+      //     dragged the match to set_hackathon_context);
+      //  3. keyword overlap (matchMcpTool) when the model is unavailable or
+      //     answers garbage.
+      const normalize = (s: string): string => s.toLowerCase().replace(/[^a-z0-9]/g, '');
+      let resolved = listed.value.find((t) => normalize(t.name) === normalize(tool)) ?? null;
+      let callArgs: Record<string, unknown> = { ...args };
+      if (!resolved && argsModel && instruction) {
+        const picked = await modelSelectTool(listed.value, instruction, argsModel);
+        if (picked) {
+          resolved = picked.tool;
+          callArgs = { ...args, ...picked.args };
+        }
+      }
+      resolved ??= matchMcpTool(listed.value, tool, `${instruction} ${argsInstruction(args)}`.trim());
       if (!resolved) return { ok: false, output: `MCP server '${server.name}' exposes no tools` };
 
-      const result = await client.callTool(resolved.name, args);
-      if (!result.ok) return { ok: false, output: result.error };
-      return { ok: !result.value.isError, output: result.value.text };
+      // Fill remaining required params (Composio-path buildToolArgs idiom).
+      const missingRequired = () => resolved!.params.required.filter((r) => callArgs[r] === undefined);
+      if (argsModel && instruction && missingRequired().length > 0) {
+        try {
+          callArgs = await buildToolArgs({} as Env, asToolkitTool(resolved), instruction, callArgs, argsModel);
+        } catch {
+          // best effort — the deterministic fallback below still applies
+        }
+      }
+      // Deterministic last resort: most MCP tools take one free-text input,
+      // and the cheap args model is the weakest link (sub-1B models emit
+      // unparseable JSON — found live as MCP -32602 → fail_tool). A missing
+      // required free-text param gets the instruction itself; enum params
+      // stay empty — a guessed enum value is worse than the server's error.
+      if (instruction) {
+        for (const name of missingRequired()) {
+          const prop = resolved.params.properties[name];
+          if (!prop?.enum && (prop?.type === 'string' || prop?.type === undefined)) {
+            callArgs[name] = instruction;
+          }
+        }
+      }
+
+      const result = await client.callTool(resolved.name, callArgs);
+      if (!result.ok) return { ok: false, output: result.error, tool: resolved.name, args: callArgs };
+      return { ok: !result.value.isError, output: result.value.text, tool: resolved.name, args: callArgs };
     },
   };
+}
+
+/** McpToolDef → the ToolkitTool shape buildToolArgs consumes. Enum values
+ * ride in the description (ToolkitToolParam has no enum field). */
+function asToolkitTool(tool: McpToolDef): ToolkitTool {
+  const properties: ToolkitTool['params']['properties'] = {};
+  for (const [key, prop] of Object.entries(tool.params.properties)) {
+    const description = [prop.description, prop.enum ? `One of: ${prop.enum.join(', ')}` : '']
+      .filter(Boolean)
+      .join('. ');
+    properties[key] = { ...(prop.type ? { type: prop.type } : {}), ...(description ? { description } : {}) };
+  }
+  return {
+    slug: tool.name,
+    name: tool.name,
+    description: tool.description,
+    params: { required: tool.params.required, properties },
+  };
+}
+
+/** defaultArgsModel pinned to a specific model id instead of the cheapest
+ * warm one (see BuildMcpTransportOptions.selectionModelId). */
+function fixedArgsModel(env: Env, modelId: string): ArgsModel {
+  return async (system, user) => {
+    const result = await callFeatherless(env, {
+      modelId,
+      maxTokens: 400,
+      messages: [
+        { role: 'system', content: system },
+        { role: 'user', content: user },
+      ],
+    });
+    return result.content;
+  };
+}
+
+const MAX_SELECTABLE_TOOLS = 24;
+
+/** One cheap-model call that picks the tool AND fills its args from the
+ * server's schema catalog. Returns null on any model/parse failure — the
+ * keyword matcher is the fallback, never a dead call. */
+async function modelSelectTool(
+  tools: McpToolDef[],
+  instruction: string,
+  argsModel: ArgsModel
+): Promise<{ tool: McpToolDef; args: Record<string, unknown> } | null> {
+  const catalog = tools.slice(0, MAX_SELECTABLE_TOOLS).map((t) => ({
+    name: t.name,
+    description: t.description.slice(0, 140),
+    params: t.params,
+  }));
+  const system = [
+    'You choose ONE tool from an MCP server for a task and fill in its arguments.',
+    `Tools: ${JSON.stringify(catalog)}`,
+    'Reply with ONLY a single JSON object: {"tool":"<tool name>","args":{...}}. args must satisfy the chosen tool\'s required params.',
+  ].join('\n');
+  try {
+    const parsed = parseArgsJson(await argsModel(system, `Task: ${instruction.slice(0, 1000)}`));
+    if (!parsed) return null;
+    const tool = tools.find((t) => t.name === parsed.tool);
+    if (!tool) return null;
+    const args: Record<string, unknown> = {};
+    const rawArgs = parsed.args;
+    if (rawArgs && typeof rawArgs === 'object' && !Array.isArray(rawArgs)) {
+      for (const [key, value] of Object.entries(rawArgs as Record<string, unknown>)) {
+        if (key in tool.params.properties) args[key] = value;
+      }
+    }
+    return { tool, args };
+  } catch {
+    return null;
+  }
 }
 
 /** Best extra matching signal available at the call site: the planned args

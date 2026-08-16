@@ -8,8 +8,20 @@ import { buildMcpTransport, matchMcpTool, type McpToolkit } from '../src/pipelin
 type RecordedRequest = { method: string; id?: number; params?: unknown; headers: Record<string, string> };
 
 const TOOLS = [
-  { name: 'echo', description: 'Echoes back the input message' },
-  { name: 'get_weather', description: 'Current weather for a city' },
+  {
+    name: 'echo',
+    description: 'Echoes back the input message',
+    inputSchema: { type: 'object', properties: { message: { type: 'string' } }, required: [] },
+  },
+  {
+    name: 'get_weather',
+    description: 'Current weather for a city',
+    inputSchema: {
+      type: 'object',
+      properties: { city: { type: 'string', description: 'City name' } },
+      required: ['city'],
+    },
+  },
 ];
 
 /** Minimal in-memory MCP server speaking the plain-JSON response mode. */
@@ -49,7 +61,14 @@ describe('McpHttpClient framing', () => {
 
     const listed = await client.listTools();
     expect(listed.ok).toBe(true);
-    if (listed.ok) expect(listed.value.map((t) => t.name)).toEqual(['echo', 'get_weather']);
+    if (listed.ok) {
+      expect(listed.value.map((t) => t.name)).toEqual(['echo', 'get_weather']);
+      // input schemas ride along so the executor can fill required args
+      expect(listed.value[1]?.params).toEqual({
+        required: ['city'],
+        properties: { city: { type: 'string', description: 'City name' } },
+      });
+    }
 
     const called = await client.callTool('echo', { message: 'hi' });
     expect(called).toEqual({ ok: true, value: { text: 'called ok', isError: false } });
@@ -124,6 +143,23 @@ describe('McpHttpClient framing', () => {
     if (!res.ok) expect(res.error).toContain('timed out after 30ms');
   });
 
+  it("falls back to <url>/mcp when the pasted URL is a server's landing page", async () => {
+    const server = makeMockServer();
+    const fetchImpl = (async (url: RequestInfo | URL, init?: RequestInit) => {
+      if (String(url) === 'https://mcp.example.com') {
+        return new Response('<!doctype html><html>landing page</html>', {
+          headers: { 'content-type': 'text/html' },
+        });
+      }
+      return server.fetchImpl(url, init);
+    }) as typeof fetch;
+
+    const client = new McpHttpClient('https://mcp.example.com', {}, { fetchImpl });
+    const listed = await client.listTools();
+    expect(listed.ok).toBe(true);
+    if (listed.ok) expect(listed.value.map((t) => t.name)).toEqual(['echo', 'get_weather']);
+  });
+
   it('maps a JSON-RPC error object to ok:false without throwing', async () => {
     const fetchImpl = (async (_url: RequestInfo | URL, init?: RequestInit) => {
       const body = JSON.parse(String(init?.body)) as { id?: number };
@@ -138,15 +174,38 @@ describe('McpHttpClient framing', () => {
   });
 });
 
+const TOOL_DEFS = TOOLS.map((t) => ({ name: t.name, description: t.description, params: { required: [], properties: {} } }));
+
 describe('matchMcpTool', () => {
   it('matches exactly, case/punctuation-insensitive', () => {
-    expect(matchMcpTool(TOOLS, 'GET-WEATHER')?.name).toBe('get_weather');
+    expect(matchMcpTool(TOOL_DEFS, 'GET-WEATHER')?.name).toBe('get_weather');
   });
   it("resolves the planner's generic 'call' by instruction keywords", () => {
-    expect(matchMcpTool(TOOLS, 'call', 'what is the weather in Paris')?.name).toBe('get_weather');
+    expect(matchMcpTool(TOOL_DEFS, 'call', 'what is the weather in Paris')?.name).toBe('get_weather');
   });
   it('falls back to the first tool when nothing matches', () => {
-    expect(matchMcpTool(TOOLS, 'call', 'zzz')?.name).toBe('echo');
+    expect(matchMcpTool(TOOL_DEFS, 'call', 'zzz')?.name).toBe('echo');
+  });
+  it('weighs name-token hits above description-only overlap', () => {
+    // A wordy description must not out-score a tool whose NAME matches the
+    // intent (found live: 'check the novelty…' resolved suggest_names, whose
+    // long description shares generic words like 'idea' and 'check').
+    const tools = [
+      {
+        name: 'suggest_names',
+        description:
+          'Generate name candidates for an idea AND check domain availability for each across .com / .io / .ai / .app / .dev',
+        params: { required: [], properties: {} },
+      },
+      {
+        name: 'check_novelty',
+        description: 'Embed an idea and return the nearest past projects by semantic similarity',
+        params: { required: [], properties: {} },
+      },
+    ];
+    expect(matchMcpTool(tools, 'call', 'classify the novelty of the idea against existing projects')?.name).toBe(
+      'check_novelty'
+    );
   });
   it('returns null for an empty tool list', () => {
     expect(matchMcpTool([], 'call')).toBeNull();
@@ -165,7 +224,70 @@ describe('buildMcpTransport', () => {
       clientFactory: (url, headers) => new McpHttpClient(url, headers, { fetchImpl: server.fetchImpl }),
     });
     const res = await transport.call('my-notes', 'echo', { message: 'hi' });
-    expect(res).toEqual({ ok: true, output: 'called ok' });
+    expect(res).toEqual({ ok: true, output: 'called ok', tool: 'echo', args: { message: 'hi' } });
+  });
+
+  it("resolves the planner's generic 'call' by the sub-task instruction and fills required args", async () => {
+    const server = makeMockServer();
+    const transport = buildMcpTransport(servers, {
+      allowLocalhost: false,
+      clientFactory: (url, headers) => new McpHttpClient(url, headers, { fetchImpl: server.fetchImpl }),
+      argsModel: async () => JSON.stringify({ city: 'Paris' }),
+    });
+    const res = await transport.call('my-notes', 'call', {}, 'what is the weather in Paris');
+    expect(res.ok).toBe(true);
+    expect(res.tool).toBe('get_weather');
+    const call = server.requests.find((r) => r.method === 'tools/call');
+    expect(call?.params).toEqual({ name: 'get_weather', arguments: { city: 'Paris' } });
+  });
+
+  it('lets the args model pick the tool when keywords cannot bridge the phrasing', async () => {
+    // 'forecast for the capital' shares no tokens with get_weather's name or
+    // description — keyword matching alone resolves the wrong tool (found
+    // live: 'originality' never matched check_novelty; 'hackathon' dragged
+    // the match to set_hackathon_context).
+    const server = makeMockServer();
+    const transport = buildMcpTransport(servers, {
+      allowLocalhost: false,
+      clientFactory: (url, headers) => new McpHttpClient(url, headers, { fetchImpl: server.fetchImpl }),
+      argsModel: async (system) =>
+        system.includes('choose ONE tool')
+          ? JSON.stringify({ tool: 'get_weather', args: { city: 'Paris' } })
+          : JSON.stringify({}),
+    });
+    const res = await transport.call('my-notes', 'call', {}, 'forecast for the capital of France');
+    expect(res.ok).toBe(true);
+    expect(res.tool).toBe('get_weather');
+    const call = server.requests.find((r) => r.method === 'tools/call');
+    expect(call?.params).toEqual({ name: 'get_weather', arguments: { city: 'Paris' } });
+  });
+
+  it('falls back to the instruction for a single missing required string param when the args model fails', async () => {
+    const server = makeMockServer();
+    const transport = buildMcpTransport(servers, {
+      allowLocalhost: false,
+      clientFactory: (url, headers) => new McpHttpClient(url, headers, { fetchImpl: server.fetchImpl }),
+      argsModel: async () => 'not json at all', // cheap models do this
+    });
+    const res = await transport.call('my-notes', 'call', {}, 'what is the weather in Paris');
+    expect(res.ok).toBe(true);
+    const call = server.requests.find((r) => r.method === 'tools/call');
+    expect(call?.params).toEqual({ name: 'get_weather', arguments: { city: 'what is the weather in Paris' } });
+  });
+
+  it('keeps planned args verbatim when the resolved tool requires nothing more', async () => {
+    const server = makeMockServer();
+    const transport = buildMcpTransport(servers, {
+      allowLocalhost: false,
+      clientFactory: (url, headers) => new McpHttpClient(url, headers, { fetchImpl: server.fetchImpl }),
+      argsModel: async () => {
+        throw new Error('args model must not be consulted when nothing is missing');
+      },
+    });
+    const res = await transport.call('my-notes', 'echo', { message: 'hi' }, 'echo hi back');
+    expect(res.ok).toBe(true);
+    const call = server.requests.find((r) => r.method === 'tools/call');
+    expect(call?.params).toEqual({ name: 'echo', arguments: { message: 'hi' } });
   });
 
   it('maps isError:true tool results to ok:false', async () => {
@@ -175,7 +297,7 @@ describe('buildMcpTransport', () => {
       clientFactory: (url, headers) => new McpHttpClient(url, headers, { fetchImpl: server.fetchImpl }),
     });
     const res = await transport.call('my-notes', 'echo', {});
-    expect(res).toEqual({ ok: false, output: 'boom' });
+    expect(res).toEqual({ ok: false, output: 'boom', tool: 'echo', args: {} });
   });
 
   it('fails cleanly for an unknown toolkit token', async () => {

@@ -66,7 +66,12 @@ export function routeSubTask(
   subTask: SubTask,
   ladderPosition: 0 | 1
 ): RouteDecision {
-  const ladder = policy.ladders[subTask.kind] ?? [];
+  // A classify that will run a tool answers verdict + evidence (see
+  // execute.ts CLASSIFY_WITH_EVIDENCE_PROMPT) — that's summarize-shaped work,
+  // so it routes on the summarize ladder; the 0.5B label-rung ignores the
+  // evidence it just fetched (found live with an MCP novelty check).
+  const ladderKind = subTask.kind === 'classify' && subTask.needsTools ? 'summarize' : subTask.kind;
+  const ladder = policy.ladders[ladderKind] ?? [];
   // Ladder position selects a RUNG (a candidate set), not a fixed model id —
   // score() still decides the winner within that rung. Today ladders are
   // length <=2, so each rung is usually one model, but this stays correct if

@@ -169,7 +169,14 @@ export async function runPipeline(
   // SSRF guard's localhost exception is dev-only (see providers/mcp-client.ts).
   const mcpTransport =
     mcpToolkits.length > 0
-      ? buildMcpTransport(mcpToolkits, { allowLocalhost: env.APP_URL?.includes('localhost') ?? false })
+      ? buildMcpTransport(mcpToolkits, {
+          allowLocalhost: env.APP_URL?.includes('localhost') ?? false,
+          env,
+          // Tool selection is routing-critical: the summarize rung-0 model
+          // maps synonym phrasings ('original' → check_novelty) that the
+          // cheapest sub-1B model gets wrong.
+          ...(policy.ladders.summarize?.[0] ? { selectionModelId: policy.ladders.summarize[0] } : {}),
+        })
       : undefined;
   // Catalog toolkits the prompt mentions (e.g. "discord") join the planner's
   // vocabulary so a needed-but-unconnected app plans a tool call and the

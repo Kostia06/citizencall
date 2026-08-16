@@ -16,6 +16,16 @@ describe('verify — structural verdicts only, independent of Wilson/quality sta
     );
   });
 
+  it('passes a multi-line evidence-grounded classify when toolDerived', () => {
+    const output = '**Moderately novel**\n- score 0.29 vs indexed winners\n- nearest match: Talkio (SwampHacks XI)';
+    expect(verify({ kind: 'classify', output, needsTools: true, toolOk: true, toolDerived: true })).toBe('pass');
+  });
+
+  it('fails an evidence-grounded classify that ignores the bold-verdict contract', () => {
+    const output = 'The project involves routing requests through a ladder, which suggests a high level of novelty.';
+    expect(verify({ kind: 'classify', output, needsTools: true, toolOk: true, toolDerived: true })).toBe('fail_schema');
+  });
+
   it('passes valid JSON for extract_fields', () => {
     expect(verify({ kind: 'extract_fields', output: '{"name":"Kos","role":"engineer"}', needsTools: false })).toBe(
       'pass'

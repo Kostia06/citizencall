@@ -15,6 +15,12 @@
 export interface McpToolDef {
   name: string;
   description: string;
+  /** Parsed from the tool's MCP inputSchema — same shape as ToolkitTool.params
+   * so the executor's arg builder works on MCP tools unchanged. */
+  params: {
+    required: string[];
+    properties: Record<string, { type?: string; description?: string; enum?: (string | number)[] }>;
+  };
 }
 
 export type McpResult<T> = { ok: true; value: T } | { ok: false; error: string };
@@ -43,7 +49,7 @@ export interface McpHttpClientOptions {
 }
 
 export class McpHttpClient {
-  private readonly url: string;
+  private url: string;
   private readonly headers: Record<string, string>;
   private readonly timeoutMs: number;
   private readonly fetchImpl: typeof fetch;
@@ -62,11 +68,25 @@ export class McpHttpClient {
   /** initialize → notifications/initialized. Idempotent per client. */
   async initialize(): Promise<McpResult<void>> {
     if (this.initialized) return { ok: true, value: undefined };
-    const init = await this.request('initialize', {
+    const params = {
       protocolVersion: PROTOCOL_VERSION,
       capabilities: {},
       clientInfo: { name: 'understudy', version: '1.0' },
-    });
+    };
+    let init = await this.request('initialize', params);
+    if (!init.ok) {
+      // Users paste the server's origin; the Streamable HTTP endpoint is
+      // conventionally at /mcp (a bare origin often serves an HTML landing
+      // page). One silent retry there before surfacing the error.
+      const fallback = mcpEndpointFallback(this.url);
+      if (fallback) {
+        const original = this.url;
+        this.url = fallback;
+        this.sessionId = undefined;
+        init = await this.request('initialize', params);
+        if (!init.ok) this.url = original;
+      }
+    }
     if (!init.ok) return init;
     // Best-effort per spec — servers must tolerate a client that proceeds
     // straight to requests, and some (204/202 responders) return no body.
@@ -85,8 +105,12 @@ export class McpHttpClient {
     return {
       ok: true,
       value: tools
-        .filter((t): t is { name: string; description?: string } => !!t && typeof (t as { name?: unknown }).name === 'string')
-        .map((t) => ({ name: t.name, description: typeof t.description === 'string' ? t.description : '' })),
+        .filter((t): t is { name: string; description?: string; inputSchema?: unknown } => !!t && typeof (t as { name?: unknown }).name === 'string')
+        .map((t) => ({
+          name: t.name,
+          description: typeof t.description === 'string' ? t.description : '',
+          params: parseInputSchema(t.inputSchema),
+        })),
     };
   }
 
@@ -229,6 +253,46 @@ async function readSseUntilId(response: Response, id: number, timeoutMs: number)
     // Cancel the stream so a long-lived SSE connection doesn't leak.
     body.cancel().catch(() => undefined);
   }
+}
+
+/** `<origin or path>` → `<...>/mcp`, or null when the URL already targets a
+ * plausible MCP endpoint (ends in /mcp or /sse) and a retry would be a no-op. */
+function mcpEndpointFallback(rawUrl: string): string | null {
+  let url: URL;
+  try {
+    url = new URL(rawUrl);
+  } catch {
+    return null;
+  }
+  const path = url.pathname.replace(/\/+$/, '');
+  if (path.endsWith('/mcp') || path.endsWith('/sse')) return null;
+  url.pathname = `${path}/mcp`;
+  return url.toString();
+}
+
+/** MCP tools carry a JSON-Schema `inputSchema`; reduce it to the flat
+ * required/properties shape the arg builder consumes. Malformed or absent
+ * schemas degrade to "no known params" rather than failing discovery. */
+function parseInputSchema(schema: unknown): McpToolDef['params'] {
+  const empty = { required: [] as string[], properties: {} as Record<string, { type?: string; description?: string }> };
+  if (!schema || typeof schema !== 'object') return empty;
+  const s = schema as { required?: unknown; properties?: unknown };
+  const required = Array.isArray(s.required) ? s.required.filter((r): r is string => typeof r === 'string') : [];
+  const properties: Record<string, { type?: string; description?: string }> = {};
+  if (s.properties && typeof s.properties === 'object') {
+    for (const [key, value] of Object.entries(s.properties as Record<string, unknown>)) {
+      const v = (value ?? {}) as { type?: unknown; description?: unknown; enum?: unknown };
+      const enumValues = Array.isArray(v.enum)
+        ? v.enum.filter((e): e is string | number => typeof e === 'string' || typeof e === 'number')
+        : [];
+      properties[key] = {
+        ...(typeof v.type === 'string' ? { type: v.type } : {}),
+        ...(typeof v.description === 'string' ? { description: v.description } : {}),
+        ...(enumValues.length > 0 ? { enum: enumValues } : {}),
+      };
+    }
+  }
+  return { required, properties };
 }
 
 function contentToText(content: unknown): string {

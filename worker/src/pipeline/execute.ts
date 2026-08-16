@@ -122,6 +122,13 @@ const MAX_TOKENS_BY_KIND: Record<TaskKind, number> = {
   normalize: 128,
 };
 
+// A classify backed by fresh tool output must answer with the verdict AND
+// the evidence — a bare label discards the data the tool just fetched (found
+// live: an MCP novelty check answered "Moderately Novel" and dropped the
+// score + nearest-winners list the server returned).
+const CLASSIFY_WITH_EVIDENCE_PROMPT =
+  'Classify the input. Lead with the verdict in **bold**, then 2-4 short bullets of the key evidence from the tool output.';
+
 const SYSTEM_PROMPT_BY_KIND: Record<TaskKind, string> = {
   classify: 'Classify the input. Reply with only the label, nothing else.',
   extract_fields: 'Extract structured fields from the input as a single JSON object. Reply with only JSON.',
@@ -138,8 +145,10 @@ const SYSTEM_PROMPT_BY_KIND: Record<TaskKind, string> = {
 // pays for tokens actually produced.
 const REASONING_HEADROOM_TOKENS = 2048;
 
-function maxTokensFor(policy: Policy, model: ModelCandidate, kind: TaskKind): number {
-  const base = MAX_TOKENS_BY_KIND[kind];
+function maxTokensFor(policy: Policy, model: ModelCandidate, kind: TaskKind, toolDerived = false): number {
+  // Evidence-grounded classify answers like a summarize (verdict + bullets),
+  // so it needs the summarize budget, not the 32-token label cap.
+  const base = kind === 'classify' && toolDerived ? MAX_TOKENS_BY_KIND.summarize : MAX_TOKENS_BY_KIND[kind];
   return model.id === policy.baselines.frontier ? Math.max(base, REASONING_HEADROOM_TOKENS) : base;
 }
 
@@ -167,7 +176,7 @@ function buildMessages(subTask: SubTask, contextBlocks: string[], userContext?: 
   // understand your request" about its own context block).
   const system = [
     PERSONA,
-    SYSTEM_PROMPT_BY_KIND[subTask.kind],
+    subTask.kind === 'classify' && hasToolOutput ? CLASSIFY_WITH_EVIDENCE_PROMPT : SYSTEM_PROMPT_BY_KIND[subTask.kind],
     // Tool output arrives as raw JSON; small models echoed it verbatim
     // (guild-ID dumps, observed live). Present it like a human would.
     hasToolOutput
@@ -315,6 +324,7 @@ async function userProviderAttempt(
     kind: subTask.kind,
     output: content,
     needsTools: subTask.needsTools,
+    toolDerived,
     ...(last.toolOutcome?.status === 'ran' ? { toolOk: last.toolOutcome.ok } : {}),
   });
   const hop: Hop = {
@@ -396,9 +406,12 @@ async function runTool(ctx: ExecuteContext, subTask: SubTask): Promise<ToolOutco
     if (await isToolDisabled(ctx, toolkit, plannedTool)) return skip('disabled by user');
     if (!ctx.mcpTransport) return skip('mcp transport not implemented');
     const started = Date.now();
-    const result = await ctx.mcpTransport.call(toolkit, plannedTool, subTask.toolCall.args);
-    const call = await buildCallRow(ctx, subTask, false, Date.now() - started);
-    ctx.emit({ t: 'tool_call', toolkit, tool: plannedTool, cacheHit: false, ms: call.latencyMs });
+    const result = await ctx.mcpTransport.call(toolkit, plannedTool, subTask.toolCall.args, subTask.instruction);
+    // The transport resolves the planned name/args against the server's real
+    // tools — the call row and trace must report what actually ran.
+    const ran = result.tool ? { tool: result.tool, args: result.args ?? subTask.toolCall.args } : undefined;
+    const call = await buildCallRow(ctx, subTask, false, Date.now() - started, ran);
+    ctx.emit({ t: 'tool_call', toolkit, tool: ran?.tool ?? plannedTool, cacheHit: false, ms: call.latencyMs });
     return { status: 'ran', ok: result.ok, output: result.output, call };
   }
 
@@ -574,8 +587,8 @@ async function runModel(
   toolOutcome: ToolOutcome | undefined
 ): Promise<{ hop: Hop; content: string; toolDerived: boolean }> {
   const started = Date.now();
-  const maxTokens = maxTokensFor(ctx.policy, model, subTask.kind);
   const { blocks, toolDerived } = contextBlocks(ctx, subTask, toolOutcome);
+  const maxTokens = maxTokensFor(ctx.policy, model, subTask.kind, toolDerived);
   const messages = buildMessages(subTask, blocks, ctx.userContext, toolDerived);
   const cacheParams = {
     modelId: model.id,
@@ -625,6 +638,7 @@ async function runModel(
       kind: subTask.kind,
       output: content,
       needsTools: subTask.needsTools,
+      toolDerived,
       // 'skipped' leaves toolOk undefined on purpose: a deliberately skipped
       // tool is not a tool failure, the model just answers without tool data.
       ...(toolOutcome?.status === 'ran' ? { toolOk: toolOutcome.ok } : {}),

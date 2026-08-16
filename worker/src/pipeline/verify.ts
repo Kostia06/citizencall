@@ -13,6 +13,10 @@ export interface VerifyInput {
   output: string;
   needsTools: boolean;
   toolOk?: boolean;
+  /** Output was grounded in successful tool output. An evidence-grounded
+   * classify answers verdict + bullets (see execute.ts), so the bare-label
+   * contract doesn't apply. */
+  toolDerived?: boolean;
 }
 
 // Models wrap valid JSON in a markdown fence even when told "Reply with only
@@ -62,10 +66,18 @@ export function verify(input: VerifyInput): Verdict {
     }
   }
 
-  if (input.kind === 'classify') {
+  if (input.kind === 'classify' && !input.toolDerived) {
     // A label is one short line, not a sentence — anything else means the
-    // model didn't follow the output contract.
+    // model didn't follow the output contract. Evidence-grounded classify
+    // (toolDerived) legitimately answers verdict + supporting bullets.
     if (trimmed.includes('\n') || trimmed.length > 100) return 'fail_schema';
+  }
+
+  if (input.kind === 'classify' && input.toolDerived) {
+    // The evidence contract (CLASSIFY_WITH_EVIDENCE_PROMPT) demands a bold
+    // verdict lead. Small models that ignore it also ignore the tool output
+    // and waffle generically (seen live) — fail them so the ladder escalates.
+    if (!trimmed.startsWith('**')) return 'fail_schema';
   }
 
   if (input.kind !== 'extract_fields' && isDegenerateRepetition(trimmed)) return 'fail_schema';
