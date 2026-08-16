@@ -226,7 +226,22 @@ export default function Mic({ onInterim, onFinal, onToast, disabled }: MicProps)
         const text = Array.from({ length: e.results.length }, (_, i) => e.results[i]![0].transcript).join('');
         if (text.trim()) onInterim(text);
       };
-      rec.onerror = () => undefined;
+      rec.onerror = () => {
+        // SpeechRecognition is a NETWORK service in Chrome and fails at
+        // runtime routinely (blocked, offline, mic contention with the
+        // recorder). Swallowing the error left NO live transcript at all —
+        // the chunked STT fallback only armed when the recognizer never
+        // constructed. Hand off to it mid-recording instead.
+        try {
+          rec.stop();
+        } catch {
+          /* already stopped */
+        }
+        if (recognizerRef.current === rec) {
+          recognizerRef.current = null;
+          if (!MOCK && mediaRecorderRef.current) startChunkedInterim();
+        }
+      };
       rec.start();
       recognizerRef.current = rec;
     } catch {
@@ -301,11 +316,6 @@ export default function Mic({ onInterim, onFinal, onToast, disabled }: MicProps)
             aria-hidden
           />
         </>
-      )}
-      {transcribing && (
-        <span className="absolute -left-[4.75rem] top-1/2 -translate-y-1/2 whitespace-nowrap text-[11px] text-white/40 animate-pulse">
-          Transcribing…
-        </span>
       )}
       <button
         type="button"
