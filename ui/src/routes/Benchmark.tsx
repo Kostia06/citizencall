@@ -94,7 +94,7 @@ export default function Benchmark() {
                     heightPct={heightPct}
                     costUsd={bar.costUsd}
                     colorClass={
-                      isUnderstudy ? 'bg-accent' : bar.key === 'cheap_default' ? 'bg-accent/40' : 'bg-ink/12'
+                      isUnderstudy ? 'bg-accent' : bar.key === 'cheap_default' ? 'bg-accent/40' : 'bg-ink/10'
                     }
                     reduceMotion={!!reduceMotion}
                   >

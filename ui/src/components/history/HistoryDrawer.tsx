@@ -68,7 +68,7 @@ export default function HistoryDrawer({
             animate={reduceMotion ? { opacity: 1 } : { x: 0 }}
             exit={reduceMotion ? { opacity: 0 } : { x: '100%' }}
             transition={{ type: 'spring', stiffness: 380, damping: 36 }}
-            className="fixed inset-y-0 right-0 z-40 flex w-full max-w-sm flex-col border-l border-white/10 bg-neutral-950/95 backdrop-blur"
+            className="fixed inset-y-0 right-0 z-40 flex w-full max-w-sm flex-col border-l border-white/10 bg-void/95 backdrop-blur"
             onKeyDown={(e) => {
               if (e.key === 'Escape') onClose();
             }}
