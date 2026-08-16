@@ -45,11 +45,10 @@ export default function Mic({ onInterim, onFinal, onToast, disabled }: MicProps)
   // Safari only — recording works identically without it, just no live text.
   const recognizerRef = useRef<{ stop(): void } | null>(null);
   // Chunked interim STT for browsers with NO SpeechRecognition (Firefox/Zen):
-  // every ~2.5s the accumulated audio is posted to /api/stt for a partial
-  // transcript. Serialized (skip while a request is in flight); the on-stop
+  // the accumulated audio is posted to /api/stt for a partial transcript —
+  // first right after the first chunk lands, then every ~2.5s. The on-stop
   // final transcription stays authoritative.
   const interimTimerRef = useRef<number | undefined>(undefined);
-  const interimInFlightRef = useRef(false);
   const chunksRef = useRef<Blob[]>([]);
   const mimeTypeRef = useRef<string | undefined>(undefined);
   const audioCtxRef = useRef<AudioContext | null>(null);
@@ -165,7 +164,7 @@ export default function Mic({ onInterim, onFinal, onToast, disabled }: MicProps)
   function stop() {
     // onstop (assembles the blob + kicks off transcription) fires
     // asynchronously off this call.
-    if (interimTimerRef.current) window.clearInterval(interimTimerRef.current);
+    if (interimTimerRef.current) window.clearTimeout(interimTimerRef.current);
     interimTimerRef.current = undefined;
     recognizerRef.current?.stop();
     recognizerRef.current = null;
@@ -173,16 +172,25 @@ export default function Mic({ onInterim, onFinal, onToast, disabled }: MicProps)
     mediaRecorderRef.current = null;
   }
 
-  /** Cross-browser live transcript: POST the accumulated audio every ~2.5s
-   * for a partial transcript (Firefox/Zen have no SpeechRecognition). Costs
-   * one STT call per tick — bounded by the recording length. */
+  /** Cross-browser live transcript: POST the accumulated audio for a partial
+   * transcript (Firefox/Zen have no SpeechRecognition). A self-scheduling
+   * timeout chain, not an interval: the first attempt fires right after the
+   * first 1s timeslice chunk lands — waiting a full interval put the first
+   * words at ~4s, past the end of a typical short dictation, so live text
+   * never appeared at all. Requests are serialized by construction (the next
+   * tick is only scheduled once the previous one settles). Costs one STT
+   * call per tick — bounded by the recording length. */
   function startChunkedInterim() {
-    if (interimTimerRef.current) window.clearInterval(interimTimerRef.current);
-    interimTimerRef.current = window.setInterval(async () => {
-      if (interimInFlightRef.current) return;
+    if (interimTimerRef.current) window.clearTimeout(interimTimerRef.current);
+    const schedule = (delay: number) => {
+      interimTimerRef.current = window.setTimeout(tick, delay);
+    };
+    const tick = async () => {
       const chunks = chunksRef.current;
-      if (chunks.length === 0) return;
-      interimInFlightRef.current = true;
+      if (chunks.length === 0) {
+        schedule(300); // first 1s chunk hasn't landed yet — retry shortly
+        return;
+      }
       try {
         const blob = new Blob(chunks, { type: mimeTypeRef.current ?? chunks[0].type ?? 'audio/webm' });
         const form = new FormData();
@@ -196,10 +204,10 @@ export default function Mic({ onInterim, onFinal, onToast, disabled }: MicProps)
         }
       } catch {
         /* interim is best-effort */
-      } finally {
-        interimInFlightRef.current = false;
       }
-    }, 2500);
+      if (interimTimerRef.current) schedule(2500);
+    };
+    schedule(1100);
   }
 
   /** Live interim words while recording — SpeechRecognition where available.
