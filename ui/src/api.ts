@@ -101,22 +101,17 @@ function startMockRun(opts: StartRunOpts): RunHandle {
 function startLiveRun(opts: StartRunOpts): RunHandle {
   let es: EventSource | undefined;
   let closed = false;
-  // Set once POST /api/run's initial request fails outright (network down,
-  // Worker not running) — falls back to the scripted mock run so the bar
-  // stays filmable/demoable with zero backend even when MOCK is off.
-  let fallback: RunHandle | null = null;
   // Placeholder id until POST /api/run resolves — callers only read runId
   // synchronously for mock mode; live mode should use the resolved id from
   // the run_start TraceEvent instead.
   const provisional = { runId: '' };
   const handle: RunHandle = {
     get runId() {
-      return fallback ? fallback.runId : provisional.runId;
+      return provisional.runId;
     },
     close() {
       closed = true;
       es?.close();
-      fallback?.close();
     },
   };
 
@@ -175,12 +170,14 @@ function startLiveRun(opts: StartRunOpts): RunHandle {
       };
     } catch (err) {
       // Only the initial POST failing lands here (fetch throw, non-2xx, or
-      // a malformed JSON body) — a stream that connects and later drops is
-      // handled by es.onerror above and must NOT fall back mid-run, since
-      // that would silently swap a real (if flaky) run for a scripted one.
+      // a malformed JSON body). This USED to fall back to the scripted demo
+      // run — which fabricated Slack/GitHub results for a real user with no
+      // apps connected (found live 2026-08-16). Real mode now fails
+      // honestly; the scripted run remains available only via VITE_MOCK.
       if (closed) return;
-      console.warn('[run] backend unreachable, falling back to scripted demo run', err);
-      fallback = startMockRun(opts);
+      console.warn('[run] backend unreachable', err);
+      opts.onEvent({ t: 'error', message: 'CitizenCall could not reach the backend — check your connection and try again.' });
+      opts.onError?.(err);
     }
   })();
 
