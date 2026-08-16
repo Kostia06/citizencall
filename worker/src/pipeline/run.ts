@@ -21,6 +21,7 @@ import { listConnections } from '../store/connections';
 import { buildMemoryContext } from '../memory/context';
 import { maybeAutoWriteMemory } from './memory-hook';
 import { buildConversationBlock, lastUserTurnHint, type ConversationTurn } from './conversation';
+import { createRoutineFromChat, isRoutineCreationIntent } from './routine-intent';
 import { normalizePlanKey } from '../cache/plan';
 import { getRunResult, putRunResult } from '../cache/runResult';
 
@@ -66,6 +67,14 @@ export async function runPipeline(
     transcriptRaw: body.source === 'voice' ? body.text : null,
     createdAt: startedAt,
   });
+
+  // Routine creation is a side-effecting command — short-circuit before the
+  // run cache and the planner: a cached CREATE would replay the confirmation
+  // without the side effect, and planning buys nothing the regex didn't.
+  if (isRoutineCreationIntent(body.text)) {
+    await createRoutineFromChat(env, db, emit, body);
+    return;
+  }
 
   // (3a) Per-user store: the saved context prompt is prepended server-side, so
   // it shapes planning and every sub-task — and, because it changes the
