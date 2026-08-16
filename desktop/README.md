@@ -21,23 +21,23 @@ convenience, not a requirement. `pnpm start` skips the wait, and
 `pnpm start:prod` needs no local servers at all — it loads
 `https://citizencall.dev/spotlight` directly.
 
-**Packaged build.** `pnpm dist` produces `dist/Understudy-macos-arm64.zip`
+**Packaged build.** `pnpm dist` produces `dist/CitizenCall-macos-arm64.zip`
 (unsigned, arm64), and `pnpm dist:dmg` wraps the packaged `.app` into
-`dist/Understudy.dmg`. The packaged app defaults to production
+`dist/CitizenCall.dmg`. The packaged app defaults to production
 (`https://citizencall.dev/spotlight`); `UNDERSTUDY_URL` still overrides.
 
-**Installing from the .dmg** ([direct download](https://github.com/Kostia06/forge-hack/releases/download/v0.1.0/Understudy.dmg)):
-open it and drag **Understudy.app** into **Applications**. The build is
+**Installing from the .dmg** ([direct download](https://github.com/Kostia06/forge-hack/releases/download/v0.1.0/CitizenCall.dmg)):
+open it and drag **CitizenCall.app** into **Applications**. The build is
 unsigned, so the first launch must be right-click → **Open** (double-click gets
 blocked by Gatekeeper); alternatively clear quarantine:
 
 ```bash
-xattr -dc /Applications/Understudy.app
+xattr -dc /Applications/CitizenCall.app
 ```
 
 **Port discovery.** Vite takes 5173 when it's free and walks upward when it
 isn't, so the overlay probes 5173–5177 and attaches to the server whose
-`index.html` says `<title>Understudy</title>` — never to another project that
+`index.html` says `<title>CitizenCall</title>` — never to another project that
 happens to own 5173. Override with `UNDERSTUDY_URL` to skip discovery.
 
 ## Using it
@@ -102,7 +102,7 @@ Nobody notices the edit; a dead mic on camera is noticed immediately.
 
 `contextIsolation: true`, `nodeIntegration: false`, and a preload that exposes
 exactly three functions (`setHeight`, `hide`, `openExternal`) — see `preload.js` and the
-`UnderstudyBridge` interface in `ui/src/vite-env.d.ts`. External links are
+`CitizenCallBridge` interface in `ui/src/vite-env.d.ts`. External links are
 handed to the system browser instead of loading in the overlay.
 
 ## Not done yet

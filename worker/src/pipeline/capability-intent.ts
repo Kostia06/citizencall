@@ -19,7 +19,7 @@ export function isCapabilityIntent(text: string): boolean {
   return t.length <= 60 && CAPABILITY_RE.test(t);
 }
 
-const CAPABILITY_ANSWER = `I'm **Understudy** — one command bar that routes each request to a cheap specialist model, **verifies the answer**, and escalates only when the check fails. Ask me anything, or try:
+const CAPABILITY_ANSWER = `I'm **CitizenCall** — one command bar that routes each request to a cheap specialist model, **verifies the answer**, and escalates only when the check fails. Ask me anything, or try:
 
 - **Use your apps** — connect GitHub, Gmail, Discord and 1,200+ more, then "list my open pull requests" or "summarize my unread emails"
 - **Remember you** — "my name is Jeff — remember that" (see the Memory page)

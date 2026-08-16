@@ -118,7 +118,7 @@ export default function Memory() {
           <div>
             <h1 className="text-[18px] font-semibold text-white">Memory</h1>
             <p className="mt-1 text-[12.5px] text-white/40">
-              What Understudy remembers about you — written by the agent after runs, editable by you.
+              What CitizenCall remembers about you — written by the agent after runs, editable by you.
             </p>
           </div>
           <button

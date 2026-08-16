@@ -368,28 +368,9 @@ export default function Settings() {
                   }
                 }}
               />
-              {/* Placement — where the whole input cluster (bar + orbs) sits
-                  on the home screen. */}
-              <div className="mt-4 flex items-center gap-3">
-                <span className="text-[12.5px] text-ink/50">Bar placement</span>
-                <div className="flex overflow-hidden rounded-lg border border-ink/10">
-                  {(['left', 'center', 'right'] as const).map((a) => (
-                    <button
-                      key={a}
-                      type="button"
-                      onClick={() => updatePrefs({ barAlignment: a })}
-                      aria-pressed={(draft.barAlignment ?? 'center') === a}
-                      className={`px-3 py-1.5 text-[12px] capitalize transition-colors ${
-                        (draft.barAlignment ?? 'center') === a
-                          ? 'bg-accent/20 text-accent-bright'
-                          : 'text-ink/45 hover:bg-ink/5 hover:text-ink/80'
-                      }`}
-                    >
-                      {a === 'center' ? 'middle' : a}
-                    </button>
-                  ))}
-                </div>
-              </div>
+              {/* "Bar placement" removed (user request) — barAlignment still
+                  round-trips in prefs for existing rows; the bar defaults to
+                  center and honors any previously saved value. */}
             </SectionCard>
 
             <SectionCard title="Keybindings" subtitle="Click Record, then press a combo — or type one directly.">

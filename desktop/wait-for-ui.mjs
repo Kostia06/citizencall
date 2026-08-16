@@ -6,7 +6,7 @@
 // server. main.js does the same discovery; this just fails early with a
 // readable message instead of launching Electron to no purpose.
 const PORT_RANGE = [5173, 5174, 5175, 5176, 5177];
-const APP_TITLE = '<title>Understudy</title>';
+const APP_TITLE = '<title>CitizenCall</title>';
 const explicit = process.env.UNDERSTUDY_URL;
 const deadline = Date.now() + 30_000;
 
@@ -41,7 +41,7 @@ while (Date.now() < deadline) {
 }
 
 console.error(
-  `[understudy] no Understudy ui dev server on ports ${PORT_RANGE.join(', ')}.\n` +
+  `[understudy] no CitizenCall ui dev server on ports ${PORT_RANGE.join(', ')}.\n` +
     `  Start it first:  cd ui && pnpm dev\n` +
     `  Or override:     UNDERSTUDY_URL=http://localhost:PORT/spotlight`,
 );

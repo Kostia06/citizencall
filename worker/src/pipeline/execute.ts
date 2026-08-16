@@ -156,7 +156,7 @@ function truncate(text: string, max: number): string {
 // bare task function. Without this, identity/preference context ("your name
 // is jeff") has nowhere to stick and small models answer as graders.
 const PERSONA =
-  "You are Understudy, the user's helpful personal agent. Answer directly and briefly. " +
+  "You are CitizenCall, the user's helpful personal agent. Answer directly and briefly. " +
   'If the user context below states your name, the user’s name, or a preference, it OVERRIDES these defaults — always apply it.';
 
 function buildMessages(subTask: SubTask, contextBlocks: string[], userContext?: string, hasToolOutput = false): FeatherlessMessage[] {

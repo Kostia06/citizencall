@@ -20,8 +20,8 @@ async function send(env: Env, to: string, subject: string, html: string): Promis
       // and locked production login (audit FAIL #1/#2). onboarding@resend.dev
       // rejects non-owner recipients SYNCHRONOUSLY, so the fail-open fires.
       // Once the domain verifies: `wrangler secret put RESEND_FROM` with
-      // "Understudy <auth@citizencall.dev>" — zero code change.
-      body: JSON.stringify({ from: env.RESEND_FROM ?? 'Understudy <onboarding@resend.dev>', to, subject, html }),
+      // "CitizenCall <auth@citizencall.dev>" — zero code change.
+      body: JSON.stringify({ from: env.RESEND_FROM ?? 'CitizenCall <onboarding@resend.dev>', to, subject, html }),
     });
     if (!res.ok) console.error(`[email] resend failed ${res.status}: ${(await res.text()).slice(0, 200)}`);
     return res.ok;
@@ -32,14 +32,14 @@ async function send(env: Env, to: string, subject: string, html: string): Promis
 }
 
 export function sendVerifyEmail(env: Env, to: string, link: string): Promise<boolean> {
-  return send(env, to, 'Verify your Understudy email', `<p>Confirm your email:</p><p><a href="${link}">${link}</a></p>`);
+  return send(env, to, 'Verify your CitizenCall email', `<p>Confirm your email:</p><p><a href="${link}">${link}</a></p>`);
 }
 export function sendResetEmail(env: Env, to: string, link: string): Promise<boolean> {
-  return send(env, to, 'Reset your Understudy password', `<p>Reset your password:</p><p><a href="${link}">${link}</a></p>`);
+  return send(env, to, 'Reset your CitizenCall password', `<p>Reset your password:</p><p><a href="${link}">${link}</a></p>`);
 }
 export function sendTwofaCodeEmail(env: Env, to: string, code: string): Promise<boolean> {
   return send(
-    env, to, 'Your Understudy sign-in code',
+    env, to, 'Your CitizenCall sign-in code',
     `<p>Your sign-in code is:</p><p style="font-size:24px;font-weight:bold;letter-spacing:4px">${code}</p><p>It expires in 10 minutes. If you didn't try to sign in, you can ignore this email.</p>`
   );
 }

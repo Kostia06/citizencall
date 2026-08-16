@@ -1,4 +1,4 @@
-// Understudy — shared contract, mirrored from worker/src/types.ts.
+// CitizenCall — shared contract, mirrored from worker/src/types.ts.
 // ui and worker are separate packages, so this is a COPY — keep it identical
 // to worker/src/types.ts. See SPEC.md §4.
 

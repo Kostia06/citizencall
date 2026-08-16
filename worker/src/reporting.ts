@@ -277,7 +277,7 @@ export async function buildBenchmarkReport(db: D1Database): Promise<BenchmarkRep
       },
       {
         key: 'understudy',
-        label: 'Understudy router',
+        label: 'CitizenCall router',
         costUsd: totalCostUsd,
         note: 'measured',
       },

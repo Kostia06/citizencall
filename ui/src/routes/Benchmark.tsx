@@ -8,7 +8,7 @@ import TopNav from '../components/TopNav';
 import { formatMs, formatPct, formatUsd, timeAgo, useCountUp } from '../lib/format';
 
 /** Live benchmark — SPEC.md §10, §15 1:05–1:35. The bars are the headline
- * (frontier baseline vs cheap-default vs Understudy, from real D1 runs); the
+ * (frontier baseline vs cheap-default vs CitizenCall, from real D1 runs); the
  * totals row and the run table below are the receipts. */
 export default function Benchmark() {
   const [data, setData] = useState<BenchmarkReport | null>(null);
@@ -85,7 +85,7 @@ export default function Benchmark() {
               style={{ height: 300, gridTemplateColumns: `repeat(${data.bars.length}, minmax(0, 1fr))` }}
             >
               {data.bars.map((bar, i) => {
-                const isUnderstudy = bar.key === 'understudy';
+                const isCitizenCall = bar.key === 'understudy';
                 const heightPct = Math.max(4, (bar.costUsd / maxCost) * 100);
                 return (
                   <BenchmarkBarColumn
@@ -94,20 +94,20 @@ export default function Benchmark() {
                     heightPct={heightPct}
                     costUsd={bar.costUsd}
                     colorClass={
-                      isUnderstudy ? 'bg-accent' : bar.key === 'cheap_default' ? 'bg-accent/40' : 'bg-ink/10'
+                      isCitizenCall ? 'bg-accent' : bar.key === 'cheap_default' ? 'bg-accent/40' : 'bg-ink/10'
                     }
                     reduceMotion={!!reduceMotion}
                   >
                     <div className="mt-3 text-center">
                       <p
                         className={`text-[12px] font-medium leading-snug ${
-                          isUnderstudy ? 'text-ink/85' : 'text-ink/50'
+                          isCitizenCall ? 'text-ink/85' : 'text-ink/50'
                         }`}
                       >
                         {bar.label}
                       </p>
                       {bar.note && <p className="mt-0.5 text-[11px] text-ink/35">{bar.note}</p>}
-                      {isUnderstudy && (
+                      {isCitizenCall && (
                         <p className="mt-1 text-[10px] font-medium uppercase tracking-wide text-accent-bright">
                           the thing we built
                         </p>

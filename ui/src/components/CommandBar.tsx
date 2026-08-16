@@ -1,5 +1,5 @@
 import { useLayoutEffect, useEffect, useRef, useState } from 'react';
-import { motion, useReducedMotion } from 'framer-motion';
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import DropZone from './DropZone';
 import Mic from './Mic';
 import { layoutFlow, layoutFlowReduced, magneticSnappy } from '../lib/motion';
@@ -11,10 +11,14 @@ import type { RunAttachment } from '../types';
 // typing a few characters never fires a request, but a genuine pause does.
 const SUGGEST_IDLE_MS = 900;
 
+// Starter prompts must work for a brand-new anonymous user — the old set
+// (PRs, repo changes, unread emails) all required a connected app and dead-
+// ended on a connect card. These three demo capability, memory, and
+// routines with zero setup.
 const SUGGESTIONS = [
-  "Summarize this week's repository changes and draft a PR description.",
-  'List open pull requests assigned to me and classify their risk.',
-  'Extract action items from unread emails from the last 3 days.',
+  'What can you do?',
+  'Remember that I prefer short, direct answers.',
+  'Create a routine called daily brief that summarizes my day every morning.',
 ];
 
 // Auto-grow ceiling — DESIGN.md's body token is 15px/1.5, so ~6 lines caps
@@ -455,7 +459,7 @@ export default function CommandBar({
                   // double up as overlapping text.
                   // The overlay shows no copy at all — a cursor and nothing
                   // else, the way Spotlight opens.
-                  placeholder={isSpotlight || ghostSuffix ? '' : 'Ask Understudy anything…'}
+                  placeholder={isSpotlight || ghostSuffix ? '' : 'Ask CitizenCall anything…'}
                   onChange={(e) => {
                     const next = e.target.value;
                     setValue(next);
@@ -567,8 +571,18 @@ export default function CommandBar({
             </motion.div>
           </motion.div>
 
+          <AnimatePresence>
           {showSuggestions && (
-            <div className="relative mx-1 mt-2 overflow-hidden rounded-2xl border border-white/10 bg-surface-raised/95 backdrop-blur-xl">
+            <motion.div
+              // The list used to pop in with no transition ("instant and
+              // doesn't look smooth", reported live) — a soft drop+fade in,
+              // quick fade out, none of it under reduced motion.
+              initial={reduceMotion ? false : { opacity: 0, y: -8, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={reduceMotion ? { opacity: 0 } : { opacity: 0, y: -6, scale: 0.985, transition: { duration: 0.12 } }}
+              transition={reduceMotion ? { duration: 0 } : { type: 'spring', stiffness: 480, damping: 34 }}
+              className="relative mx-1 mt-2 overflow-hidden rounded-2xl border border-white/10 bg-surface-raised/95 backdrop-blur-xl"
+            >
               {filtered.map((s, i) => (
                 <button
                   key={s}
@@ -594,8 +608,9 @@ export default function CommandBar({
                   <span className="relative z-10">{s}</span>
                 </button>
               ))}
-            </div>
+            </motion.div>
           )}
+          </AnimatePresence>
 
           {attachments.length > 0 && (
             <div className="mt-2 flex flex-wrap gap-2">

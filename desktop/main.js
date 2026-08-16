@@ -1,4 +1,4 @@
-// Understudy — macOS Spotlight-style overlay. SPEC.md §3 budgets this file at
+// CitizenCall — macOS Spotlight-style overlay. SPEC.md §3 budgets this file at
 // "optional, Sunday, ~60 lines"; it is a shell around ui/'s /spotlight route,
 // not a second implementation of the bar.
 //
@@ -21,7 +21,7 @@ const HOTKEY = process.env.UNDERSTUDY_HOTKEY || 'Alt+Space';
 // range and pick the server that is actually serving THIS app, identified by
 // index.html's <title>. UNDERSTUDY_URL skips discovery entirely.
 const PORT_RANGE = [5173, 5174, 5175, 5176, 5177];
-const APP_TITLE = '<title>Understudy</title>';
+const APP_TITLE = '<title>CitizenCall</title>';
 
 // The worker's session cookies are `__Host-` prefixed (`__Host-refresh`,
 // `__Host-anon`). Chromium only accepts that prefix from an https: scheme —
@@ -281,7 +281,7 @@ ipcMain.on('understudy:open-auth', () => {
   authWin = new BrowserWindow({
     width: 480,
     height: 680,
-    title: 'Sign in to Understudy',
+    title: 'Sign in to CitizenCall',
     alwaysOnTop: true,
   });
   authWin.loadURL(`${baseOrigin}/login`);

@@ -58,7 +58,7 @@ export default function Landing() {
   const { text, answer, showAnswer } = useTypewriter(!reduceMotion);
   const entrance = reduceMotion ? entranceStandardReduced : entranceStandard;
 
-  function tryUnderstudy() {
+  function tryCitizenCall() {
     localStorage.setItem('understudy:visited', '1');
     navigate('/');
   }
@@ -73,7 +73,7 @@ export default function Landing() {
   return (
     <div className="relative flex min-h-screen flex-col px-6">
       <header className="mx-auto flex w-full max-w-5xl items-center justify-between py-6">
-        <span className="text-sm font-semibold tracking-tight text-ink">Understudy</span>
+        <span className="text-sm font-semibold tracking-tight text-ink">CitizenCall</span>
         <Link to="/login" className="text-sm text-ink/60 transition-colors hover:text-ink">
           Sign in
         </Link>
@@ -84,15 +84,15 @@ export default function Landing() {
           Ask once.
         </motion.h1>
         <motion.p {...rise(0.06)} className="mt-5 max-w-md text-base leading-relaxed text-ink/60">
-          One command bar for 1,200+ apps. Understudy routes each request to a cheap specialist
+          One command bar for 1,200+ apps. CitizenCall routes each request to a cheap specialist
           model, verifies the answer, and remembers you.
         </motion.p>
 
         <motion.div {...rise(0.12)} className="mt-12 w-full">
           <button
             type="button"
-            onClick={tryUnderstudy}
-            aria-label="Try Understudy"
+            onClick={tryCitizenCall}
+            aria-label="Try CitizenCall"
             className="bar-pill flex w-full items-center gap-3 px-6 py-4 text-left"
           >
             <span className="h-2 w-2 shrink-0 rounded-full bg-accent" aria-hidden />
@@ -129,10 +129,10 @@ export default function Landing() {
         <motion.div {...rise(0.18)} className="mt-8 flex flex-col items-center gap-4 sm:flex-row">
           <button
             type="button"
-            onClick={tryUnderstudy}
+            onClick={tryCitizenCall}
             className="rounded-full bg-accent px-7 py-3 text-sm font-medium text-paper shadow-glow-accent transition-colors hover:bg-accent-bright"
           >
-            Try Understudy
+            Try CitizenCall
           </button>
           <a href={MACOS_DMG_URL} className="text-sm text-ink/60 transition-colors hover:text-ink">
             Download for macOS&nbsp;↓

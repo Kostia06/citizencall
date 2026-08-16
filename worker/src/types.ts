@@ -1,4 +1,4 @@
-// Understudy — shared contract. Write this first; both worker and UI depend on it.
+// CitizenCall — shared contract. Write this first; both worker and UI depend on it.
 // Mirrors SPEC.md §4. The UI imports the trace/hop/route types from here.
 
 export type TaskKind = 'classify' | 'extract_fields' | 'summarize' | 'normalize';

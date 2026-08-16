@@ -1,4 +1,4 @@
-// Understudy Worker — Hono app + all routes (SPEC.md §13). Durable Object
+// CitizenCall Worker — Hono app + all routes (SPEC.md §13). Durable Object
 // class is re-exported here because wrangler.jsonc's `main` points at this
 // file and resolves `class_name: "RunDO"` against its exports.
 import { Hono } from 'hono';

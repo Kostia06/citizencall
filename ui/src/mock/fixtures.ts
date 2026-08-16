@@ -50,7 +50,7 @@ export const mockBenchmark: BenchmarkResult = {
     glm_only: { label: 'GLM-5.2 everything', accuracy: 0.93, costPer1k: 4.21 },
     glm_verify: { label: 'GLM-5.2 + verify/escalate', accuracy: 0.95, costPer1k: 4.55 },
     cheap_default: { label: 'Qwen3-4B everything', accuracy: 0.79, costPer1k: 0.88 },
-    understudy: { label: 'Understudy router', accuracy: 0.92, costPer1k: 0.41 },
+    understudy: { label: 'CitizenCall router', accuracy: 0.92, costPer1k: 0.41 },
   },
   perKind: [
     {
@@ -167,7 +167,7 @@ export const mockBenchmarkReport: BenchmarkReport = {
   bars: [
     { key: 'frontier_baseline', label: 'GLM-5.2 everything', costUsd: 0.1618, note: 'measured baseline per run' },
     { key: 'cheap_default', label: 'Qwen3-4B everything', costUsd: 0.0388, note: 'same tokens repriced — estimate' },
-    { key: 'understudy', label: 'Understudy router', costUsd: 0.0214, note: 'measured' },
+    { key: 'understudy', label: 'CitizenCall router', costUsd: 0.0214, note: 'measured' },
   ],
   perKind: [
     { kind: 'classify', hops: 8, passRate: 1, costUsd: 0.0009, avgLatencyMs: 430, topModel: 'Qwen/Qwen2.5-0.5B-Instruct' },
