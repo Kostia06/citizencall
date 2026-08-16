@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { MOCK } from '../api';
 import AuthNav from './AuthNav';
+import NotificationsBell from './notifications/NotificationsBell';
 
 // Roster stays routable at /roster (judge-facing demo cold-open, linked from
 // Benchmark) but is out of the everyday nav — Benchmark tells the same story.
@@ -55,50 +56,57 @@ export default function TopNav() {
         home
       </Link>
 
-      {/* Wide layout — links, theme toggle, MOCK badge, auth, all inline. */}
-      <div className="hidden items-center gap-1 sm:flex">
-        {LINKS.map((link) => {
-          const active = location.pathname === link.to;
-          return (
-            <Link
-              key={link.to}
-              to={link.to}
-              aria-current={active ? 'page' : undefined}
-              className={`rounded-full px-3 py-1 transition-colors ${
-                active ? 'bg-ink/10 text-ink' : 'text-ink/45 hover:bg-ink/5 hover:text-ink/80'
-              }`}
-            >
-              {link.label}
-            </Link>
-          );
-        })}
-        <div className="ml-2 flex items-center gap-3">
-          {/* dark-only */}
+      {/* Right side. The bell lives OUTSIDE the two breakpoint containers so
+          exactly one instance mounts — two would double-fetch and hold
+          desynced unread badges (localStorage isn't reactive). */}
+      <div className="flex items-center gap-2">
+        <NotificationsBell />
+
+        {/* Wide layout — links, theme toggle, MOCK badge, auth, all inline. */}
+        <div className="hidden items-center gap-1 sm:flex">
+          {LINKS.map((link) => {
+            const active = location.pathname === link.to;
+            return (
+              <Link
+                key={link.to}
+                to={link.to}
+                aria-current={active ? 'page' : undefined}
+                className={`rounded-full px-3 py-1 transition-colors ${
+                  active ? 'bg-ink/10 text-ink' : 'text-ink/45 hover:bg-ink/5 hover:text-ink/80'
+                }`}
+              >
+                {link.label}
+              </Link>
+            );
+          })}
+          <div className="ml-2 flex items-center gap-3">
+            {/* dark-only */}
+            {MOCK && (
+              <span className="rounded-full border border-accent/30 bg-accent/10 px-2 py-0.5 text-[11px] text-accent-bright">
+                MOCK
+              </span>
+            )}
+            <AuthNav />
+          </div>
+        </div>
+
+        {/* Narrow layout — everything behind one menu button. */}
+        <div className="flex items-center gap-2 sm:hidden">
           {MOCK && (
-            <span className="rounded-full border border-accent/30 bg-accent/10 px-2 py-0.5 text-[11px] text-accent-bright">
+            <span className="rounded-full border border-accent/30 bg-accent/10 px-2 py-0.5 text-[10px] text-accent-bright">
               MOCK
             </span>
           )}
-          <AuthNav />
+          <button
+            type="button"
+            onClick={() => setMenuOpen((o) => !o)}
+            aria-label={menuOpen ? 'Close menu' : 'Open menu'}
+            aria-expanded={menuOpen}
+            className="flex h-8 w-8 items-center justify-center rounded-full border border-ink/10 text-ink/60 transition-colors hover:border-accent/40 hover:text-ink"
+          >
+            {menuOpen ? <CloseIcon /> : <MenuIcon />}
+          </button>
         </div>
-      </div>
-
-      {/* Narrow layout — everything behind one menu button. */}
-      <div className="flex items-center gap-2 sm:hidden">
-        {MOCK && (
-          <span className="rounded-full border border-accent/30 bg-accent/10 px-2 py-0.5 text-[10px] text-accent-bright">
-            MOCK
-          </span>
-        )}
-        <button
-          type="button"
-          onClick={() => setMenuOpen((o) => !o)}
-          aria-label={menuOpen ? 'Close menu' : 'Open menu'}
-          aria-expanded={menuOpen}
-          className="flex h-8 w-8 items-center justify-center rounded-full border border-ink/10 text-ink/60 transition-colors hover:border-accent/40 hover:text-ink"
-        >
-          {menuOpen ? <CloseIcon /> : <MenuIcon />}
-        </button>
       </div>
 
       {menuOpen && (

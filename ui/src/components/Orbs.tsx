@@ -47,6 +47,12 @@ interface OrbsProps {
    * entirely here; omit to disable (e.g. anonymous/MOCK callers that don't
    * need it). */
   onPollConnections?(): void;
+  /** Rendered as the `id:'input'` pseudo-button's slot — the parent hands
+   * the real command bar in, so the pill drags among the orbs live exactly
+   * like in the settings arranger and rides the same reorder merge. Omitted,
+   * the input slot is filtered out and the group lays out as a plain orb
+   * row (the pre-existing behavior for callers without a bar). */
+  inputSlot?: ReactNode;
 }
 
 const HALO = 40; // px — cursor-proximity radius that triggers magnetism
@@ -187,9 +193,11 @@ function ToolkitLogo({ slug }: { slug: string }) {
  * renders from prefs, reordering lives in the settings arranger's buttons. */
 function OrbSlot({
   button,
+  className = 'relative',
   children,
 }: {
   button: UserPrefsButton;
+  className?: string;
   children: ReactNode;
 }) {
   const reduceMotion = useReducedMotion();
@@ -229,8 +237,66 @@ function OrbSlot({
           draggedRef.current = false;
         }
       }}
-      className="relative"
+      className={className}
       whileDrag={reduceMotion ? undefined : { scale: 1.12, zIndex: 30 }}
+    >
+      {children}
+    </Reorder.Item>
+  );
+}
+
+/** The command bar as a draggable slot — same hold-to-drag as an orb: hold
+ * anywhere on the pill's surface ~200ms to pick it up, a shorter press
+ * behaves exactly as before. A press that lands on the inner
+ * textarea/input (typing, caret placement, click-drag text selection) or
+ * on the pill's own buttons never arms the hold, so the field keeps every
+ * gesture it had. Reduced motion: no drag — the slot still renders in its
+ * saved position and moves via the settings arranger. */
+function InputSlot({ button, children }: { button: UserPrefsButton; children: ReactNode }) {
+  const reduceMotion = useReducedMotion();
+  const controls = useDragControls();
+  const holdTimer = useRef<number | undefined>(undefined);
+  // Same click-swallow as OrbSlot: the browser fires a click on release
+  // after a drag, which would otherwise focus/trigger whatever the pointer
+  // ended on.
+  const draggedRef = useRef(false);
+
+  function clearHold() {
+    if (holdTimer.current) window.clearTimeout(holdTimer.current);
+    holdTimer.current = undefined;
+  }
+
+  return (
+    <Reorder.Item
+      as="div"
+      value={button}
+      dragListener={false}
+      dragControls={controls}
+      onPointerDown={(e: ReactPointerEvent<HTMLDivElement>) => {
+        if (reduceMotion) return;
+        // Presses on the field or the pill's inner controls must stay
+        // theirs — only the bare pill surface (border/background) arms the
+        // hold-to-drag.
+        const target = e.target as HTMLElement | null;
+        if (target?.closest('textarea, input, button, a, [contenteditable]')) return;
+        clearHold();
+        holdTimer.current = window.setTimeout(() => {
+          draggedRef.current = true;
+          controls.start(e);
+        }, HOLD_MS);
+      }}
+      onPointerUp={clearHold}
+      onPointerCancel={clearHold}
+      onDragEnd={clearHold}
+      onClickCapture={(e: React.MouseEvent) => {
+        if (draggedRef.current) {
+          e.preventDefault();
+          e.stopPropagation();
+          draggedRef.current = false;
+        }
+      }}
+      className="relative w-full min-w-0 basis-full sm:w-auto sm:flex-1 sm:basis-auto"
+      whileDrag={reduceMotion ? undefined : { scale: 1.02, zIndex: 30 }}
     >
       {children}
     </Reorder.Item>
@@ -259,6 +325,7 @@ export default function Orbs({
   onRun,
   onToggleSuggestions,
   onPollConnections,
+  inputSlot,
 }: OrbsProps) {
   const [userSpun, setUserSpun] = useState(false);
   const pollTimers = useRef<{ interval?: number; timeout?: number }>({});
@@ -293,6 +360,9 @@ export default function Orbs({
   // now) hide the same way for stale saved prefs.
   const RETIRED_ACTIONS = new Set(['toggle:user', 'toggle:theme', 'run', 'bypassCache', 'suggest']);
   const visibleButtons = buttons.filter((b) => {
+    // The input pseudo-slot is draggable only when the parent supplied the
+    // bar to render in it; without one it must not become an empty item.
+    if (b.id === 'input') return Boolean(inputSlot);
     if (RETIRED_ACTIONS.has(b.action)) return false;
     const slug = actionToolkit(b.action);
     return !slug || connectedSlugs.has(slug);
@@ -365,8 +435,9 @@ export default function Orbs({
         // Removed from the bar (user request) — Roster lives in the top nav.
         return null;
       case 'input':
-        // The input pseudo-button is rendered by the PARENT as the command
-        // bar itself (Bar.tsx splits the row around it) — never as an orb.
+        // The input pseudo-button renders as the `inputSlot` (the command
+        // bar itself), never as an orb; without an inputSlot it's filtered
+        // out before this switch — defensive null only.
         return null;
       case 'toggle:theme':
         // Dark-only now — stale saved theme orbs just don't render.
@@ -417,13 +488,28 @@ export default function Orbs({
     }
   }
 
+  // With the bar in the group, the row must wrap on narrow screens (the
+  // pill takes a full line, orbs cluster around it — the old stacked
+  // layout) and the pill must flex-fill on wide ones; orbs keep the pt-1.5
+  // nudge that lines their centres up with the pill's.
+  const groupClass = inputSlot
+    ? 'flex w-full min-w-0 flex-wrap items-center justify-center gap-3 sm:flex-1 sm:flex-nowrap sm:items-start sm:justify-start'
+    : 'flex items-center gap-3';
+  const slotClass = inputSlot ? 'relative sm:pt-1.5' : 'relative';
+
   return (
-    <Reorder.Group as="div" axis="x" values={visibleButtons} onReorder={handleReorder} className="flex items-center gap-3">
-      {visibleButtons.map((btn) => (
-        <OrbSlot key={btn.id} button={btn}>
-          {renderOrb(btn)}
-        </OrbSlot>
-      ))}
+    <Reorder.Group as="div" axis="x" values={visibleButtons} onReorder={handleReorder} className={groupClass}>
+      {visibleButtons.map((btn) =>
+        btn.id === 'input' && inputSlot ? (
+          <InputSlot key={btn.id} button={btn}>
+            {inputSlot}
+          </InputSlot>
+        ) : (
+          <OrbSlot key={btn.id} button={btn} className={slotClass}>
+            {renderOrb(btn)}
+          </OrbSlot>
+        ),
+      )}
     </Reorder.Group>
   );
 }

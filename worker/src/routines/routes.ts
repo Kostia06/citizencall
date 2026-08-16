@@ -1,5 +1,6 @@
 // Routine CRUD + manual trigger (SPEC background agents). Mounted at /api in
-// index.ts, claiming only /api/routines*.
+// index.ts, claiming /api/routines* plus /api/notifications (the routine-run
+// feed lives here because routine_runs is this module's table).
 //
 // Identity is resolveActor (not the requireAuth/requireVerified gate): an
 // anonymous `__Host-anon` session may create and run routines before signing
@@ -21,6 +22,7 @@ import {
   type Routine,
 } from './store';
 import { startRoutineRun } from './scheduler';
+import { listRoutineRunNotifications } from './run-links';
 
 export const routineRoutes = new Hono<{ Bindings: Env }>();
 
@@ -106,4 +108,11 @@ routineRoutes.post('/routines/:id/run', async (c) => {
   await markRoutineRan(c.env.DB, routine.id, Date.now());
   console.log(`routines: manual trigger routine=${routine.id} run=${runId}`);
   return c.json({ runId });
+});
+
+// Newest-first feed of routine-triggered runs (bell drawer in the UI). Same
+// anon-friendly identity rule as the CRUD above; only the actor's own rows.
+routineRoutes.get('/notifications', async (c) => {
+  const { userId } = await resolveActor(c);
+  return c.json(await listRoutineRunNotifications(c.env.DB, userId));
 });
