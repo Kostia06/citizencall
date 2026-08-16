@@ -72,7 +72,7 @@ Key mechanisms, each visible in the live trace:
 Prereqs: Node 20+, `pnpm`, Python 3.11+ (harness only), a Cloudflare account.
 
 ```bash
-git clone https://github.com/Kostia06/forge-hack && cd forge-hack
+git clone https://github.com/Kostia06/citizencall && cd citizencall
 
 # 1. Worker (API + pipeline + cron)
 cd worker && pnpm install
