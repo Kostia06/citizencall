@@ -49,6 +49,19 @@ export function syncThemeFromPrefs(prefsTheme: Theme | undefined) {
   applyTheme(prefsTheme);
 }
 
+const CHANGE_EVENT = 'understudy:theme-change';
+
+/** Hook-free toggle for non-component callers (the bar's `toggle:theme`
+ * orb). Applies + stores immediately and notifies every mounted useTheme
+ * (TopNav's icon) via a window event so nothing shows a stale state. */
+export function toggleThemeGlobal(): Theme {
+  const next: Theme = document.documentElement.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
+  localStorage.setItem(STORAGE_KEY, next);
+  applyTheme(next);
+  window.dispatchEvent(new CustomEvent(CHANGE_EVENT, { detail: next }));
+  return next;
+}
+
 /** The toggle's controller — TopNav is the only mounted consumer (one
  * instance per route, so there's never a stale-sibling sync problem). Saves
  * to localStorage synchronously and, when `authedFetch` is supplied, fires
@@ -61,6 +74,16 @@ export function useTheme(authedFetch?: AuthedFetch) {
   useEffect(() => {
     applyTheme(theme);
   }, [theme]);
+
+  // Stay in sync with out-of-hook toggles (the bar's theme orb).
+  useEffect(() => {
+    const onGlobal = (e: Event) => {
+      const next = (e as CustomEvent).detail;
+      if (isTheme(next)) setThemeState(next);
+    };
+    window.addEventListener(CHANGE_EVENT, onGlobal);
+    return () => window.removeEventListener(CHANGE_EVENT, onGlobal);
+  }, []);
 
   // Follow the OS preference live, but only until the user picks explicitly.
   useEffect(() => {

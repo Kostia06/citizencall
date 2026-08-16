@@ -157,6 +157,14 @@ body {
     border-color 0.3s ease;
 }
 
+.bar-pill.is-multiline {
+  /* Multi-line input: a full pill radius clips tall content oddly — square
+     it off to a soft card while keeping the glass look. Transition rides
+     the same reflow as the auto-grow height. */
+  border-radius: 24px;
+  transition: border-radius 160ms ease-out;
+}
+
 .bar-pill.is-dragover {
   transform: scale(1.022);
   border-image: none;
@@ -169,6 +177,11 @@ body {
 .bar-shell {
   position: relative;
   border-radius: 9999px;
+}
+
+.bar-shell.is-multiline,
+.bar-shell.is-multiline::before {
+  border-radius: 26px;
 }
 
 .bar-shell.is-running::before {

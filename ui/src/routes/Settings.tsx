@@ -204,7 +204,12 @@ export default function Settings() {
                 <button
                   key={a}
                   type="button"
-                  onClick={() => setDraft((d) => ({ ...d, barAlignment: a }))}
+                  onClick={() => {
+                    setDraft((d) => ({ ...d, barAlignment: a }));
+                    // Instant + anon-safe: the home bar reads this directly,
+                    // no Save/login required; Save still persists to account.
+                    localStorage.setItem('understudy:bar-alignment', a);
+                  }}
                   aria-pressed={(draft.barAlignment ?? 'center') === a}
                   className={`px-3 py-1.5 text-[12px] capitalize transition-colors ${
                     (draft.barAlignment ?? 'center') === a

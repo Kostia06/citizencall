@@ -3,6 +3,7 @@ import type { PointerEvent as ReactPointerEvent, ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { Reorder, motion, useDragControls, useMotionValue, useReducedMotion, useSpring } from 'framer-motion';
 import { magneticSnappy } from '../lib/motion';
+import { toggleThemeGlobal } from '../lib/theme';
 import { APPS } from '../store/apps';
 import type { Routine, UserPrefsButton } from '../api';
 
@@ -184,6 +185,10 @@ function OrbSlot({
   const reduceMotion = useReducedMotion();
   const controls = useDragControls();
   const holdTimer = useRef<number | undefined>(undefined);
+  // Set the moment a drag actually starts; the click that the browser fires
+  // on release is swallowed once, so REORDERING an orb never TRIGGERS it
+  // (reported live: dragging ran the orb's action on drop).
+  const draggedRef = useRef(false);
 
   function clearHold() {
     if (holdTimer.current) window.clearTimeout(holdTimer.current);
@@ -199,11 +204,21 @@ function OrbSlot({
       onPointerDown={(e: ReactPointerEvent<HTMLDivElement>) => {
         if (reduceMotion) return;
         clearHold();
-        holdTimer.current = window.setTimeout(() => controls.start(e), HOLD_MS);
+        holdTimer.current = window.setTimeout(() => {
+          draggedRef.current = true;
+          controls.start(e);
+        }, HOLD_MS);
       }}
       onPointerUp={clearHold}
       onPointerCancel={clearHold}
       onDragEnd={clearHold}
+      onClickCapture={(e: React.MouseEvent) => {
+        if (draggedRef.current) {
+          e.preventDefault();
+          e.stopPropagation();
+          draggedRef.current = false;
+        }
+      }}
       className="relative"
       whileDrag={reduceMotion ? undefined : { scale: 1.12, zIndex: 30 }}
     >
@@ -316,6 +331,17 @@ export default function Orbs({
                 {policyVersion}
               </span>
             )}
+          </Orb>
+        );
+      case 'toggle:theme':
+        return (
+          <Orb
+            as="button"
+            className={`${orbBase} text-ink/70`}
+            title={btn.label ?? 'Toggle dark / light mode'}
+            onClick={() => toggleThemeGlobal()}
+          >
+            <span className="text-lg leading-none">☾</span>
           </Orb>
         );
       case 'toggle:user':

@@ -82,6 +82,9 @@ export default function CommandBar({
   const [nextAction, setNextAction] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const maxHeightRef = useRef(168); // ~6 lines + vertical padding, refined on mount
+  // Anything taller than ~1.5 lines squares the pill off (CSS .is-multiline).
+  const singleLineRef = useRef(70);
+  const [isMultiline, setIsMultiline] = useState(false);
   const [confirmPulsing, fireConfirmPulse] = useBurst(200);
   const [emberFlashing, fireEmberFlash] = useBurst(150);
   const [focusPulsing, fireFocusPulse] = useBurst(400);
@@ -124,7 +127,9 @@ export default function CommandBar({
     const lineHeight = parseFloat(cs.lineHeight);
     const paddingY = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom);
     if (Number.isFinite(lineHeight) && lineHeight > 0) {
-      maxHeightRef.current = lineHeight * MAX_LINES + (Number.isFinite(paddingY) ? paddingY : 0);
+      const pad = Number.isFinite(paddingY) ? paddingY : 0;
+      maxHeightRef.current = lineHeight * MAX_LINES + pad;
+      singleLineRef.current = lineHeight * 1.6 + pad;
     }
   }, []);
 
@@ -147,6 +152,7 @@ export default function CommandBar({
       if (measuringPlaceholder) el.value = '';
       el.style.height = `${Math.min(measured, maxHeightRef.current)}px`;
       el.style.overflowY = measured > maxHeightRef.current ? 'auto' : 'hidden';
+      setIsMultiline(measured > singleLineRef.current);
     };
     resize();
     window.addEventListener('resize', resize);
@@ -368,13 +374,20 @@ export default function CommandBar({
           <motion.div
             layout={!reduceMotion}
             transition={reduceMotion ? layoutFlowReduced : layoutFlow}
-            className={`bar-shell ${running ? 'is-running' : ''}`}
-            style={ringSpike ? ({ '--ring-duration': '1.2s' } as React.CSSProperties) : undefined}
+            className={`bar-shell ${running ? 'is-running' : ''} ${isMultiline ? 'is-multiline' : ''}`}
+            // framer's layout animation writes an INLINE border-radius that
+            // overrides the .is-multiline CSS — so the radius must be driven
+            // through the style prop, which framer animates correctly.
+            style={{
+              borderRadius: isMultiline ? 26 : 9999,
+              ...(ringSpike ? ({ '--ring-duration': '1.2s' } as React.CSSProperties) : {}),
+            }}
           >
             <motion.div
               layout={!reduceMotion}
               transition={reduceMotion ? layoutFlowReduced : layoutFlow}
-              className={`bar-pill relative animate-bar-in ${isDragOver ? 'is-dragover' : ''} ${
+              style={{ borderRadius: isMultiline ? 24 : 9999 }}
+              className={`bar-pill relative animate-bar-in ${isMultiline ? 'is-multiline' : ''} ${isDragOver ? 'is-dragover' : ''} ${
                 confirmPulsing ? 'animate-confirm-pulse' : ''
               } ${emberFlashing ? 'animate-ember-edge-flash' : ''} ${focusPulsing ? 'animate-focus-glow-pulse' : ''}`}
             >

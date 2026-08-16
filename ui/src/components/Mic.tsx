@@ -36,10 +36,14 @@ function extFor(mimeType?: string): string {
  * no backend reachable) fails over to a canned transcript so the bar stays
  * demoable with zero network. Degrades to type-only when MediaRecorder or
  * mic permission is unavailable. */
-export default function Mic({ onFinal, onToast, disabled }: MicProps) {
+export default function Mic({ onInterim, onFinal, onToast, disabled }: MicProps) {
   const [phase, setPhase] = useState<Phase>('idle');
   const [unsupported, setUnsupported] = useState(false);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  // Browser-local LIVE interim transcript while recording (display-only via
+  // onInterim); ElevenLabs stays the authoritative FINAL transcript. Chrome/
+  // Safari only — recording works identically without it, just no live text.
+  const recognizerRef = useRef<{ stop(): void } | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const mimeTypeRef = useRef<string | undefined>(undefined);
   const audioCtxRef = useRef<AudioContext | null>(null);
@@ -141,6 +145,7 @@ export default function Mic({ onFinal, onToast, disabled }: MicProps) {
       recorder.start();
       setPhase('recording');
       attachAnalyser(stream);
+      startInterimRecognition();
     } catch {
       onToast('Microphone blocked');
       setPhase('idle');
@@ -150,8 +155,34 @@ export default function Mic({ onFinal, onToast, disabled }: MicProps) {
   function stop() {
     // onstop (assembles the blob + kicks off transcription) fires
     // asynchronously off this call.
+    recognizerRef.current?.stop();
+    recognizerRef.current = null;
     mediaRecorderRef.current?.stop();
     mediaRecorderRef.current = null;
+  }
+
+  /** Live interim words while recording — SpeechRecognition where available.
+   * Errors/absence are silent: the ElevenLabs path is unaffected. */
+  function startInterimRecognition() {
+    type SR = { new (): { continuous: boolean; interimResults: boolean; lang: string; onresult: (e: { results: ArrayLike<{ 0: { transcript: string } }> }) => void; onerror: () => void; start(): void; stop(): void } };
+    const Ctor = (window as unknown as { SpeechRecognition?: SR; webkitSpeechRecognition?: SR }).SpeechRecognition ??
+      (window as unknown as { webkitSpeechRecognition?: SR }).webkitSpeechRecognition;
+    if (!Ctor) return;
+    try {
+      const rec = new Ctor();
+      rec.continuous = true;
+      rec.interimResults = true;
+      rec.lang = navigator.language || 'en-US';
+      rec.onresult = (e) => {
+        const text = Array.from({ length: e.results.length }, (_, i) => e.results[i]![0].transcript).join('');
+        if (text.trim()) onInterim(text);
+      };
+      rec.onerror = () => undefined;
+      rec.start();
+      recognizerRef.current = rec;
+    } catch {
+      /* no live transcript — fine */
+    }
   }
 
   async function finishRecording() {

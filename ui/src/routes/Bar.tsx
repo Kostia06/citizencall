@@ -46,7 +46,12 @@ export default function Bar() {
   const [contextPrompt, setContextPrompt] = useState('');
   const [suggestionsEnabled, setSuggestionsEnabled] = useState(true);
   const [barButtons, setBarButtons] = useState<UserPrefsButton[]>(DEFAULT_PREFS.buttons);
-  const [barAlignment, setBarAlignment] = useState<'left' | 'center' | 'right'>('center');
+  // localStorage is the anon/instant path (Settings writes it on selection);
+  // server prefs override once loaded so the choice follows the account.
+  const [barAlignment, setBarAlignment] = useState<'left' | 'center' | 'right'>(() => {
+    const stored = localStorage.getItem('understudy:bar-alignment');
+    return stored === 'left' || stored === 'right' ? stored : 'center';
+  });
   const reorderSaveRef = useRef<number | undefined>(undefined);
   const runHandleRef = useRef<RunHandle | null>(null);
   const liveTimeoutRef = useRef<number | undefined>(undefined);
@@ -94,7 +99,10 @@ export default function Bar() {
           setContextPrompt(prefs.contextPrompt);
           setSuggestionsEnabled(prefs.suggestions);
           if (prefs.buttons.length > 0) setBarButtons(prefs.buttons);
-          setBarAlignment(prefs.barAlignment ?? 'center');
+          if (prefs.barAlignment) {
+            setBarAlignment(prefs.barAlignment);
+            localStorage.setItem('understudy:bar-alignment', prefs.barAlignment);
+          }
         }
       })
       .catch(() => undefined);
