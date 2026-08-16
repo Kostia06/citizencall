@@ -87,6 +87,7 @@ export default function CommandBar({
   const [focused, setFocused] = useState(false);
   const [highlight, setHighlight] = useState(-1);
   const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [ghostAccepting, setGhostAccepting] = useState(false);
   const [clearing, setClearing] = useState(false);
   const [ringSpike, setRingSpike] = useState(false);
@@ -487,6 +488,37 @@ export default function CommandBar({
               </div>
 
               <div className="absolute bottom-2.5 right-2.5 z-10 flex items-center gap-1.5">
+                <button
+                  type="button"
+                  disabled={running}
+                  aria-label="Attach files"
+                  title="Attach files"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[#8E8E93] transition-colors hover:text-white disabled:opacity-30"
+                >
+                  <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden>
+                    <path
+                      d="M21 12.5l-8.2 8.2a5.4 5.4 0 0 1-7.6-7.6l8.5-8.5a3.6 3.6 0 0 1 5.1 5.1l-8.5 8.5a1.8 1.8 0 0 1-2.5-2.5l7.8-7.8"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                </button>
+                {/* Hidden picker behind the paperclip — same attachment path
+                    as drag-drop, so picked files ride the run identically. */}
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  multiple
+                  className="hidden"
+                  onChange={(e) => {
+                    const files = Array.from(e.target.files ?? []);
+                    if (files.length === 0) return;
+                    addAttachments(files.map((f) => fileToAttachment(f, 'file')));
+                    onFilesDropped(files);
+                    e.target.value = '';
+                  }}
+                />
                 <button
                   type="button"
                   disabled={running}
