@@ -26,6 +26,12 @@ interface OrbsProps {
   onConnect(slug: string): void;
   /** Hold-drag reorder — fires with the full new order; parent persists it. */
   onReorder(next: UserPrefsButton[]): void;
+  /** When supplied, route-opening orbs call this instead of navigating in
+   * place. The Electron overlay passes it so the roster opens in the real
+   * browser — navigating a 720px panel to a full page would replace the
+   * search field and strand the user there. Browser routes leave it
+   * undefined and keep the plain <Link>. */
+  onOpenRoute?(path: string): void;
   /** The user's routines, for resolving a `routine:<id>` button's icon/name.
    * Empty/omitted degrades to showing the raw id. */
   routines?: Routine[];
@@ -243,6 +249,7 @@ export default function Orbs({
   onToggleUser,
   onConnect,
   onReorder,
+  onOpenRoute,
   routines = [],
   onRunRoutine,
   onPollConnections,

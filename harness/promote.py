@@ -241,6 +241,63 @@ def run_pipeline(units: int = DEFAULT_UNITS, offline: bool = True) -> dict[str, 
     }
 
 
+def write_roster(
+    pipeline_out: dict[str, Any], catalog: dict[str, Any], generated_at: str, offline: bool
+) -> None:
+    """Emits artifacts/roster.json — the promoted-model table the Worker serves
+    at GET /api/roster and the demo opens on (SPEC.md §12 `roster`, §15 0:00).
+
+    Only kinds that ACTUALLY PASSED the §9.4 promotion rule appear. A finalist
+    that lost to the incumbent is not a promotion and must not be listed as one
+    — the roster is the credibility screen, so an empty roster is the correct
+    output when nothing beat the baseline (SPEC.md §21 covers exactly that).
+
+    `provenance` rides along and is rendered by the UI: an --offline run
+    produces stub numbers, and they must never be mistaken for measured ones.
+    """
+    by_id = {m["id"]: m for m in catalog.get("models", [])}
+    rows: list[dict[str, Any]] = []
+
+    for k in pipeline_out["perKind"]:
+        promoted_id = k.get("promoted")
+        if not promoted_id:
+            continue  # finalist did not beat the incumbent — not a promotion
+        model = by_id.get(promoted_id, {})
+        ci = k.get("ci") or [0.0, 1.0]
+        rows.append(
+            {
+                "taskKind": k["kind"],
+                "modelId": promoted_id,
+                "modelClass": model.get("modelClass", promoted_id.split("/")[-1]),
+                "promotedAt": generated_at,
+                "accuracy": k.get("accuracy"),
+                "ciLo": ci[0],
+                "ciHi": ci[1],
+                # costEffective is per call (c_primary + p_escalate·c_escalation,
+                # SPEC.md §9.4); the roster reports per 1,000 calls because a
+                # per-call figure is too small to reason about (SPEC.md §14.2).
+                "costPer1k": round((k.get("costEffective") or 0.0) * 1000, 6),
+                "displacedModelId": k.get("incumbent"),
+                "hfDownloads": model.get("hfDownloads"),
+            }
+        )
+
+    save_json(
+        ARTIFACTS_DIR / "roster.json",
+        {
+            "generatedAt": generated_at,
+            "provenance": "offline-stub" if offline else "live-featherless",
+            "note": (
+                "STUB NUMBERS from promote.py --offline — deterministic stand-ins, "
+                "not measured. Do not show these as results; run --live."
+                if offline
+                else "Measured by promote.py --live against Featherless; every call is in sweep-log.jsonl."
+            ),
+            "roster": rows,
+        },
+    )
+
+
 def write_artifacts(pipeline_out: dict[str, Any]) -> None:
     generated_at = dt.datetime.now(dt.timezone.utc).isoformat()
     offline = pipeline_out.get("offline", True)
@@ -270,6 +327,8 @@ def write_artifacts(pipeline_out: dict[str, Any]) -> None:
     save_json(ARTIFACTS_DIR / "results.json", results)
 
     catalog = load_json(ARTIFACTS_DIR / "catalog.json")
+    write_roster(pipeline_out, catalog, generated_at, offline)
+
     candidates = load_json(ARTIFACTS_DIR / "candidates.json")
     warm_status_path = ARTIFACTS_DIR / "warm_status.json"
     reachable = None

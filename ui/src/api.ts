@@ -175,11 +175,44 @@ function startLiveRun(opts: StartRunOpts): RunHandle {
   return handle;
 }
 
+/** GET /api/roster returns `{ roster, policyVersion }` with snake_case rows
+ * straight out of D1 (SPEC.md §12), but the UI's RosterEntry is camelCase and
+ * the component maps over an ARRAY. Without unwrapping and mapping here,
+ * `/roster` rendered an empty table even with rows in the database — the
+ * screen the demo opens on (SPEC.md §15 0:00). */
+interface RosterRow {
+  task_kind: string;
+  model_id: string;
+  model_class: string;
+  promoted_at: number;
+  accuracy: number;
+  ci_lo: number;
+  ci_hi: number;
+  cost_per_1k: number;
+  displaced_model_id: string;
+  hf_downloads: number | null;
+}
+
 export async function fetchRoster(): Promise<RosterEntry[]> {
   if (MOCK) return mockRoster;
   const res = await fetch(`${API_BASE}/api/roster`);
   if (!res.ok) throw new Error(`GET /api/roster failed: ${res.status}`);
-  return res.json();
+  const body = (await res.json()) as { roster?: RosterRow[] } | RosterRow[];
+  const rows = Array.isArray(body) ? body : (body.roster ?? []);
+  return rows.map((r) => ({
+    taskKind: r.task_kind as RosterEntry['taskKind'],
+    modelId: r.model_id,
+    modelClass: r.model_class,
+    promotedAt: r.promoted_at,
+    accuracy: r.accuracy,
+    ciLo: r.ci_lo,
+    ciHi: r.ci_hi,
+    costPer1k: r.cost_per_1k,
+    displacedModelId: r.displaced_model_id,
+    // Long-tail models legitimately have no download count; the headline
+    // picks the LEAST-downloaded row, so a null must not sort as 0 and win.
+    hfDownloads: r.hf_downloads ?? Number.POSITIVE_INFINITY,
+  }));
 }
 
 export async function fetchBenchmark(): Promise<BenchmarkResult> {

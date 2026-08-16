@@ -28,6 +28,11 @@ interface CommandBarProps {
   /** Bumped once per `escalate` trace event — spikes the conic border's
    * spin speed for 400ms. DESIGN.md §5 Command bar. */
   escalateTick: number;
+  /** 'spotlight' strips the bar to a search field: a leading glyph, an empty
+   * input, and nothing else. No ghost completion, no idle suggestion list —
+   * macOS Spotlight shows you a cursor and waits. Used by the Electron
+   * overlay; the browser route keeps the default, which is unchanged. */
+  variant?: 'default' | 'spotlight';
   onSubmit(text: string, opts: { bypassCache: boolean; source: 'text' | 'voice'; attachments: Attachment[] }): void;
   onFilesDropped(files: File[]): void;
   onToast(message: string): void;
@@ -62,6 +67,7 @@ function fileToAttachment(file: File, kind: Attachment['kind']): Attachment {
 export default function CommandBar({
   running,
   escalateTick,
+  variant = 'default',
   onSubmit,
   onFilesDropped,
   onToast,
@@ -69,6 +75,7 @@ export default function CommandBar({
   recentPrompts,
   authedFetch,
 }: CommandBarProps) {
+  const isSpotlight = variant === 'spotlight';
   const [value, setValue] = useState('');
   const [source, setSource] = useState<'text' | 'voice'>('text');
   const [focused, setFocused] = useState(false);
@@ -162,15 +169,21 @@ export default function CommandBar({
   // Keep the list open while an arrow/hover PREVIEW is filling the input
   // (highlight >= 0) — otherwise the now-non-empty value would hide the
   // list mid-navigation. Empty + focused opens it; navigating keeps it.
-  const showSuggestions = focused && !running && (value.trim().length === 0 || highlight >= 0);
+  // The spotlight overlay shows neither list nor ghost: it is a search field
+  // that waits for a cursor, so both are suppressed there.
+  const showSuggestions =
+    !isSpotlight && focused && !running && (value.trim().length === 0 || highlight >= 0);
   const filtered = SUGGESTIONS;
   // Only shown while the input is empty — this is a context-aware next
   // ACTION, not a completion of whatever's been typed, so a partial prefix
   // match (the old static-GHOST behavior) doesn't apply here.
-  const ghostSuffix = suggestionsEnabled && nextAction && value.length === 0 ? nextAction : '';
+  const ghostSuffix =
+    !isSpotlight && suggestionsEnabled && nextAction && value.length === 0 ? nextAction : '';
 
   function fetchNextAction() {
-    if (!suggestionsEnabled) return;
+    // No suggestion fetch in the overlay — nothing would render it, so the
+    // request would be pure waste.
+    if (!suggestionsEnabled || isSpotlight) return;
     const seq = ++suggestSeqRef.current;
     storeApi
       .suggest(authedFetch, recentPromptsRef.current)
@@ -381,7 +394,7 @@ export default function CommandBar({
             style={ringSpike ? ({ '--ring-duration': '1.2s' } as React.CSSProperties) : undefined}
           >
             <motion.div
-              className={`bar-pill relative animate-bar-in ${isMultiline ? 'is-multiline' : ''} ${isDragOver ? 'is-dragover' : ''} ${
+              className={`bar-pill relative animate-bar-in ${isSpotlight ? 'is-spotlight' : ''} ${isMultiline ? 'is-multiline' : ''} ${isDragOver ? 'is-dragover' : ''} ${
                 confirmPulsing ? 'animate-confirm-pulse' : ''
               } ${emberFlashing ? 'animate-ember-edge-flash' : ''} ${focusPulsing ? 'animate-focus-glow-pulse' : ''}`}
             >
@@ -391,6 +404,26 @@ export default function CommandBar({
                   The textarea's pr-24 reserves their width uniformly, so a
                   2+ line prompt never runs underneath them. */}
               <div className="relative">
+                {isSpotlight && (
+                  // Leading glyph instead of placeholder copy — the field
+                  // reads as a search field without a word of instruction in
+                  // it. Absolutely placed so it never disturbs the textarea's
+                  // auto-grow measurement.
+                  <svg
+                    viewBox="0 0 24 24"
+                    width="19"
+                    height="19"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    className="pointer-events-none absolute left-5 top-[21px] z-10 text-white/35"
+                    aria-hidden
+                  >
+                    <circle cx="11" cy="11" r="7" />
+                    <path d="m20 20-3.6-3.6" />
+                  </svg>
+                )}
                 <textarea
                   ref={textareaRef}
                   value={value}
@@ -401,7 +434,9 @@ export default function CommandBar({
                   // at the same top-left position, so leaving the native
                   // placeholder on while a ghost suggestion is showing would
                   // double up as overlapping text.
-                  placeholder={ghostSuffix ? '' : 'Ask Understudy anything…'}
+                  // The overlay shows no copy at all — a cursor and nothing
+                  // else, the way Spotlight opens.
+                  placeholder={isSpotlight || ghostSuffix ? '' : 'Ask Understudy anything…'}
                   onChange={(e) => {
                     const next = e.target.value;
                     setValue(next);
@@ -422,9 +457,10 @@ export default function CommandBar({
                   onPaste={handlePaste}
                   spellCheck={false}
                   aria-label="Command"
-                  className={`bar-textarea relative z-10 block w-full origin-left resize-none overflow-hidden bg-transparent py-[18px] pl-4 pr-24 text-[15px] leading-[1.5] text-white placeholder:text-white/25 outline-none transition-[transform,opacity] duration-100 ease-out disabled:opacity-50 ${
-                    clearing ? 'scale-95 opacity-0' : 'scale-100 opacity-100'
-                  }`}
+                  // Spotlight: room for the leading glyph, larger/lighter type.
+                  className={`bar-textarea relative z-10 block w-full origin-left resize-none overflow-hidden bg-transparent py-[18px] pr-24 leading-[1.5] text-white placeholder:text-white/25 outline-none transition-[transform,opacity] duration-100 ease-out disabled:opacity-50 ${
+                    isSpotlight ? 'pl-12 text-[19px] font-light tracking-[-0.01em]' : 'pl-4 text-[15px]'
+                  } ${clearing ? 'scale-95 opacity-0' : 'scale-100 opacity-100'}`}
                 />
                 {ghostSuffix && (
                   <div className="pointer-events-none absolute inset-0 top-0 flex items-start whitespace-pre-wrap py-[18px] pl-4 pr-24 text-[15px] leading-[1.5]">
