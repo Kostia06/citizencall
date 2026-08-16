@@ -14,7 +14,7 @@ import { detectMentionedToolkits } from './toolkit-mentions';
 import { executeSubTask, type PriorOutput, type ToolCallResult } from './execute';
 import { buildRunEndEvent, sumCost } from './trace';
 import { asTraceEvent } from './events';
-import { listEnabledMcpToolkits } from './mcp';
+import { buildMcpTransport, listEnabledMcpToolkits } from './mcp';
 import { finalizeRun, flushHops, flushToolCalls, insertRun, insertSubTasks, saveRunAnswer } from '../db';
 import { loadUserContext } from '../store/context';
 import { listConnections } from '../store/connections';
@@ -147,6 +147,11 @@ export async function runPipeline(
 
   const mcpToolkits = await listEnabledMcpToolkits(db, body.userId).catch(() => []);
   const mcpTokens = new Set(mcpToolkits.map((m) => m.toolkit));
+  // SSRF guard's localhost exception is dev-only (see providers/mcp-client.ts).
+  const mcpTransport =
+    mcpToolkits.length > 0
+      ? buildMcpTransport(mcpToolkits, { allowLocalhost: env.APP_URL?.includes('localhost') ?? false })
+      : undefined;
   // Catalog toolkits the prompt mentions (e.g. "discord") join the planner's
   // vocabulary so a needed-but-unconnected app plans a tool call and the
   // connection-required pause can name it.
@@ -191,6 +196,7 @@ export async function runPipeline(
         userId: body.userId,
         emit: record,
         mcpToolkits: mcpTokens,
+        ...(mcpTransport ? { mcpTransport } : {}),
         ...(userContext ? { userContext } : {}),
         priorOutputs,
         ...(opts.waitForConnection ? { waitForConnection: opts.waitForConnection } : {}),
