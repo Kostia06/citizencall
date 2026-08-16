@@ -104,13 +104,15 @@ export default function Memory() {
   }
 
   return (
-    <div className="min-h-screen px-6 pb-24 pt-24">
-      <TopNav />
+    <div className="min-h-screen px-6 pb-24 pt-6">
+      <div className="mx-auto max-w-2xl">
+        <TopNav />
+      </div>
       <motion.div
         initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
         transition={reduceMotion ? entranceStandardReduced : entranceStandard}
-        className="mx-auto flex max-w-2xl flex-col gap-4"
+        className="mx-auto mt-10 flex max-w-2xl flex-col gap-4"
       >
         <div className="flex items-end justify-between">
           <div>

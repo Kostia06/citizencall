@@ -363,7 +363,7 @@ export default function ButtonEditor({
                   }`}
                 >
                   <span className="flex h-6 w-6 items-center justify-center">{meta.icon}</span>
-                  <span className="truncate">{meta.name}</span>
+                  <span className="w-full truncate text-center">{meta.name}</span>
                 </button>
               );
             })}
@@ -392,7 +392,7 @@ export default function ButtonEditor({
                       <span className="flex h-6 w-6 items-center justify-center">
                         <ToolkitIcon app={app} className="h-5 w-5" />
                       </span>
-                      <span className="truncate">{app.name}</span>
+                      <span className="w-full truncate text-center">{app.name}</span>
                     </button>
                   );
                 })}
@@ -421,7 +421,7 @@ export default function ButtonEditor({
                       }`}
                     >
                       <span className="flex h-6 w-6 items-center justify-center text-[15px] leading-none">⟳</span>
-                      <span className="truncate">{routine.name}</span>
+                      <span className="w-full truncate text-center">{routine.name}</span>
                     </button>
                   );
                 })}
