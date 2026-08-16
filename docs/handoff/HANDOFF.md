@@ -707,3 +707,10 @@ Repo /Users/kostiailn/Projects/forge-hack, branch feature/ui. Dev: vite :5173, w
 
 ### Handoff Context (paste into next session)
 State is CLOSED — resume only for new asks. Repo /Users/kostiailn/Projects/forge-hack, branch feature/ui == main. Prod deploy recipe: `cd ui && pnpm build` then `cd worker && npx wrangler deploy`. Packaged-app update recipe + Node-26 packager bug: see the 13:15 entry above. Cache keeper runs itself (cron */15) — check `wrangler d1 execute understudy --remote` plan_cache/toolkit_tools counts if judges report slowness. All hard-won gotchas: 13:15 entry + mem0 ("forge-hack").
+
+## Handoff addendum: 2026-08-16 — pending test: CitizenCall vs winstreak MCP
+
+- NEW TODO (user request): test the app's custom-MCP path against the user's real **winstreak** MCP server: `https://winstreak.ilnkostia-dev.workers.dev` (their own CF worker; registered in Claude Code at user scope as SSE `…/sse`, same server the macOS Claude app uses via mcp-remote).
+- How: Settings → Apps → Custom MCPs → add "winstreak"; then run a prompt naming it (e.g. "use winstreak to …" — discover its actual tools first via tools/list). Pipeline transport is `worker/src/providers/mcp-client.ts` — **Streamable HTTP (POST JSON-RPC)**. winstreak's known endpoint is `/sse` (legacy SSE transport: GET /sse + POST /message), which is a DIFFERENT protocol; try the bare origin and `/mcp` first (many workers-mcp servers expose Streamable too). If only SSE-transport exists, the client needs an SSE-transport fallback — that's the likely work item this test surfaces.
+- Also note the SSRF guard in mcp-client allows public https origins, so workers.dev passes.
+- PWA note (same day): Electron app + release fully removed; installable PWA replaces it (manifest + minimal sw caching only /assets/*; install buttons on Landing + Settings→Personal). Prod 44a56c78, main 5152d8b.
