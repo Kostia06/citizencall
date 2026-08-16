@@ -28,6 +28,24 @@ export interface RoutineSpec {
   name: string;
   prompt: string;
   schedule: RoutineSchedule | null;
+  /** Requested time of day in the USER'S local clock (0-23), when the text
+   * states one ("at 6 am") — converted to UTC at persist time using the
+   * client-sent tz offset. Null = no stated time. */
+  runAtHourLocal: number | null;
+}
+
+/** "at 6 am" / "at 6:30pm" / "at 18:00" → local hour 0-23; bare "at 6" is
+ * ambiguous and ignored. Exported for tests. */
+export function hourFromText(text: string): number | null {
+  const m = /\bat\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\b/i.exec(text);
+  if (!m) return null;
+  let hour = Number(m[1]);
+  const meridiem = m[3]?.toLowerCase();
+  if (!meridiem && m[2] === undefined) return null; // "at 6" — could be anything
+  if (hour > 23 || (meridiem && hour > 12)) return null;
+  if (meridiem === 'pm' && hour < 12) hour += 12;
+  if (meridiem === 'am' && hour === 12) hour = 0;
+  return hour;
 }
 
 /** "every morning" and friends map onto the schema's three-value enum;
@@ -54,7 +72,7 @@ export function heuristicRoutineSpec(text: string): RoutineSpec {
     text;
   const prompt = task.trim().replace(SCHEDULE_TAIL, '').replace(/[.!?]+$/, '').trim() || text.trim();
   const name = named?.[1]?.trim() || prompt.split(/\s+/).slice(0, 4).join(' ');
-  return { name, prompt, schedule: scheduleFromText(text) };
+  return { name, prompt, schedule: scheduleFromText(text), runAtHourLocal: hourFromText(text) };
 }
 
 const SPEC_SYSTEM_PROMPT = [
@@ -90,6 +108,9 @@ export function parseRoutineSpec(raw: string, sourceText: string): RoutineSpec |
     schedule:
       scheduleFromText(sourceText) ??
       (schedule === 'hourly' || schedule === 'daily' || schedule === 'weekly' ? schedule : null),
+    // Time of day comes ONLY from the deterministic parse — a small model
+    // hallucinating "9" for an unstated time would silently shift the cron.
+    runAtHourLocal: hourFromText(sourceText),
   };
 }
 
@@ -110,8 +131,20 @@ async function extractSpecWithModel(env: Env, text: string): Promise<RoutineSpec
   }
 }
 
-function describeSchedule(schedule: RoutineSchedule | null): string {
-  return schedule ? `runs ${schedule}` : 'runs on demand (no schedule)';
+function describeSchedule(schedule: RoutineSchedule | null, localHour?: number | null): string {
+  if (!schedule) return 'runs on demand (no schedule)';
+  if (schedule === 'daily' && localHour != null) {
+    const h12 = localHour % 12 === 0 ? 12 : localHour % 12;
+    return `runs daily at ${h12}:00 ${localHour < 12 ? 'AM' : 'PM'}`;
+  }
+  return `runs ${schedule}`;
+}
+
+/** Local wall-clock hour → UTC hour, via the client-sent minutes offset
+ * (JS getTimezoneOffset convention: minutes to ADD to local to reach UTC).
+ * Non-integral offsets (e.g. +330) round to the nearest hour. */
+export function localHourToUtc(localHour: number, tzOffsetMinutes: number): number {
+  return ((Math.round(localHour + tzOffsetMinutes / 60) % 24) + 24) % 24;
 }
 
 /** Full fast-path run: extract → create (or report the duplicate) → mirror
@@ -121,10 +154,16 @@ export async function createRoutineFromChat(
   env: Env,
   db: D1Database,
   emit: (e: TraceEvent) => void,
-  body: { runId: string; userId: string; text: string }
+  body: { runId: string; userId: string; text: string; tzOffsetMinutes?: number }
 ): Promise<void> {
   const startedAt = Date.now();
   const spec = (await extractSpecWithModel(env, body.text)) ?? heuristicRoutineSpec(body.text);
+  // A stated time only matters for daily routines; without a client tz
+  // offset, assume UTC (the confirmation still shows the user's own words).
+  const runAtHour =
+    spec.schedule === 'daily' && spec.runAtHourLocal != null
+      ? localHourToUtc(spec.runAtHourLocal, body.tzOffsetMinutes ?? 0)
+      : null;
 
   // Name is the identity: repeating the same request must answer, not pile
   // up duplicate routines (and duplicate scheduled runs).
@@ -138,6 +177,7 @@ export async function createRoutineFromChat(
       name: spec.name,
       prompt: spec.prompt,
       schedule: spec.schedule,
+      runAtHour,
       enabled: true,
       now: Date.now(),
     });
@@ -157,7 +197,7 @@ export async function createRoutineFromChat(
       });
     })().catch(() => null);
     if (saved) emit({ t: 'memory_saved', memoryId: saved.id, title: saved.title });
-    answer = `Created routine "${routine.name}" — ${describeSchedule(routine.schedule)}. You can bind it to a bar button in Settings.`;
+    answer = `Created routine "${routine.name}" — ${describeSchedule(routine.schedule, spec.runAtHourLocal)}. You can bind it to a bar button in Settings.`;
   }
 
   emit({ t: 'answer', subTaskId: 'routine-intent', text: answer });

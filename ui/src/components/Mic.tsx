@@ -257,11 +257,24 @@ export default function Mic({ onInterim, onFinal, onToast, disabled }: MicProps)
       return;
     }
 
+    // One automatic retry on transient failures (network drop, 5xx/502
+    // ElevenLabs hiccup — seen live) before asking the user to re-record.
+    // 4xx means the audio itself is bad; retrying the same blob can't help.
     try {
       const form = new FormData();
       form.append('audio', blob, `recording.${extFor(mimeType)}`);
-      const res = await fetch(`${API_BASE}/api/stt`, { method: 'POST', body: form });
-      if (!res.ok) throw new Error(`POST /api/stt failed: ${res.status}`);
+      let res: Response | null = null;
+      for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+          res = await fetch(`${API_BASE}/api/stt`, { method: 'POST', body: form });
+          if (res.ok || res.status < 500) break;
+        } catch (err) {
+          if (attempt === 1) throw err;
+          res = null;
+        }
+        if (attempt === 0) await new Promise((resolve) => setTimeout(resolve, 800));
+      }
+      if (!res?.ok) throw new Error(`POST /api/stt failed: ${res?.status ?? 'network'}`);
       const body = (await res.json()) as { text?: string };
       setPhase('idle');
       if (body.text?.trim()) onFinal(body.text.trim());

@@ -137,6 +137,8 @@ function startLiveRun(opts: StartRunOpts): RunHandle {
           source: opts.source,
           noCache: opts.noCache,
           attachments: opts.attachments ?? [],
+          // Lets "at 6 am" in chat-created routines anchor to this clock.
+          tzOffsetMinutes: new Date().getTimezoneOffset(),
           ...(opts.history && opts.history.length > 0 ? { history: opts.history } : {}),
         }),
       });
@@ -569,6 +571,19 @@ export interface RunDetail {
   toolCalls: unknown[];
 }
 
+/** One row of GET /api/notifications — a routine-triggered run, joined to
+ * its run row for status/cost/answer (worker routines/run-links.ts). */
+export interface NotificationSummary {
+  runId: string;
+  routineId: string;
+  routineName: string;
+  createdAt: number;
+  status: string;
+  totalCostUsd: number;
+  /** Final reply truncated server-side (~200 chars); null while running. */
+  answerPreview: string | null;
+}
+
 /** One row of GET /api/keys — masked key + usage counters. */
 export interface ApiKeySummary {
   id: string;
@@ -598,6 +613,19 @@ export const storeApi = {
     return withMockFallback(
       async () => {
         const res = await authedFetch('/api/sessions');
+        if (!res.ok) throw new AuthError(await readJsonError(res), res.status);
+        return res.json();
+      },
+      async () => [],
+    );
+  },
+
+  /** Routine-run feed for the bell drawer, newest first. Anon-friendly like
+   * listSessions (cookie identity); MOCK/backend-down falls back to []. */
+  async listNotifications(authedFetch: AuthedFetch): Promise<NotificationSummary[]> {
+    return withMockFallback(
+      async () => {
+        const res = await authedFetch('/api/notifications');
         if (!res.ok) throw new AuthError(await readJsonError(res), res.status);
         return res.json();
       },

@@ -22,6 +22,7 @@ import { getEnabledProvider } from '../store/user-providers';
 import { buildMemoryContext } from '../memory/context';
 import { maybeAutoWriteMemory } from './memory-hook';
 import { buildConversationBlock, lastUserTurnHint, type ConversationTurn } from './conversation';
+import { buildAttachmentsBlock, type RunAttachmentInput } from './attachments';
 import { createRoutineFromChat, isRoutineCreationIntent } from './routine-intent';
 import { answerCapability, isCapabilityIntent } from './capability-intent';
 import { normalizePlanKey } from '../cache/plan';
@@ -37,6 +38,12 @@ export interface RunRequest {
   /** Prior turns of the client session, oldest first (validated/truncated at
    * /api/run). Budgeted into the userContext channel — never the plan text. */
   history?: ConversationTurn[];
+  /** Attached-file text (validated/capped at /api/run — attachmentsSchema).
+   * Quoted into the userContext channel — never the plan text. */
+  attachments?: RunAttachmentInput[];
+  /** Client's Date.getTimezoneOffset() — lets "at 6 am" in a chat-created
+   * routine anchor to the user's clock, not UTC. */
+  tzOffsetMinutes?: number;
 }
 
 /** `policy`/`candidates` are test seams only — production always runs on the
@@ -101,7 +108,13 @@ export async function runPipeline(
   // memories — the system message, via execute.ts buildMessages — and, being
   // part of userContext, they key the run cache below by construction.
   const conversationBlock = buildConversationBlock(body.history);
-  const userContext = [userCtx.contextPrompt, memoryBlock, conversationBlock].filter(Boolean).join('\n\n');
+  // (attachments) Dropped/picked files ride the SAME channel too — quoted
+  // verbatim in the system message, part of the cache key by construction:
+  // the same prompt with a different file must not replay a stale answer.
+  const attachmentsBlock = buildAttachmentsBlock(body.attachments);
+  const userContext = [userCtx.contextPrompt, memoryBlock, conversationBlock, attachmentsBlock]
+    .filter(Boolean)
+    .join('\n\n');
 
   const norm = await normalize(env, db, policy, body.text, body.source);
   if (body.source === 'voice') {

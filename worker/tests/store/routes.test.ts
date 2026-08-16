@@ -32,7 +32,9 @@ it('settings is anon-friendly — no-cookie GET mints an anon session with defau
   // arranger persists for anonymous sessions and claim-on-login re-keys it.
   const res = await app.request('/api/settings', {}, env);
   expect(res.status).toBe(200);
-  expect((await res.json<any>()).buttons.length).toBeGreaterThan(0);
+  // Defaults ship an EMPTY orb row since 2026-08-16 (bar starts input-only);
+  // anon-friendliness is proven by the 200 + minted cookie, not the content.
+  expect(Array.isArray((await res.json<any>()).buttons)).toBe(true);
   expect(res.headers.get('set-cookie') ?? '').toContain('anon');
 });
 

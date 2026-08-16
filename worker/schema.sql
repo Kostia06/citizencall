@@ -70,6 +70,13 @@ CREATE TABLE IF NOT EXISTS api_keys(
   requests INTEGER NOT NULL DEFAULT 0, cost_usd REAL NOT NULL DEFAULT 0);
 CREATE INDEX IF NOT EXISTS idx_api_keys_user ON api_keys(user_id);
 
+-- Routine-run linkage for GET /api/notifications (routines/run-links.ts —
+-- also lazily provisioned).
+CREATE TABLE IF NOT EXISTS routine_runs(
+  run_id TEXT PRIMARY KEY, routine_id TEXT NOT NULL,
+  user_id TEXT NOT NULL, created_at INTEGER NOT NULL);
+CREATE INDEX IF NOT EXISTS idx_routine_runs_user ON routine_runs(user_id, created_at DESC);
+
 -- MCP caches (cache/mcp.ts — also lazily provisioned).
 CREATE TABLE IF NOT EXISTS mcp_tools_cache(url_hash TEXT PRIMARY KEY, tools_json TEXT NOT NULL, created_at INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS mcp_select_cache(key TEXT PRIMARY KEY, value_json TEXT NOT NULL, created_at INTEGER NOT NULL);

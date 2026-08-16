@@ -124,9 +124,12 @@ describe('runPipeline — run-result cache', () => {
   });
 
   it('does not cache a run whose final hop failed verification', async () => {
-    // extract_fields: the stub model output is never valid JSON, so both
-    // rungs fail schema and the run must not be cached.
-    const text = 'extract structured fields from the invoice';
+    // summarize whose stub echo trips the degenerate-repetition detector (a
+    // 5-word shingle repeated 5×) on both rungs, so the run must not be
+    // cached. (extract_fields no longer works here: as the FINAL sub-task it
+    // answers in prose and the stub echo passes that contract.)
+    const text =
+      'summarize: buy milk now please today buy milk now please today buy milk now please today buy milk now please today buy milk now please today';
     const first = await run('demo_kos', text);
     const firstEnd = first.events.filter((e) => e.t === 'hop_end');
     expect(firstEnd.length).toBe(2); // primary + one escalation

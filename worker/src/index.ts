@@ -22,6 +22,7 @@ import { checkAndIncrement } from './auth/throttle';
 import { recordApiKeyCost, resolveApiKey } from './store/api-keys';
 import { suggestNextAction } from './pipeline/suggest';
 import { historySchema } from './pipeline/conversation';
+import { attachmentsSchema } from './pipeline/attachments';
 import funnelFixture from '../../artifacts/funnel.example.json';
 
 export { RunDO } from './run.do';
@@ -51,6 +52,14 @@ const runRequestSchema = z.object({
   // (12 newest turns, 2000 chars each), threaded through the DO to
   // runPipeline's conversation block.
   history: historySchema.optional(),
+  // Files attached in the command bar — client-extracted text only, capped
+  // and filtered by the schema (4 files, 50KB each; metadata-only entries
+  // dropped, never rejected). Threaded through the DO to runPipeline's
+  // ATTACHED FILES block.
+  attachments: attachmentsSchema.optional(),
+  // Client Date.getTimezoneOffset() — anchors "at 6 am" in chat-created
+  // routines to the user's clock instead of UTC.
+  tzOffsetMinutes: z.number().int().min(-900).max(900).optional(),
 });
 
 app.post('/api/run', async (c) => {
@@ -74,6 +83,10 @@ app.post('/api/run', async (c) => {
       source: parsed.data.source,
       noCache: parsed.data.noCache ?? false,
       ...(parsed.data.history && parsed.data.history.length > 0 ? { history: parsed.data.history } : {}),
+      ...(parsed.data.attachments && parsed.data.attachments.length > 0
+        ? { attachments: parsed.data.attachments }
+        : {}),
+      ...(parsed.data.tzOffsetMinutes !== undefined ? { tzOffsetMinutes: parsed.data.tzOffsetMinutes } : {}),
     }),
   });
   return c.json({ runId });

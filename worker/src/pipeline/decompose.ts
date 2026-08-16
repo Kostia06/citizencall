@@ -104,6 +104,10 @@ function systemPrompt(extraToolkits: string[], toolListing = ''): string {
     // "Agent's name: Jeff") — chit-chat is a reply, not a data extraction.
     'For conversational prompts (greetings, small talk, questions about the user or about you), plan a',
     'SINGLE summarize sub-task whose instruction is to reply naturally in first person — never extract_fields.',
+    // Found live: "whats my latest email" planned one extract_fields step and
+    // the user received raw JSON as the answer.
+    'extract_fields is ONLY for intermediate structured data a later step consumes — the LAST sub-task,',
+    "whose output the user reads, must be summarize or classify, never extract_fields.",
     ...(toolListing
       ? [
           'Available tools per toolkit. When a step uses a toolkit, set "tool" to the ONE exact slug',

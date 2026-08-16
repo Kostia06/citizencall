@@ -10,6 +10,7 @@ import HistoryDrawer from '../components/history/HistoryDrawer';
 import RestoredTurn, { type RestoredRun } from '../components/history/RestoredTurn';
 import { DEFAULT_PREFS, MOCK, startRun, storeApi, type Connection, type HistoryTurn, type Routine, type RunHandle, type SessionSummary, type UserPrefsButton } from '../api';
 import { ensureInputButton } from '../store/types';
+import { useRestoreParam } from '../lib/useRestoreParam';
 import { conversationReducer, initialConversationState } from '../lib/traceReducer';
 import { layoutFlow, layoutFlowReduced } from '../lib/motion';
 import { useAuth } from '../auth/useAuth';
@@ -337,6 +338,10 @@ export default function Bar() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [restored.map((r) => `${r.run.id}:${r.run.status}`).join(',')]);
 
+  // Notification rows navigate to `/?restore=<runId>` — restore that run
+  // into the transcript exactly like a history-drawer selection.
+  useRestoreParam(handleSelectSession);
+
   function handleSelectSession(id: string) {
     if (MOCK) {
       const turn = turns.find((t) => t.id === id);
@@ -490,23 +495,10 @@ export default function Bar() {
   const alignClass = barAlignment === 'left' ? 'mr-auto ml-0' : barAlignment === 'right' ? 'ml-auto mr-0' : 'mx-auto';
 
   // The input is itself a positionable slot in prefs.buttons (`id:'input'`)
-  // — the row renders [orbs before] input [orbs after], so dragging the
-  // input pill in the settings arranger genuinely moves the text field.
+  // — Orbs renders the whole row (orbs + the command bar as the input
+  // slot), so dragging the pill's grip live moves the text field exactly
+  // like the settings arranger, through the same reorder merge + persist.
   const orderedButtons = ensureInputButton(barButtons);
-  const inputIdx = orderedButtons.findIndex((b) => b.id === 'input');
-  const orbsBefore = orderedButtons.slice(0, inputIdx);
-  const orbsAfter = orderedButtons.slice(inputIdx + 1);
-
-  /** A drag inside one side's Reorder group hands back that side's new
-   * order (hidden buttons already merged by Orbs); splice it into the full
-   * list around the input slot and persist the whole thing. */
-  function handleSideReorder(side: 'before' | 'after', next: UserPrefsButton[]) {
-    const full =
-      side === 'before'
-        ? [...next, orderedButtons[inputIdx]!, ...orbsAfter]
-        : [...orbsBefore, orderedButtons[inputIdx]!, ...next];
-    handleReorderButtons(full);
-  }
 
   const orbProps = {
     connectedSlugs,
@@ -547,35 +539,30 @@ export default function Bar() {
           hasContent ? 'pt-24 pb-4' : 'flex-1 items-center justify-center'
         }`}
       >
-        {/* orbs sit beside the bar on wide screens, BELOW it on narrow ones;
-            the input's own slot in prefs.buttons decides which side each orb
-            lands on (two Reorder groups — drags stay within a side; cross-
-            side moves live in the settings arranger). */}
+        {/* orbs sit beside the bar on wide screens, BELOW it on narrow ones
+            (the group wraps); ONE Reorder group holds orbs AND the input
+            slot, so the pill drags left/right among the orbs live — same
+            order the settings arranger edits. */}
         <div className="flex w-full flex-col items-center gap-3 sm:flex-row sm:items-start">
-          {orbsBefore.length > 0 && (
-            <div className="sm:pt-1.5">
-              <Orbs {...orbProps} buttons={orbsBefore} onReorder={(next) => handleSideReorder('before', next)} />
-            </div>
-          )}
-          <div className="w-full flex-1">
-            <CommandBar
-              running={running}
-              escalateTick={lastTurn?.trace.escalateTick ?? 0}
-              onSubmit={handleSubmit}
-              onFilesDropped={(files) => push(`${files.length} file${files.length === 1 ? '' : 's'} attached`)}
-              onToast={push}
-              suggestionsEnabled={suggestionsEnabled}
-              recentPrompts={turns.slice(-5).map((t) => t.prompt)}
-              authedFetch={authedFetch}
-              actionsRef={barActionsRef}
-              hasConversation={hasContent}
-            />
-          </div>
-          {orbsAfter.length > 0 && (
-            <div className="sm:pt-1.5">
-              <Orbs {...orbProps} buttons={orbsAfter} onReorder={(next) => handleSideReorder('after', next)} />
-            </div>
-          )}
+          <Orbs
+            {...orbProps}
+            buttons={orderedButtons}
+            onReorder={handleReorderButtons}
+            inputSlot={
+              <CommandBar
+                running={running}
+                escalateTick={lastTurn?.trace.escalateTick ?? 0}
+                onSubmit={handleSubmit}
+                onFilesDropped={(files) => push(`${files.length} file${files.length === 1 ? '' : 's'} attached`)}
+                onToast={push}
+                suggestionsEnabled={suggestionsEnabled}
+                recentPrompts={turns.slice(-5).map((t) => t.prompt)}
+                authedFetch={authedFetch}
+                actionsRef={barActionsRef}
+                hasConversation={hasContent}
+              />
+            }
+          />
           {/* History — opens the past-sessions drawer. Sits with the orbs so
               the centered-bar layout is untouched. */}
           <div className="sm:pt-1.5">

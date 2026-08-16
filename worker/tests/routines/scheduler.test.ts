@@ -37,6 +37,32 @@ describe('isDue', () => {
   });
 });
 
+describe('isDue with a stated time of day (daily + runAtHour, UTC)', () => {
+  // Anchor all cases at a known instant: 2027-01-15T14:07:00Z (hour 14).
+  const AT_1407 = Date.UTC(2027, 0, 15, 14, 7);
+  const TODAY_6AM = Date.UTC(2027, 0, 15, 6, 0);
+
+  it('waits for the first 6am AFTER creation — never fires retroactively', () => {
+    // Created 2pm, slot 6am: today's slot predates creation → not due.
+    expect(isDue('daily', null, AT_1407, 6, AT_1407 - 5 * MIN)).toBe(false);
+    // Next morning 6:10am → due.
+    expect(isDue('daily', null, TODAY_6AM + DAY + 10 * MIN, 6, AT_1407 - 5 * MIN)).toBe(true);
+  });
+
+  it('fires once per day at the slot, not on period-elapsed drift', () => {
+    // Ran at today's 6am already → 2pm same day is fresh.
+    expect(isDue('daily', TODAY_6AM + 2 * MIN, AT_1407, 6, 0)).toBe(false);
+    // Ran yesterday at 6am → today 6:07am is due.
+    expect(isDue('daily', TODAY_6AM - DAY + 2 * MIN, TODAY_6AM + 7 * MIN, 6, 0)).toBe(true);
+    // Ran yesterday at 6am but it's only 5:50am → today's slot hasn't arrived.
+    expect(isDue('daily', TODAY_6AM - DAY + 2 * MIN, TODAY_6AM - 10 * MIN, 6, 0)).toBe(false);
+  });
+
+  it('runAtHour is ignored for non-daily schedules', () => {
+    expect(isDue('hourly', AT_1407 - 2 * HOUR, AT_1407, 6, 0)).toBe(true);
+  });
+});
+
 interface StartBody {
   runId: string;
   userId: string;

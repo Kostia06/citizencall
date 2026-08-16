@@ -8,7 +8,9 @@ import type { TraceEvent } from '../src/types';
 import {
   createRoutineFromChat,
   heuristicRoutineSpec,
+  hourFromText,
   isRoutineCreationIntent,
+  localHourToUtc,
   parseRoutineSpec,
   scheduleFromText,
 } from '../src/pipeline/routine-intent';
@@ -86,10 +88,29 @@ describe('heuristicRoutineSpec', () => {
   });
 });
 
+describe('hourFromText / localHourToUtc', () => {
+  it('parses meridiem and 24h times, ignores bare ambiguous numbers', () => {
+    expect(hourFromText('say hi every morning at 6 am')).toBe(6);
+    expect(hourFromText('run at 6:30pm')).toBe(18);
+    expect(hourFromText('at 18:00 sharp')).toBe(18);
+    expect(hourFromText('at 12 am')).toBe(0);
+    expect(hourFromText('at 6')).toBeNull(); // ambiguous — no meridiem, no minutes
+    expect(hourFromText('every morning')).toBeNull();
+  });
+  it('converts local hour to UTC via the getTimezoneOffset convention', () => {
+    expect(localHourToUtc(6, 420)).toBe(13); // PDT (UTC-7): 6am local = 13:00 UTC
+    expect(localHourToUtc(6, -120)).toBe(4); // UTC+2: 6am local = 04:00 UTC
+    expect(localHourToUtc(23, 420)).toBe(6); // wraps past midnight
+  });
+  it('heuristic spec carries the stated local hour', () => {
+    expect(heuristicRoutineSpec('create a routine to say hi every morning at 6 am').runAtHourLocal).toBe(6);
+  });
+});
+
 describe('parseRoutineSpec', () => {
   it('parses fenced JSON and keeps a valid schedule', () => {
     const spec = parseRoutineSpec('```json\n{"name":"standup","prompt":"summarize my day","schedule":"daily"}\n```', '');
-    expect(spec).toEqual({ name: 'standup', prompt: 'summarize my day', schedule: 'daily' });
+    expect(spec).toEqual({ name: 'standup', prompt: 'summarize my day', schedule: 'daily', runAtHourLocal: null });
   });
 
   it('falls back to the text for a hallucinated schedule value', () => {

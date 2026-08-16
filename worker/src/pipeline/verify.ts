@@ -17,6 +17,10 @@ export interface VerifyInput {
    * classify answers verdict + bullets (see execute.ts), so the bare-label
    * contract doesn't apply. */
   toolDerived?: boolean;
+  /** This sub-task's output IS the user-facing answer (final sub-task). An
+   * extract_fields there answers in prose (EXTRACT_AS_ANSWER_PROMPT), so the
+   * JSON-shape contract doesn't apply — raw JSON at the user is the bug. */
+  finalAnswer?: boolean;
 }
 
 // Models wrap valid JSON in a markdown fence even when told "Reply with only
@@ -58,12 +62,18 @@ export function verify(input: VerifyInput): Verdict {
   const trimmed = input.output.trim();
   if (trimmed.length === 0) return 'fail_empty';
 
-  if (input.kind === 'extract_fields') {
+  if (input.kind === 'extract_fields' && !input.finalAnswer) {
     try {
       extractFieldsSchema.parse(JSON.parse(stripEnclosingFence(trimmed)));
     } catch {
       return 'fail_schema';
     }
+  }
+
+  if (input.kind === 'extract_fields' && input.finalAnswer) {
+    // The prose contract, inverted: a user-facing answer that still leads
+    // with a brace ignored EXTRACT_AS_ANSWER_PROMPT — escalate it.
+    if (trimmed.startsWith('{') || trimmed.startsWith('```')) return 'fail_schema';
   }
 
   if (input.kind === 'classify' && !input.toolDerived) {

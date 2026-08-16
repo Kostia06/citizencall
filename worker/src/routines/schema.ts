@@ -9,7 +9,7 @@
 
 const ROUTINES_SCHEMA = `
 CREATE TABLE IF NOT EXISTS user_routines(id TEXT PRIMARY KEY, user_id TEXT NOT NULL,
-  name TEXT NOT NULL, prompt TEXT NOT NULL, schedule TEXT,
+  name TEXT NOT NULL, prompt TEXT NOT NULL, schedule TEXT, run_at_hour INTEGER,
   enabled INTEGER NOT NULL DEFAULT 1, last_run_at INTEGER, created_at INTEGER NOT NULL);
 CREATE INDEX IF NOT EXISTS idx_user_routines_user ON user_routines(user_id);
 CREATE INDEX IF NOT EXISTS idx_user_routines_due ON user_routines(enabled, schedule);`;
@@ -18,6 +18,9 @@ export async function applyRoutinesSchema(db: D1Database): Promise<void> {
   for (const stmt of ROUTINES_SCHEMA.split(';').map((s) => s.trim()).filter(Boolean)) {
     await db.prepare(stmt).run();
   }
+  // Pre-existing deployments created the table without run_at_hour (added
+  // 2026-08-16 for "daily at 6 am" chat routines) — idempotent backfill.
+  await db.prepare('ALTER TABLE user_routines ADD COLUMN run_at_hour INTEGER').run().catch(() => undefined);
 }
 
 // One ensure per D1 binding per isolate (WeakSet keyed on the binding).

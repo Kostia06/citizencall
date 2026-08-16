@@ -129,6 +129,12 @@ const MAX_TOKENS_BY_KIND: Record<TaskKind, number> = {
 const CLASSIFY_WITH_EVIDENCE_PROMPT =
   'Classify the input. Lead with the verdict in **bold**, then 2-4 short bullets of the key evidence from the tool output.';
 
+// The FINAL sub-task's output goes straight to the user — an extract_fields
+// there dumped raw JSON into the chat (found live: "whats my latest email"
+// answered with {"email":{...}}). Same facts, human sentences.
+const EXTRACT_AS_ANSWER_PROMPT =
+  'Present the extracted information in plain language — short sentences or a tidy bullet list. Never JSON, braces, or field names.';
+
 const SYSTEM_PROMPT_BY_KIND: Record<TaskKind, string> = {
   classify: 'Classify the input. Reply with only the label, nothing else.',
   extract_fields: 'Extract structured fields from the input as a single JSON object. Reply with only JSON.',
@@ -180,7 +186,13 @@ const PERSONA =
   'or bullet lists unless the user asked for data or a list. ' +
   'If the user context below states your name, the user’s name, or a preference, it OVERRIDES these defaults — always apply it.';
 
-function buildMessages(subTask: SubTask, contextBlocks: string[], userContext?: string, hasToolOutput = false): FeatherlessMessage[] {
+function buildMessages(
+  subTask: SubTask,
+  contextBlocks: string[],
+  userContext?: string,
+  hasToolOutput = false,
+  finalAnswer = false
+): FeatherlessMessage[] {
   const content = [...contextBlocks, subTask.instruction].join('\n\n');
   // User context (saved context prompt + memories) rides in the SYSTEM
   // message — putting it in the user text made the model treat it as the
@@ -188,7 +200,11 @@ function buildMessages(subTask: SubTask, contextBlocks: string[], userContext?: 
   // understand your request" about its own context block).
   const system = [
     PERSONA,
-    subTask.kind === 'classify' && hasToolOutput ? CLASSIFY_WITH_EVIDENCE_PROMPT : SYSTEM_PROMPT_BY_KIND[subTask.kind],
+    subTask.kind === 'extract_fields' && finalAnswer
+      ? EXTRACT_AS_ANSWER_PROMPT
+      : subTask.kind === 'classify' && hasToolOutput
+        ? CLASSIFY_WITH_EVIDENCE_PROMPT
+        : SYSTEM_PROMPT_BY_KIND[subTask.kind],
     // Tool output arrives as raw JSON; small models echoed it verbatim
     // (guild-ID dumps, observed live). Present it like a human would.
     hasToolOutput
@@ -311,7 +327,7 @@ async function userProviderAttempt(
   ctx.emit({ t: 'hop_start', hop: { id: hopId, subTaskId: subTask.id, modelId: label, paramsB: 0 } });
 
   const { blocks, toolDerived } = contextBlocks(ctx, subTask, last.toolOutcome);
-  const messages = buildMessages(subTask, blocks, ctx.userContext, toolDerived);
+  const messages = buildMessages(subTask, blocks, ctx.userContext, toolDerived, Boolean(ctx.emitAnswerDelta));
   let content: string;
   let promptTokens: number;
   let completionTokens: number;
@@ -337,6 +353,7 @@ async function userProviderAttempt(
     output: content,
     needsTools: subTask.needsTools,
     toolDerived,
+    finalAnswer: Boolean(ctx.emitAnswerDelta),
     ...(last.toolOutcome?.status === 'ran' ? { toolOk: last.toolOutcome.ok } : {}),
   });
   const hop: Hop = {
@@ -601,7 +618,7 @@ async function runModel(
   const started = Date.now();
   const { blocks, toolDerived } = contextBlocks(ctx, subTask, toolOutcome);
   const maxTokens = maxTokensFor(ctx.policy, model, subTask.kind, toolDerived);
-  const messages = buildMessages(subTask, blocks, ctx.userContext, toolDerived);
+  const messages = buildMessages(subTask, blocks, ctx.userContext, toolDerived, Boolean(ctx.emitAnswerDelta));
   const cacheParams = {
     modelId: model.id,
     prompt: messages.map((m) => `${m.role}:${m.content}`).join('\n'),
@@ -651,6 +668,7 @@ async function runModel(
       output: content,
       needsTools: subTask.needsTools,
       toolDerived,
+      finalAnswer: Boolean(ctx.emitAnswerDelta),
       // 'skipped' leaves toolOk undefined on purpose: a deliberately skipped
       // tool is not a tool failure, the model just answers without tool data.
       ...(toolOutcome?.status === 'ran' ? { toolOk: toolOutcome.ok } : {}),

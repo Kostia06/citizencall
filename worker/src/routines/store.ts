@@ -12,6 +12,9 @@ export interface Routine {
   name: string;
   prompt: string;
   schedule: RoutineSchedule | null;
+  /** UTC hour (0-23) a daily routine should fire at; null = fire on the
+   * first sweep after its period elapses (the pre-time-of-day behavior). */
+  runAtHour: number | null;
   enabled: boolean;
   lastRunAt: number | null;
   createdAt: number;
@@ -23,6 +26,7 @@ interface RoutineRow {
   name: string;
   prompt: string;
   schedule: string | null;
+  run_at_hour: number | null;
   enabled: number;
   last_run_at: number | null;
   created_at: number;
@@ -35,13 +39,14 @@ function fromRow(row: RoutineRow): Routine {
     name: row.name,
     prompt: row.prompt,
     schedule: (row.schedule as RoutineSchedule | null) ?? null,
+    runAtHour: row.run_at_hour ?? null,
     enabled: row.enabled !== 0,
     lastRunAt: row.last_run_at,
     createdAt: row.created_at,
   };
 }
 
-const COLS = 'id,user_id,name,prompt,schedule,enabled,last_run_at,created_at';
+const COLS = 'id,user_id,name,prompt,schedule,run_at_hour,enabled,last_run_at,created_at';
 
 export async function listRoutines(db: D1Database, userId: string): Promise<Routine[]> {
   await ensureRoutinesSchema(db);
@@ -66,6 +71,8 @@ export interface RoutineCreate {
   name: string;
   prompt: string;
   schedule: RoutineSchedule | null;
+  /** UTC hour for daily routines; omit/null for period-elapsed firing. */
+  runAtHour?: number | null;
   enabled: boolean;
   now: number;
 }
@@ -75,10 +82,10 @@ export async function createRoutine(db: D1Database, input: RoutineCreate): Promi
   const id = crypto.randomUUID();
   await db
     .prepare(
-      `INSERT INTO user_routines(id,user_id,name,prompt,schedule,enabled,last_run_at,created_at)
-       VALUES(?,?,?,?,?,?,NULL,?)`
+      `INSERT INTO user_routines(id,user_id,name,prompt,schedule,run_at_hour,enabled,last_run_at,created_at)
+       VALUES(?,?,?,?,?,?,?,NULL,?)`
     )
-    .bind(id, input.userId, input.name, input.prompt, input.schedule, input.enabled ? 1 : 0, input.now)
+    .bind(id, input.userId, input.name, input.prompt, input.schedule, input.runAtHour ?? null, input.enabled ? 1 : 0, input.now)
     .run();
   return {
     id,
@@ -86,6 +93,7 @@ export async function createRoutine(db: D1Database, input: RoutineCreate): Promi
     name: input.name,
     prompt: input.prompt,
     schedule: input.schedule,
+    runAtHour: input.runAtHour ?? null,
     enabled: input.enabled,
     lastRunAt: null,
     createdAt: input.now,

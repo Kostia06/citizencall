@@ -16,6 +16,11 @@ export interface StartRunBody {
   /** Prior turns of the client session — validated/truncated at POST
    * /api/run, passed through to runPipeline untouched. */
   history?: Array<{ role: 'user' | 'assistant'; text: string }>;
+  /** Attached-file text — validated/capped at POST /api/run
+   * (attachmentsSchema), passed through to runPipeline untouched. */
+  attachments?: Array<{ name: string; mimeType?: string; text: string }>;
+  /** Client Date.getTimezoneOffset() — for time-of-day routine schedules. */
+  tzOffsetMinutes?: number;
 }
 
 const HEARTBEAT_MS = 15_000;
