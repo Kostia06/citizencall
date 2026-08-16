@@ -428,7 +428,7 @@ export default function CommandBar({
                     stroke="currentColor"
                     strokeWidth="2"
                     strokeLinecap="round"
-                    className="pointer-events-none absolute left-5 top-[21px] z-10 text-white/35"
+                    className="pointer-events-none absolute left-5 top-[21px] z-10 text-ink/35"
                     aria-hidden
                   >
                     <circle cx="11" cy="11" r="7" />
@@ -469,7 +469,7 @@ export default function CommandBar({
                   spellCheck={false}
                   aria-label="Command"
                   // Spotlight: room for the leading glyph, larger/lighter type.
-                  className={`bar-textarea relative z-10 block w-full origin-left resize-none overflow-hidden bg-transparent py-[18px] pr-24 leading-[1.5] text-white placeholder:text-white/25 outline-none transition-[transform,opacity] duration-100 ease-out disabled:opacity-50 ${
+                  className={`bar-textarea relative z-10 block w-full origin-left resize-none overflow-hidden bg-transparent py-[18px] pr-24 leading-[1.5] text-ink placeholder:text-ink/25 outline-none transition-[transform,opacity] duration-100 ease-out disabled:opacity-50 ${
                     isSpotlight ? 'pl-12 text-[19px] font-light tracking-[-0.01em]' : 'pl-4 text-[15px]'
                   } ${clearing ? 'scale-95 opacity-0' : 'scale-100 opacity-100'}`}
                 />
@@ -478,7 +478,7 @@ export default function CommandBar({
                     <span className="invisible">{value}</span>
                     <span
                       className={`ghost-text transition-colors duration-[120ms] ${
-                        ghostAccepting ? '!text-white' : ''
+                        ghostAccepting ? '!text-ink' : ''
                       }`}
                     >
                       {ghostSuffix}
@@ -487,14 +487,21 @@ export default function CommandBar({
                 )}
               </div>
 
-              <div className="absolute bottom-2.5 right-2.5 z-10 flex items-center gap-1.5">
+              {/* Spotlight's pill is single-line and taller, so the cluster
+                  centers vertically; the web pill grows multiline, where a
+                  bottom anchor is what keeps the cluster out of the text. */}
+              <div
+                className={`absolute right-2.5 z-10 flex items-center gap-1.5 ${
+                  isSpotlight ? 'top-1/2 -translate-y-1/2' : 'bottom-2.5'
+                }`}
+              >
                 <button
                   type="button"
                   disabled={running}
                   aria-label="Attach files"
                   title="Attach files"
                   onClick={() => fileInputRef.current?.click()}
-                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[#8E8E93] transition-colors hover:text-white disabled:opacity-30"
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-ink/40 transition-colors hover:text-ink/90 disabled:opacity-30"
                 >
                   <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden>
                     <path
@@ -524,7 +531,7 @@ export default function CommandBar({
                   disabled={running}
                   aria-label="Paste from clipboard"
                   onClick={handleClipboardButton}
-                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[#8E8E93] transition-colors hover:text-white disabled:opacity-30"
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-ink/40 transition-colors hover:text-ink/90 disabled:opacity-30"
                 >
                   <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="1.7" aria-hidden>
                     <rect x="7" y="3.5" width="10" height="4" rx="1.2" />

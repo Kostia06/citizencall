@@ -299,7 +299,7 @@ export default function Mic({ onInterim, onFinal, onToast, disabled }: MicProps)
         disabled={disabled || transcribing}
         aria-label={recording ? 'Stop recording' : transcribing ? 'Transcribing' : unsupported ? 'Voice unavailable' : 'Start voice input'}
         onClick={() => (recording ? stop() : start())}
-        className="relative flex h-8 w-8 items-center justify-center rounded-full text-[#8E8E93] transition-colors hover:text-white disabled:opacity-30"
+        className="relative flex h-8 w-8 items-center justify-center rounded-full text-ink/40 transition-colors hover:text-ink/90 disabled:opacity-30"
       >
         {/* Idle→recording crossfade, 150ms — DESIGN.md §5 Mic. All three
             glyphs stay mounted and swap opacity rather than instant-swap. */}
