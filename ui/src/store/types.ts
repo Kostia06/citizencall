@@ -31,7 +31,6 @@ export const DEFAULT_PREFS: UserPrefs = {
   buttons: [
     { id: 'github', action: 'connect:github' },
     { id: 'gmail', action: 'connect:gmail' },
-    { id: 'policy', action: 'open:roster' },
     { id: 'theme', action: 'toggle:theme' },
   ],
   contextPrompt: '',
@@ -52,7 +51,6 @@ export const KEYBINDING_ACTIONS = ['run', 'newline', 'bypassCache', 'focus', 'cl
 export const FIXED_BUTTON_ACTIONS = [
   'connect:github',
   'connect:gmail',
-  'open:roster',
   'toggle:user',
   'toggle:theme',
   'run',

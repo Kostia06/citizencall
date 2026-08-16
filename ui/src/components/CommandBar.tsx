@@ -372,21 +372,15 @@ export default function CommandBar({
       {({ isDragOver }) => (
         <div className="w-full">
           <motion.div
-            layout={!reduceMotion}
-            transition={reduceMotion ? layoutFlowReduced : layoutFlow}
+            // NOT a `layout` element: framer layout-projection writes inline
+            // border-radius every frame, which both fought the .is-multiline
+            // CSS and produced a distorted ghost outline mid-animation. The
+            // Bar wrapper (Bar.tsx) owns the position spring; height changes
+            // animate via the textarea's own CSS height transition.
             className={`bar-shell ${running ? 'is-running' : ''} ${isMultiline ? 'is-multiline' : ''}`}
-            // framer's layout animation writes an INLINE border-radius that
-            // overrides the .is-multiline CSS — so the radius must be driven
-            // through the style prop, which framer animates correctly.
-            style={{
-              borderRadius: isMultiline ? 26 : 9999,
-              ...(ringSpike ? ({ '--ring-duration': '1.2s' } as React.CSSProperties) : {}),
-            }}
+            style={ringSpike ? ({ '--ring-duration': '1.2s' } as React.CSSProperties) : undefined}
           >
             <motion.div
-              layout={!reduceMotion}
-              transition={reduceMotion ? layoutFlowReduced : layoutFlow}
-              style={{ borderRadius: isMultiline ? 24 : 9999 }}
               className={`bar-pill relative animate-bar-in ${isMultiline ? 'is-multiline' : ''} ${isDragOver ? 'is-dragover' : ''} ${
                 confirmPulsing ? 'animate-confirm-pulse' : ''
               } ${emberFlashing ? 'animate-ember-edge-flash' : ''} ${focusPulsing ? 'animate-focus-glow-pulse' : ''}`}

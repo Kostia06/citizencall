@@ -323,16 +323,8 @@ export default function Orbs({
 
     switch (btn.action) {
       case 'open:roster':
-        return (
-          <Orb as="link" to="/roster" className={`${orbBase} text-ink/70`} title={btn.label ?? 'Policy — open roster'}>
-            <span className="text-lg leading-none">◆</span>
-            {policyVersion && (
-              <span className="absolute -bottom-1 -right-1 rounded-full bg-accent px-1.5 py-0.5 text-[9px] font-bold leading-none text-black">
-                {policyVersion}
-              </span>
-            )}
-          </Orb>
-        );
+        // Removed from the bar (user request) — Roster lives in the top nav.
+        return null;
       case 'toggle:theme':
         return (
           <Orb

@@ -150,27 +150,41 @@ function isTrivialPrompt(text: string, extraToolkits: string[]): boolean {
   return !extraToolkits.some((t) => lower.includes(t.toLowerCase()));
 }
 
+// Planning ran on the frontier baseline (GLM), a REASONING model that spends
+// 20-50s thinking before emitting a 1-4 item JSON plan — measured live: 49s
+// of planning for a one-line prompt. Qwen2.5-14B (live-probed, servable,
+// non-reasoning) produces the same structured plan in ~3-6s; GLM stays as
+// the fallback when the fast planner fails or emits garbage.
+const FAST_PLANNER_MODELS = ['Qwen/Qwen2.5-14B-Instruct', 'Qwen/Qwen2.5-7B-Instruct'];
+const FAST_PLANNER_MAX_TOKENS = 700; // non-reasoning: the JSON fits comfortably
+
 // Returns null (not throws) on any failure so the caller falls back to the
 // heuristic. A planning misfire must never take down the whole run.
 async function modelPlan(env: Env, policy: Policy, text: string, extraToolkits: string[]): Promise<Plan | null> {
+  const messages = [
+    { role: 'system' as const, content: systemPrompt(extraToolkits) },
+    { role: 'user' as const, content: text },
+  ];
+
+  for (const modelId of FAST_PLANNER_MODELS) {
+    try {
+      const res = await callFeatherless(env, { modelId, messages, maxTokens: FAST_PLANNER_MAX_TOKENS });
+      const plan = planFromContent(res.content, extraToolkits);
+      if (plan) return plan;
+    } catch {
+      // unavailable/cold — try the next tier
+    }
+  }
+
   const modelId = policy.baselines.frontier;
   if (!modelId) return null;
-
   let content: string;
   try {
-    const res = await callFeatherless(env, {
-      modelId,
-      messages: [
-        { role: 'system', content: systemPrompt(extraToolkits) },
-        { role: 'user', content: text },
-      ],
-      maxTokens: MAX_TOKENS,
-    });
+    const res = await callFeatherless(env, { modelId, messages, maxTokens: MAX_TOKENS });
     content = res.content;
   } catch {
     return null; // cold/backpressure/capacity — heuristic covers the demo path
   }
-
   return planFromContent(content, extraToolkits);
 }
 

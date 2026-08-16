@@ -17,7 +17,6 @@ export const DEFAULT_PREFS: UserPrefs = {
   buttons: [
     { id: 'github', action: 'connect:github' },
     { id: 'gmail', action: 'connect:gmail' },
-    { id: 'policy', action: 'open:roster' },
     { id: 'theme', action: 'toggle:theme' },
   ],
   contextPrompt: '',

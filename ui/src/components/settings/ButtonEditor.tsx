@@ -50,7 +50,6 @@ function GmailGlyph() {
 const ACTION_META: Record<FixedButtonAction, { icon: ReactNode; name: string }> = {
   'connect:github': { icon: <GithubGlyph />, name: 'GitHub' },
   'connect:gmail': { icon: <GmailGlyph />, name: 'Gmail' },
-  'open:roster': { icon: <span className="text-[15px] leading-none">◆</span>, name: 'Roster' },
   'toggle:user': { icon: <span className="text-[15px] leading-none">◑</span>, name: 'User' },
   'toggle:theme': { icon: <span className="text-[15px] leading-none">☾</span>, name: 'Theme' },
   run: { icon: <span className="text-[13px] leading-none">▶</span>, name: 'Run' },
