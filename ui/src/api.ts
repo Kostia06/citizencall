@@ -730,7 +730,7 @@ export const storeApi = {
       async () => {
         const res = await authedFetch('/api/mcps', {
           method: 'POST',
-          body: JSON.stringify({ name: input.name, config: { url: input.url, headers: input.headers ?? {} } }),
+          body: JSON.stringify({ name: input.name, url: input.url, headers: input.headers ?? {} }),
         });
         if (!res.ok) throw new AuthError(await readJsonError(res), res.status);
         const { id } = (await res.json()) as { id: string };
@@ -750,7 +750,8 @@ export const storeApi = {
         const body: Record<string, unknown> = {};
         if (patch.name !== undefined) body.name = patch.name;
         if (patch.enabled !== undefined) body.enabled = patch.enabled;
-        if (patch.url !== undefined) body.config = { url: patch.url, headers: patch.headers ?? {} };
+        if (patch.url !== undefined) body.url = patch.url;
+        if (patch.headers !== undefined) body.headers = patch.headers;
         const res = await authedFetch(`/api/mcps/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(body) });
         if (!res.ok && res.status !== 204) throw new AuthError(await readJsonError(res), res.status);
       },
