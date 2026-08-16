@@ -192,9 +192,14 @@ export default function ButtonEditor({
   onChange,
   connections = [],
   routines = [],
+  onCreateSpecial,
 }: {
   buttons: UserPrefsButton[];
   onChange(next: UserPrefsButton[]): void;
+  /** Creates a "special button": persists the mini prompt as a routine and
+   * returns it so the selected orb can bind `routine:<id>`. Null = creation
+   * failed (caller already toasted). Omitted (e.g. tests) hides the form. */
+  onCreateSpecial?(name: string, prompt: string): Promise<Routine | null>;
   /** Active Composio connections (Settings already fetches these for the
    * Connections panel) — offered as extra bindable actions so an orb can
    * point at any connected app, not just the fixed list. Empty/anonymous
@@ -206,6 +211,8 @@ export default function ButtonEditor({
 }) {
   const reduceMotion = !!useReducedMotion();
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [specialPrompt, setSpecialPrompt] = useState('');
+  const [specialBusy, setSpecialBusy] = useState(false);
 
   const connectedApps = useMemo(() => {
     const slugs = new Set(connections.filter((c) => c.status === 'active').map((c) => c.toolkit));
@@ -232,6 +239,33 @@ export default function ButtonEditor({
     onChange(next);
   }
 
+  function addButton() {
+    // New orbs start on a harmless fixed action and open the picker so the
+    // very next click chooses what it does.
+    const id = `btn-${Date.now().toString(36)}`;
+    onChange([...editorButtons, { id, action: 'suggest' }]);
+    setSelectedId(id);
+  }
+
+  function removeSelected() {
+    if (!selected || selected.id === 'input') return;
+    onChange(editorButtons.filter((b) => b.id !== selected.id));
+    setSelectedId(null);
+  }
+
+  async function createSpecial() {
+    if (!onCreateSpecial || !selected || specialBusy) return;
+    const prompt = specialPrompt.trim();
+    if (!prompt) return;
+    const name = selected.label?.trim() || (prompt.length > 28 ? `${prompt.slice(0, 28)}…` : prompt);
+    setSpecialBusy(true);
+    const routine = await onCreateSpecial(name, prompt);
+    setSpecialBusy(false);
+    if (!routine) return;
+    update(selected.id, { action: routineAction(routine.id), label: selected.label ?? routine.name });
+    setSpecialPrompt('');
+  }
+
   return (
     <div className="flex flex-col gap-5">
       {/* The mockup — a miniature echo of the real bar pill + orbs. */}
@@ -254,6 +288,15 @@ export default function ButtonEditor({
             />
           ))}
         </Reorder.Group>
+        <button
+          type="button"
+          onClick={addButton}
+          aria-label="Add a button"
+          title="Add a button"
+          className={`${orbBase} border-dashed border-ink/20 bg-transparent text-ink/35 hover:border-accent/50 hover:text-ink/70`}
+        >
+          <span className="text-lg leading-none">+</span>
+        </button>
       </div>
       <p className="-mt-2 text-center text-[11px] text-ink/25">
         {reduceMotion ? 'Select an orb, then use the move controls to place it.' : 'Drag an orb to reorder, or click one to change its action.'}
@@ -285,6 +328,16 @@ export default function ButtonEditor({
               >
                 →
               </button>
+              {selected.id !== 'input' && (
+                <button
+                  type="button"
+                  onClick={removeSelected}
+                  aria-label={`Remove ${SLOT_LABELS[selected.id] ?? selected.id}`}
+                  className="ml-1 flex h-7 items-center rounded-lg border border-ink/10 px-2 text-[11px] text-ink/45 transition-colors hover:border-red-400/50 hover:text-red-300"
+                >
+                  Remove
+                </button>
+              )}
             </div>
           </div>
 
@@ -372,6 +425,37 @@ export default function ButtonEditor({
                     </button>
                   );
                 })}
+              </div>
+            </>
+          )}
+
+          {onCreateSpecial && (
+            <>
+              <p className="mt-3 text-[10.5px] uppercase tracking-wide text-ink/30">Special button</p>
+              <p className="mt-1 text-[11.5px] text-ink/35">
+                A tiny prompt this orb fires — it can span several tools ("summarize my open GitHub PRs and post the list
+                to Discord"). Unconnected tools pause with a connect card.
+              </p>
+              <div className="mt-1.5 flex items-center gap-2">
+                <input
+                  type="text"
+                  value={specialPrompt}
+                  onChange={(e) => setSpecialPrompt(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') void createSpecial();
+                  }}
+                  placeholder="e.g. check my email and github notifications"
+                  aria-label="Special button prompt"
+                  className="min-w-0 flex-1 rounded-lg border border-ink/10 bg-surface-sunken px-3 py-1.5 text-[13px] text-ink outline-none transition-colors placeholder:text-ink/25 focus:border-accent/60"
+                />
+                <button
+                  type="button"
+                  onClick={() => void createSpecial()}
+                  disabled={specialBusy || specialPrompt.trim().length === 0}
+                  className="shrink-0 rounded-lg border border-accent/40 px-3 py-1.5 text-[12px] text-accent-bright transition-colors hover:bg-accent/10 disabled:opacity-30"
+                >
+                  {specialBusy ? 'Creating…' : 'Create & bind'}
+                </button>
               </div>
             </>
           )}

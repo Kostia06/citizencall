@@ -333,6 +333,9 @@ export default function Orbs({
     if (routineId) {
       const routine = routines.find((r) => r.id === routineId);
       const name = btn.label ?? routine?.name ?? 'Routine';
+      // Several special buttons side by side need distinct faces — the
+      // label/name initial reads better than a row of identical ⟳.
+      const initial = (btn.label ?? routine?.name ?? '').trim().charAt(0).toUpperCase();
       return (
         <Orb
           as="button"
@@ -340,7 +343,11 @@ export default function Orbs({
           title={routine ? `Run "${name}"` : `${name} (routine not found)`}
           onClick={() => onRunRoutine?.(routineId)}
         >
-          <span className="text-lg leading-none">⟳</span>
+          {initial ? (
+            <span className="text-[13px] font-semibold leading-none">{initial}</span>
+          ) : (
+            <span className="text-lg leading-none">⟳</span>
+          )}
         </Orb>
       );
     }

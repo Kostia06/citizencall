@@ -239,6 +239,19 @@ export default function Settings() {
             }}
             connections={connections}
             routines={routines}
+            onCreateSpecial={async (name, prompt) => {
+              try {
+                const routine = await storeApi.createRoutine(authedFetch, { name, prompt, schedule: 'none', enabled: true });
+                // Keep the picker's Routines group live; RoutinesPanel owns
+                // its own list and re-fetches on mount, so it catches up on
+                // the next visit.
+                setRoutines((rs) => [...rs, routine]);
+                return routine;
+              } catch {
+                push('Could not create the special button — try again.');
+                return null;
+              }
+            }}
           />
           {/* Placement — where the whole input cluster (bar + orbs) sits on
               the home screen. */}
