@@ -124,10 +124,13 @@ export default function Background() {
 
     function draw(t: number) {
       ctx!.globalCompositeOperation = 'source-over';
-      const baseColors = theme === 'light' ? LIGHT_MESH_COLORS : MESH_COLORS;
+      // Dark base is a GREY gradient (user request 2026-08-16), decoupled
+      // from MESH_COLORS[0] which stays a blob color. Must match index.css's
+      // --mesh-top/--mesh-bottom so the pre-canvas CSS gradient and this
+      // canvas read as one surface.
       const base = ctx!.createLinearGradient(0, 0, 0, h);
-      base.addColorStop(0, baseColors[0]);
-      base.addColorStop(1, theme === 'light' ? '#dbe1f5' : '#050506');
+      base.addColorStop(0, theme === 'light' ? LIGHT_MESH_COLORS[0] : '#2a2a30');
+      base.addColorStop(1, theme === 'light' ? '#dbe1f5' : '#161619');
       ctx!.fillStyle = base;
       ctx!.fillRect(0, 0, w, h);
 

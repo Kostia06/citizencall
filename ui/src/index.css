@@ -34,12 +34,12 @@
      the constant accent chip) use the separate static `paper` token. */
   --color-ink: 255 255 255;
 
-  /* Matches Background.tsx's canvas base gradient stops (MESH_COLORS[0] /
-     #050506) exactly, so the pre-canvas CSS gradient and the canvas that
-     fades in over it read as one continuous dark palette, not two
-     mismatched patches. */
-  --mesh-top: #0b0f2e;
-  --mesh-bottom: #050506;
+  /* Matches Background.tsx's canvas base gradient stops exactly, so the
+     pre-canvas CSS gradient and the canvas that fades in over it read as
+     one continuous surface. Dark grey gradient (not near-black) by user
+     request 2026-08-16. */
+  --mesh-top: #2a2a30;
+  --mesh-bottom: #161619;
 }
 
 [data-theme='light'] {
