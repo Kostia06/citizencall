@@ -188,13 +188,15 @@ export default function RoutinesPanel({
   const [prompt, setPrompt] = useState('');
   const [schedule, setSchedule] = useState<RoutineSchedule>('none');
 
-  function setRoutines(next: Routine[] | ((list: Routine[]) => Routine[])) {
-    setRoutinesState((prev) => {
-      const resolved = typeof next === 'function' ? (next as (list: Routine[]) => Routine[])(prev) : next;
-      onRoutinesChange?.(resolved);
-      return resolved;
-    });
-  }
+  const setRoutines = setRoutinesState;
+
+  // Mirror to the parent from an effect, not inside the setState updater —
+  // React runs updaters during render, so calling the parent's setState
+  // there triggered the setState-in-render warning with the tabbed Settings.
+  useEffect(() => {
+    onRoutinesChange?.(routines);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [routines]);
 
   useEffect(() => {
     let cancelled = false;
