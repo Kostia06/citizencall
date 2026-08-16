@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import CommandBar from '../components/CommandBar';
-import ConversationTurn from '../components/ConversationTurn';
 import Orbs from '../components/Orbs';
 import { ToastStack, useToasts } from '../components/Toast';
-import { DEFAULT_PREFS, startRun, type RunHandle, type UserPrefsButton } from '../api';
+import { renderMarkdownLite } from '../components/chat/MarkdownLite';
+import { DEFAULT_PREFS, startRun, type HistoryTurn, type RunHandle, type UserPrefsButton } from '../api';
 import { conversationReducer, initialConversationState } from '../lib/traceReducer';
 import { useAuth } from '../auth/useAuth';
 import type { RunAttachment } from '../types';
@@ -32,6 +32,10 @@ export default function Spotlight() {
   const runHandleRef = useRef<RunHandle | null>(null);
   const liveTimeoutRef = useRef<number | undefined>(undefined);
   const shellRef = useRef<HTMLDivElement>(null);
+  // Esc collapses the answer without forgetting the turns — the session keeps
+  // threading, the overlay just returns to bare-bar Spotlight posture.
+  const [panelHidden, setPanelHidden] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   const turns = conversation.turns;
   const lastTurn = turns[turns.length - 1];
@@ -73,24 +77,42 @@ export default function Spotlight() {
     return () => observer.disconnect();
   }, []);
 
-  // Esc closes the overlay. CommandBar already uses Esc to clear its own
-  // input, so this only fires once the field is empty — clear first, then
-  // dismiss, which is exactly Spotlight's behaviour.
+  // Esc walks back one layer at a time, the way Spotlight does: CommandBar
+  // clears its own input first; with the field empty the next Esc collapses
+  // the answer panel (stopping a live run); only then does Esc dismiss the
+  // overlay.
+  const panelOpen = turns.length > 0 && !panelHidden;
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
       const field = document.querySelector<HTMLTextAreaElement>('textarea[aria-label="Command"]');
-      if (!field || field.value.length === 0) window.understudy?.hide();
+      if (field && field.value.length > 0) return;
+      if (panelOpen) {
+        runHandleRef.current?.close();
+        if (running) dispatch({ type: 'stop_turn' });
+        setPanelHidden(true);
+      } else {
+        window.understudy?.hide();
+      }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, []);
+  }, [panelOpen, running]);
 
   function handleSubmit(
     text: string,
     opts: { bypassCache: boolean; source: 'text' | 'voice'; attachments: RunAttachment[] },
   ) {
+    // Captured BEFORE start_turn dispatches, so it holds only prior turns —
+    // consecutive spotlight prompts thread as one session (same shape as
+    // Bar.tsx's collectHistory, minus the restored-runs interleaving).
+    const history: HistoryTurn[] = [];
+    for (const t of turns.slice(-6)) {
+      history.push({ role: 'user', text: t.prompt });
+      if (t.trace.answerText) history.push({ role: 'assistant', text: t.trace.answerText });
+    }
     runHandleRef.current?.close();
+    setPanelHidden(false);
     dispatch({ type: 'start_turn', id: nextTurnId(), prompt: text, source: opts.source });
     runHandleRef.current = startRun({
       userId: currentUser,
@@ -98,9 +120,20 @@ export default function Spotlight() {
       source: opts.source,
       noCache: opts.bypassCache,
       attachments: opts.attachments,
+      ...(history.length > 0 ? { history } : {}),
       onEvent: (event) => dispatch({ type: 'trace_event', event }),
       onError: () => push('Run stream dropped — reconnecting…'),
     });
+  }
+
+  function handleCopy(text: string) {
+    navigator.clipboard
+      .writeText(text)
+      .then(() => {
+        setCopied(true);
+        window.setTimeout(() => setCopied(false), 1500);
+      })
+      .catch(() => undefined);
   }
 
   return (
@@ -138,11 +171,64 @@ export default function Spotlight() {
         />
       </div>
 
-      {turns.length > 0 && (
-        <div className="mt-5">
-          {turns.map((turn) => (
-            <ConversationTurn key={turn.id} turn={turn} animate={turn.id === lastTurn?.id && running} />
-          ))}
+      {/* Result-only surface: the overlay shows the final answer and nothing
+          else — no hop cards, no trace. The steps are persisted server-side
+          per run, so "View steps on web" hands off to the full app instead of
+          rendering the pipeline here. Only the LAST turn shows; prior turns
+          live on in state purely as threading history. */}
+      {panelOpen && lastTurn && (
+        <div className="mt-4">
+          {running && !lastTurn.trace.answerText && (
+            <div className="flex items-center gap-2 px-1 text-[12px] text-white/50">
+              <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent" aria-hidden />
+              Working…
+            </div>
+          )}
+          {lastTurn.trace.answerText && (
+            <>
+              <div className="max-h-64 w-full overflow-y-auto whitespace-pre-wrap rounded-2xl border border-accent/20 bg-accent/[0.05] px-4 py-3 text-[13px] leading-relaxed text-white/90">
+                {renderMarkdownLite(lastTurn.trace.answerText)}
+                {running && (
+                  <span
+                    className="ml-0.5 inline-block h-[1em] w-[2px] translate-y-[2px] animate-pulse bg-accent align-middle"
+                    aria-hidden
+                  />
+                )}
+              </div>
+              {!running && (
+                <div className="mt-1.5 flex items-center gap-3 px-1 text-[11px] text-white/35">
+                  <button
+                    type="button"
+                    onClick={() => handleCopy(lastTurn.trace.answerText ?? '')}
+                    className="transition-colors hover:text-white/70"
+                  >
+                    {copied ? 'copied ✓' : 'copy'}
+                  </button>
+                  {/* Plain <a> so the link still works at /spotlight in a
+                      browser tab; inside Electron the bridge opens the real
+                      browser instead of navigating the overlay. */}
+                  <a
+                    href="/"
+                    target="_blank"
+                    rel="noreferrer"
+                    onClick={(e) => {
+                      if (!window.understudy) return;
+                      e.preventDefault();
+                      window.understudy.openExternal('/');
+                    }}
+                    className="transition-colors hover:text-white/70"
+                  >
+                    View steps on web ↗
+                  </a>
+                </div>
+              )}
+            </>
+          )}
+          {lastTurn.trace.status === 'error' && (
+            <div className="mt-1.5 px-1 text-[12px] text-red-300/80">
+              {lastTurn.trace.error ?? 'Run failed'}
+            </div>
+          )}
         </div>
       )}
 
