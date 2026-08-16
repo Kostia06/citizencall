@@ -19,9 +19,19 @@ import { finalizeRun, saveRunAnswer } from '../db';
 // one-off "remind me to buy milk" is a task, not a routine.
 const CREATE_ROUTINE = /\b(?:create|make|add|set\s*up)\b[^.!?]*\broutine\b/i;
 const RECURRING_REMIND = /\bremind me\b[^.!?]*\b(?:daily|weekly|hourly|(?:every|each)\s+(?:day|morning|evening|night|week|hour))\b/i;
+// Any recurrence phrasing at all — an IMPERATIVE task carrying one ("check
+// my slack every work day at 6 am") is a routine ask even without the word
+// "routine" (found live: it fell through to a one-off run instead).
+// Only the explicit "every/each X" form — bare "daily"/"weekly" reads as an
+// adjective far too often ("summarize the weekly report" is a one-off).
+const RECURRENCE_PHRASE = /\b(?:every|each)\s+(?:work\s*day|weekday|day|morning|evening|night|week|hour)\b/i;
+// Questions ABOUT recurring things ("what did I do every day last week")
+// are lookups, not schedule requests.
+const QUESTION_OPENER = /^\s*(?:what|why|how|did|do|does|when|where|who|which|is|are|was|were|can|could|should|would|will)\b/i;
 
 export function isRoutineCreationIntent(text: string): boolean {
-  return CREATE_ROUTINE.test(text) || RECURRING_REMIND.test(text);
+  if (CREATE_ROUTINE.test(text) || RECURRING_REMIND.test(text)) return true;
+  return RECURRENCE_PHRASE.test(text) && !QUESTION_OPENER.test(text) && !text.includes('?');
 }
 
 export interface RoutineSpec {
@@ -53,13 +63,16 @@ export function hourFromText(text: string): number | null {
 export function scheduleFromText(text: string): RoutineSchedule | null {
   if (/\bhourly\b|\b(?:every|each)\s+hour\b/i.test(text)) return 'hourly';
   if (/\bweekly\b|\b(?:every|each)\s+week\b/i.test(text)) return 'weekly';
-  if (/\bdaily\b|\b(?:every|each)\s+(?:day|morning|evening|night)\b/i.test(text)) return 'daily';
+  // "every work day"/"weekday" maps to daily — the cron model has no
+  // day-of-week filter yet, so weekends fire too; closest honest fit.
+  if (/\bdaily\b|\b(?:every|each)\s+(?:work\s*day|weekday|day|morning|evening|night)\b/i.test(text)) return 'daily';
   return null;
 }
 
 // Schedule words at the tail of the task text ("…notifications every
 // morning") belong to the schedule, not the routine's prompt.
-const SCHEDULE_TAIL = /[,\s]*\b(?:(?:every|each)\s+(?:day|morning|evening|night|week|hour)|daily|weekly|hourly)\b[.,!?]?\s*$/i;
+const SCHEDULE_TAIL =
+  /[,\s]*\b(?:(?:every|each)\s+(?:work\s*day|weekday|day|morning|evening|night|week|hour)|daily|weekly|hourly)\b(?:\s+at\s+\d{1,2}(?::\d{2})?\s*(?:am|pm)?)?[.,!?]?\s*$/i;
 
 /** Deterministic floor under the model: name from "called/named X", task from
  * the clause after routine/that/to, schedule from the recurrence words.

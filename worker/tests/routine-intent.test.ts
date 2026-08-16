@@ -88,6 +88,23 @@ describe('heuristicRoutineSpec', () => {
   });
 });
 
+describe('recurring imperative tasks without the word "routine" (found live)', () => {
+  it('a task with a recurrence phrase is a routine ask', () => {
+    expect(isRoutineCreationIntent('check my slack messages and pr every work day at 6 am')).toBe(true);
+    expect(isRoutineCreationIntent('summarize my inbox every weekday')).toBe(true);
+  });
+  it('questions about recurring things are NOT routine asks', () => {
+    expect(isRoutineCreationIntent('what did I do every day last week')).toBe(false);
+    expect(isRoutineCreationIntent('did the cron run every hour?')).toBe(false);
+  });
+  it('work day maps to daily and the schedule tail (with time) leaves the prompt', () => {
+    const spec = heuristicRoutineSpec('check my slack messages and pr every work day at 6 am');
+    expect(spec.schedule).toBe('daily');
+    expect(spec.prompt).toBe('check my slack messages and pr');
+    expect(spec.runAtHourLocal).toBe(6);
+  });
+});
+
 describe('hourFromText / localHourToUtc', () => {
   it('parses meridiem and 24h times, ignores bare ambiguous numbers', () => {
     expect(hourFromText('say hi every morning at 6 am')).toBe(6);
