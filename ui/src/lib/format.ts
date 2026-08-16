@@ -52,6 +52,9 @@ export function useCountUp(target: number, durationMs = 650): number {
 export function formatUsd(n: number): string {
   if (n === 0) return '$0.00';
   if (Math.abs(n) < 0.01) return `$${n.toFixed(6)}`;
+  // Cent-rounding here hid the real gap on the benchmark bars: "$0.02"
+  // frontier next to "$0.008119" router reads as ~2x when it's ~4.6x.
+  if (Math.abs(n) < 1) return `$${n.toFixed(4)}`;
   return `$${n.toFixed(2)}`;
 }
 
