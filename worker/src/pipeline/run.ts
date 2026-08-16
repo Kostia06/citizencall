@@ -18,6 +18,7 @@ import { buildMcpTransport, listEnabledMcpToolkits } from './mcp';
 import { finalizeRun, flushHops, flushToolCalls, insertRun, insertSubTasks, saveRunAnswer } from '../db';
 import { loadUserContext } from '../store/context';
 import { listConnections } from '../store/connections';
+import { getEnabledProvider } from '../store/user-providers';
 import { buildMemoryContext } from '../memory/context';
 import { maybeAutoWriteMemory } from './memory-hook';
 import { buildConversationBlock, lastUserTurnHint, type ConversationTurn } from './conversation';
@@ -172,6 +173,11 @@ export async function runPipeline(
   const connected = await listConnections(db, body.userId)
     .then((rows) => rows.filter((r) => r.status === 'active').map((r) => r.toolkit))
     .catch(() => [] as string[]);
+  // (providers) The user's own model key, loaded once like connections —
+  // execute.ts uses it as the FINAL escalation rung when the built-in ladder
+  // fails verify. Same degradation contract as the rest of the store: a
+  // missing table or D1 hiccup means "no user provider", never a dead run.
+  const userProvider = await getEnabledProvider(db, body.userId).catch(() => null);
 
   const planStarted = Date.now();
   const { plan, cacheHit: planCacheHit, cacheKind } = await decompose(
@@ -208,6 +214,7 @@ export async function runPipeline(
         ...(mcpTransport ? { mcpTransport } : {}),
         ...(userContext ? { userContext } : {}),
         priorOutputs,
+        ...(userProvider ? { userProvider } : {}),
         ...(opts.waitForConnection ? { waitForConnection: opts.waitForConnection } : {}),
         ...(isFinal
           ? { emitAnswerDelta: (subTaskId: string, text: string) => record({ t: 'answer_delta', subTaskId, text }) }

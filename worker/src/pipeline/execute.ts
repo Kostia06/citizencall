@@ -21,6 +21,7 @@ import {
   FeatherlessMessage,
   FeatherlessPlanError,
 } from '../providers/featherless';
+import { callUserProvider, UserProviderError, type UserProvider } from '../providers/user-models';
 import { executeTool } from '../providers/composio';
 import { buildToolArgs, getToolkitTools, resolveTool } from '../providers/composio-tools';
 import { getExact, putExact } from '../cache/exact';
@@ -66,6 +67,11 @@ export interface ExecuteContext {
    * discards the failed rung's deltas on the `escalate` event. L1-exact hits
    * produce no deltas; the final `answer` event covers those. */
   emitAnswerDelta?: (subTaskId: string, text: string) => void;
+  /** The acting user's own model (bring-your-own-key, store/user-providers).
+   * When set, it is the FINAL escalation rung: it runs only after the
+   * built-in ladder's last attempt still fails verify. Loaded once per run
+   * in run.ts, like connections. */
+  userProvider?: UserProvider;
 }
 
 export interface ToolCallResult {
@@ -179,6 +185,9 @@ interface Attempt {
   toolDerived: boolean;
   toolStatus?: ToolOutcome['status'];
   toolCall?: ToolCallResult;
+  /** Carried so the user-provider rung can rebuild the same prompt context
+   * without re-running the tool. */
+  toolOutcome?: ToolOutcome;
 }
 
 export async function executeSubTask(ctx: ExecuteContext, subTask: SubTask): Promise<ExecuteResult> {
@@ -199,31 +208,115 @@ export async function executeSubTask(ctx: ExecuteContext, subTask: SubTask): Pro
   }
   const hops: Hop[] = [primary.hop];
   const toolCalls: ToolCallResult[] = primary.toolCall ? [primary.toolCall] : [];
-  const resultOf = (a: Attempt): ExecuteResult => ({ hops, toolCalls, output: a.content, toolDerived: a.toolDerived });
+  const resultOf = (a: Pick<Attempt, 'content' | 'toolDerived'>): ExecuteResult => ({
+    hops,
+    toolCalls,
+    output: a.content,
+    toolDerived: a.toolDerived,
+  });
+  // The user's own model (when configured) is the FINAL rung: it fires only
+  // when the built-in ladder is out of moves and the last attempt still
+  // failed verify. On its own failure the built-in result stands — a broken
+  // user endpoint must never make the answer worse than without it.
+  const finalize = async (last: Attempt): Promise<ExecuteResult> => {
+    if (last.hop.verdict === 'pass' || !ctx.userProvider) return resultOf(last);
+    const userRung = await userProviderAttempt(ctx, subTask, last);
+    if (!userRung) return resultOf(last);
+    ctx.emit({ t: 'escalate', from: last.hop.modelId, to: userRung.hop.modelId, reason: last.hop.verdict });
+    hops.push(userRung.hop);
+    return resultOf(userRung);
+  };
 
   if (primary.hop.verdict === 'pass') return resultOf(primary);
   // A missing/revoked connection is not fixable by a bigger model — escalating
-  // would just fail the tool again and burn a hop. The error event was already
-  // emitted by runTool.
+  // (to any rung, the user's own included) would just fail the tool again and
+  // burn a hop. The error event was already emitted by runTool.
   if (primary.toolStatus === 'no_connection') return resultOf(primary);
   // The primary already ran on the escalation rung — re-routing the same rung
   // would just repeat the same model.
-  if (primaryRanOnFallbackRung) return resultOf(primary);
+  if (primaryRanOnFallbackRung) return finalize(primary);
 
-  // Exactly one rung of escalation — never a third attempt, and if no rung 1
-  // is defined/eligible we stop here on the primary's verdict.
+  // Exactly one rung of built-in escalation — never a third roster attempt,
+  // and if no rung 1 is defined/eligible we stop here on the primary's verdict.
   let escalated: Attempt;
   try {
     escalated = await attempt(ctx, subTask, candidatesById, 1, primary.hop.modelId);
   } catch (err) {
-    if (err instanceof NoEligibleModelError) return resultOf(primary);
+    if (err instanceof NoEligibleModelError) return finalize(primary);
     throw err;
   }
   ctx.emit({ t: 'escalate', from: primary.hop.modelId, to: escalated.decision.modelId, reason: primary.hop.verdict });
   hops.push(escalated.hop);
   if (escalated.toolCall) toolCalls.push(escalated.toolCall);
 
-  return resultOf(escalated);
+  return finalize(escalated);
+}
+
+/** Final escalation rung: the user's own model. Reuses the last attempt's
+ * tool outcome (no tool re-run) and the same message builder, so the only
+ * variable is the model behind the call. Returns null on provider failure —
+ * the caller keeps the built-in rung's result. */
+async function userProviderAttempt(
+  ctx: ExecuteContext,
+  subTask: SubTask,
+  last: Attempt
+): Promise<{ hop: Hop; content: string; toolDerived: boolean } | null> {
+  const provider = ctx.userProvider!;
+  // "(your key)" labels the rung in the UI trace — it is deliberately part of
+  // the hop's modelId so every surface (events, hops rows) shows whose model
+  // answered without a schema change.
+  const label = `${provider.model} (your key)`;
+  const hopId = crypto.randomUUID();
+  const started = Date.now();
+  ctx.emit({ t: 'hop_start', hop: { id: hopId, subTaskId: subTask.id, modelId: label, paramsB: 0 } });
+
+  const { blocks, toolDerived } = contextBlocks(ctx, subTask, last.toolOutcome);
+  const messages = buildMessages(subTask, blocks, ctx.userContext, toolDerived);
+  let content: string;
+  let promptTokens: number;
+  let completionTokens: number;
+  try {
+    // User frontier models (Claude, GPT) burn budget on reasoning before
+    // content — give the kind cap the same headroom idea as the built-in
+    // frontier, floored at 1024. max_tokens is a cap; only produced tokens
+    // cost anything, and it's the user's own bill.
+    const result = await callUserProvider(provider, {
+      messages,
+      maxTokens: Math.max(MAX_TOKENS_BY_KIND[subTask.kind], 1024),
+    });
+    ({ content, promptTokens, completionTokens } = result);
+  } catch (err) {
+    if (!(err instanceof UserProviderError)) throw err;
+    // Message is bounded and key-free by construction (user-models.ts).
+    ctx.emit({ t: 'error', message: `your ${provider.kind} model (${provider.model}) failed: ${err.message}` });
+    return null;
+  }
+
+  const verdict: Verdict = verify({
+    kind: subTask.kind,
+    output: content,
+    needsTools: subTask.needsTools,
+    ...(last.toolOutcome?.status === 'ran' ? { toolOk: last.toolOutcome.ok } : {}),
+  });
+  const hop: Hop = {
+    id: hopId,
+    subTaskId: subTask.id,
+    modelId: label,
+    modelClass: 'user',
+    paramsB: 0,
+    promptTokens,
+    completionTokens,
+    // The user's key pays this call, and their provider's pricing is unknown
+    // here — 0 keeps our cost accounting honest about OUR spend.
+    costUsd: 0,
+    latencyMs: Date.now() - started,
+    availability: 'warm',
+    verdict,
+    escalatedFrom: last.hop.modelId,
+    cacheHit: 'none',
+  };
+  ctx.emit({ t: 'hop_end', hop });
+  return { hop, content, toolDerived };
 }
 
 async function attempt(
@@ -251,7 +344,7 @@ async function attempt(
     hop: outcome.hop,
     content: outcome.content,
     toolDerived: outcome.toolDerived,
-    ...(toolOutcome ? { toolStatus: toolOutcome.status } : {}),
+    ...(toolOutcome ? { toolStatus: toolOutcome.status, toolOutcome } : {}),
     ...(toolOutcome?.status === 'ran' ? { toolCall: toolOutcome.call } : {}),
   };
 }
