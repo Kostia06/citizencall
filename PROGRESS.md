@@ -105,6 +105,16 @@ before starting work; update it when you finish.
 - [x] 2026-08-16 — **Live STT time-to-first-word fix**: first interim POST now fires ~1.1s after recording starts (self-scheduling chain, was a 2.5s interval + round trip that always lost to short dictations); verified in Chromium, Playwright Firefox, AND the user's real Zen.app via BiDi with synthesized speech.
 - [x] 2026-08-16 — Deployed all of the above to citizencall.dev (version 6582da45); `main` fast-forwarded to `6f3a72c`.
 
+- [x] 2026-08-16 — **Buttons wave 2**: add ("+" tile) / remove per orb; SPECIAL buttons (mini prompt → routine bound to an orb, multi-tool via the normal pipeline); Settings edits AUTO-SAVE instantly (localStorage + debounced PUT + unmount flush) — global Save gone; input is a draggable arranger slot; anon settings persist (resolveActor, root cause of "order never changes").
+- [x] 2026-08-16 — **Tool honesty fix**: resolver no longer matches on the toolkit's own name (every discord tool "matched" everything → OAuth JSON answers); meta tools demoted; unmatched intent now SKIPS the tool and answers what the integration can/can't do.
+- [x] 2026-08-16 — **Chat-created routines**: "create a routine … every morning" → deterministic intent gate, cheap-model extraction (text recurrence overrides model), routine + Memory mirror rows, duplicate-name guard; live-verified.
+- [x] 2026-08-16 — **Settings redesign**: four ?tab= tabs (Bar/Apps/Automation/Personal), everything auto-saves w/ "Saving…→Saved" chip, panels stay mounted; dark+light screenshots.
+- [x] 2026-08-16 — **BYO model keys**: user_providers (anthropic/openai/custom, masked …last4, claim-on-login) + Personal-tab panel; user's model = final escalation rung, labeled in trace. 
+- [x] 2026-08-16 — **MCP/routines e2e PASS** + 2 real fixes: Add-MCP payload shape (400s), authedFetch now awaits auth bootstrap (reload no longer silently acts as anon — root cause of "resets after reload").
+- [x] 2026-08-16 — **Electron overlay shipped**: transparent window, glassy centered pill w/ orbs beside it (saved arrangement, hidden unconnected), focus fixed, one-time sign-in persists 30d, theme memory, connect-chip for paused runs, attach-files button; packaged Understudy.app + GitHub release v0.1.0 + download card in Settings→Personal. Re-tested by controller: typed prompt → "Hi there!" answer, screencapture proof.
+- [x] 2026-08-16 — **Design-QA sweep**: 13 findings, 7 fixed (light-mode black ground in index.html — the "no bg at white mode" root cause; unreadable history drawer; invisible benchmark bar; token unification). NOTE: a long-running vite dev server caches tailwind.config — restart :5173 after theme-token changes.
+- [x] 2026-08-16 — Deployed to citizencall.dev version aa1e0c3b (404 tests / 57 files green); `main` = `669f094`.
+
 ## Blocked
 
 - _Nothing blocked._
