@@ -123,6 +123,12 @@ before starting work; update it when you finish.
 
 - [x] 2026-08-16 — **FINAL STATE**: packaged Understudy.app tested against the final prod build (capability answer 0.9s in the floating overlay, dark pinned, sign-in affordance; screenshot shows overlay + v0.1.0 release page + live benchmark: 98 runs · 82.6% saved · 18% cache-hit · 4.3s p50). Handoff updated with the full session record. Prod 02117c64 · main 36a6038 · 425 tests green. Known cosmetic edge: old-default anon profiles ([github,gmail,theme]) show zero orbs until sign-in/arranger touch. Human-gated leftovers only: Resend domain verification, demo filming, gold-label pass.
 
+- [x] 2026-08-16 — **Rename to CitizenCall** (user-visible only; internal ids/bridge/storage keys unchanged): UI copy, persona + capability answer, email sender/subjects, macOS bundle → CitizenCall.app, release v0.1.0 retitled w/ CitizenCall.dmg (site links updated). electron-packager silently no-ops on Node 26 — bundle updated by hand (resources copy + re-sign + re-zip/dmg).
+- [x] 2026-08-16 — **Overlay final look** (three user pivots: blur → solid pill → all-solid): transparent window, hasShadow off, fully opaque website-identical components, every floating row on its own card (connect chip readable on light desktops). Desktop-capture blur built+proven then deleted by request. Hands-on verified with a typed run; release assets refreshed. "Whole-window shade" root-caused: stacked old app copy.
+- [x] 2026-08-16 — **UX wave**: suggestions dropdown = animated absolute overlay (bar no longer jumps), zero-setup starter prompts, Bar-placement section removed, auth "home" link removed, catalog infinite scroll (all 1,209 apps reachable; was hard-capped at 150), settings tabs re-pull user data on click, branded email templates + welcome-after-signup email.
+- [x] 2026-08-16 — Prod at f5fbb451, dark-only, main synced continuously. User's prod account created (their earlier logins were all against local dev D1 — "Invalid email or password" on prod was accurate, not a bug).
+- [ ] IN FLIGHT — cache-keeper agent: cron-driven warming (plan cache for common prompts, tool discovery for top toolkits, catalog row, Composio auth configs) + one-time prod seed. Integrate/deploy on landing.
+
 ## Blocked
 
 - _Nothing blocked._
