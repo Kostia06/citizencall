@@ -37,6 +37,18 @@ export const DEFAULT_PREFS: UserPrefs = {
   suggestions: true,
 };
 
+/** The command-bar input as a positionable pseudo-button — dragged in the
+ * arranger exactly like an orb, so its slot in `buttons` decides whether the
+ * text field sits left of, between, or right of the orbs. It has no action;
+ * Bar.tsx splits the row around it and Orbs never renders it. */
+export const INPUT_BUTTON: UserPrefsButton = { id: 'input', action: 'input' };
+
+/** Saved prefs predate the input slot — older rows lack it, so normalize by
+ * prepending (input-first matches the historical layout). */
+export function ensureInputButton(buttons: UserPrefsButton[]): UserPrefsButton[] {
+  return buttons.some((b) => b.id === 'input') ? buttons : [INPUT_BUTTON, ...buttons];
+}
+
 /** The fixed keybinding actions the editor exposes — spec §5. */
 export const KEYBINDING_ACTIONS = ['run', 'newline', 'bypassCache', 'focus', 'clear'] as const;
 

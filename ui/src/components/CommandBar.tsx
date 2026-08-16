@@ -43,6 +43,11 @@ interface CommandBarProps {
    * storeApi.suggest(). */
   recentPrompts: string[];
   authedFetch: AuthedFetch;
+  /** Imperative hook for the bar orbs (run ▶ / bypass ⚡): submits whatever
+   * is typed, exactly like pressing Enter / ⌘⏎. Assigned every render so the
+   * closure always sees current input state; parent calls
+   * `actionsRef.current?.submit(bypass)`. */
+  actionsRef?: React.MutableRefObject<{ submit(bypassCache: boolean): void } | null>;
 }
 
 let attachmentSeq = 0;
@@ -74,6 +79,7 @@ export default function CommandBar({
   suggestionsEnabled,
   recentPrompts,
   authedFetch,
+  actionsRef,
 }: CommandBarProps) {
   const isSpotlight = variant === 'spotlight';
   const [value, setValue] = useState('');
@@ -223,6 +229,10 @@ export default function CommandBar({
   useEffect(() => {
     if (!suggestionsEnabled) setNextAction(null);
   }, [suggestionsEnabled]);
+
+  // Plain assignment (not useImperativeHandle) — re-bound each render so the
+  // orb-click path always submits the CURRENT text, not a stale closure.
+  if (actionsRef) actionsRef.current = { submit: (bypassCache: boolean) => runNow(value, bypassCache) };
 
   function runNow(text: string, bypassCache: boolean) {
     const trimmed = text.trim();

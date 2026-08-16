@@ -27,8 +27,13 @@ beforeAll(async () => {
   await applyCoreSchema(env.DB);
 });
 
-it('requires auth', async () => {
-  expect((await app.request('/api/settings', {}, env)).status).toBe(401);
+it('settings is anon-friendly — no-cookie GET mints an anon session with defaults', async () => {
+  // Was a 401 gate; swapped for resolveActor (like /connections) so the bar
+  // arranger persists for anonymous sessions and claim-on-login re-keys it.
+  const res = await app.request('/api/settings', {}, env);
+  expect(res.status).toBe(200);
+  expect((await res.json<any>()).buttons.length).toBeGreaterThan(0);
+  expect(res.headers.get('set-cookie') ?? '').toContain('anon');
 });
 
 it('settings round-trip for the token user', async () => {

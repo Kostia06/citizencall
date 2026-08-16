@@ -136,11 +136,24 @@ it('a garbage bearer token falls through to a fresh anon session, not a 500', as
   expect(await res.json()).toEqual([]);
 });
 
-it('(e) GET /api/settings still 401s with only an anon cookie', async () => {
+it('(e) settings round-trips on the anon cookie and stays scoped to it', async () => {
+  // Settings joined /connections on resolveActor — the anon session's bar
+  // arrangement persists (and claim-on-login later re-keys the row).
   const a = await connectAnon();
   const cookie = cookiePair(a.setCookie);
+  const put = await app.request(
+    '/api/settings',
+    { method: 'PUT', headers: { Cookie: cookie, 'Content-Type': 'application/json' }, body: JSON.stringify({ contextPrompt: 'anon-ctx' }) },
+    env
+  );
+  expect(put.status).toBe(200);
   const res = await app.request('/api/settings', { headers: { Cookie: cookie } }, env);
-  expect(res.status).toBe(401);
+  expect(res.status).toBe(200);
+  expect((await res.json<any>()).contextPrompt).toBe('anon-ctx');
+  // A DIFFERENT anon session sees its own defaults, not this one's row.
+  const other = await connectAnon();
+  const otherRes = await app.request('/api/settings', { headers: { Cookie: cookiePair(other.setCookie) } }, env);
+  expect((await otherRes.json<any>()).contextPrompt).not.toBe('anon-ctx');
 });
 
 it('(f) claim re-keys the anon session\'s connections to the authed user and clears the cookie', async () => {

@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useReducer, useRef, useState } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
-import { useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import CommandBar from '../components/CommandBar';
 import ConversationTurn from '../components/ConversationTurn';
 import Orbs from '../components/Orbs';
@@ -9,6 +9,7 @@ import TopNav from '../components/TopNav';
 import HistoryDrawer from '../components/history/HistoryDrawer';
 import RestoredTurn, { type RestoredRun } from '../components/history/RestoredTurn';
 import { DEFAULT_PREFS, MOCK, startRun, storeApi, type Connection, type HistoryTurn, type Routine, type RunHandle, type SessionSummary, type UserPrefsButton } from '../api';
+import { ensureInputButton } from '../store/types';
 import { conversationReducer, initialConversationState } from '../lib/traceReducer';
 import { layoutFlow, layoutFlowReduced } from '../lib/motion';
 import { useAuth } from '../auth/useAuth';
@@ -67,6 +68,10 @@ export default function Bar() {
     return stored === 'left' || stored === 'right' ? stored : 'center';
   });
   const reorderSaveRef = useRef<number | undefined>(undefined);
+  // CommandBar's imperative submit — lets the ▶/⚡ orbs fire whatever is
+  // typed without lifting the input state out of the bar.
+  const barActionsRef = useRef<{ submit(bypassCache: boolean): void } | null>(null);
+  const navigate = useNavigate();
   // /oauth/done can return the browser HERE (returnTo:'/' — pause-card and
   // orb connects) with ?connected=<toolkit>&status=… — greet, refresh
   // connections (the paused run self-resumes worker-side), strip params.
@@ -436,9 +441,65 @@ export default function Bar() {
     handleSubmit(routine.prompt, { bypassCache: false, source: 'text', attachments: [] });
   }
 
+  // ✦ orb — flips the suggestions setting in place and persists best-effort.
+  function handleToggleSuggestions() {
+    const next = !suggestionsEnabled;
+    setSuggestionsEnabled(next);
+    push(next ? 'Suggestions on' : 'Suggestions off');
+    storeApi.putSettings(authedFetch, { suggestions: next }).catch(() => undefined);
+  }
+
+  // ◑ user orb — the demo user-cycle is invisible in live mode ("does
+  // nothing", reported), so live it opens the account hub instead.
+  function handleUserOrb() {
+    if (MOCK) {
+      setUserIdx((i) => (i + 1) % USERS.length);
+      return;
+    }
+    navigate(status === 'authed' ? '/settings' : '/login');
+  }
+
   // "Bar placement" (settings) — the input cluster + transcript sit left,
   // middle, or right of the screen. max-w stays; only the margins move.
   const alignClass = barAlignment === 'left' ? 'mr-auto ml-0' : barAlignment === 'right' ? 'ml-auto mr-0' : 'mx-auto';
+
+  // The input is itself a positionable slot in prefs.buttons (`id:'input'`)
+  // — the row renders [orbs before] input [orbs after], so dragging the
+  // input pill in the settings arranger genuinely moves the text field.
+  const orderedButtons = ensureInputButton(barButtons);
+  const inputIdx = orderedButtons.findIndex((b) => b.id === 'input');
+  const orbsBefore = orderedButtons.slice(0, inputIdx);
+  const orbsAfter = orderedButtons.slice(inputIdx + 1);
+
+  /** A drag inside one side's Reorder group hands back that side's new
+   * order (hidden buttons already merged by Orbs); splice it into the full
+   * list around the input slot and persist the whole thing. */
+  function handleSideReorder(side: 'before' | 'after', next: UserPrefsButton[]) {
+    const full =
+      side === 'before'
+        ? [...next, orderedButtons[inputIdx]!, ...orbsAfter]
+        : [...orbsBefore, orderedButtons[inputIdx]!, ...next];
+    handleReorderButtons(full);
+  }
+
+  const orbProps = {
+    connectedSlugs,
+    liveToolkit,
+    policyVersion: 'v3',
+    currentUser,
+    onToggleUser: handleUserOrb,
+    onConnect: handleOrbConnect,
+    routines,
+    onRunRoutine: handleRunRoutine,
+    onRun: (bypassCache: boolean) => barActionsRef.current?.submit(bypassCache),
+    onToggleSuggestions: handleToggleSuggestions,
+    onPollConnections: () => {
+      storeApi
+        .listConnections(authedFetch)
+        .then((list) => setConnections(list))
+        .catch(() => undefined);
+    },
+  };
 
   return (
     <div className="relative flex h-screen w-full flex-col overflow-hidden px-6">
@@ -460,8 +521,16 @@ export default function Bar() {
           hasContent ? 'pt-24 pb-4' : 'flex-1 items-center justify-center'
         }`}
       >
-        {/* orbs sit beside the bar on wide screens, BELOW it on narrow ones */}
+        {/* orbs sit beside the bar on wide screens, BELOW it on narrow ones;
+            the input's own slot in prefs.buttons decides which side each orb
+            lands on (two Reorder groups — drags stay within a side; cross-
+            side moves live in the settings arranger). */}
         <div className="flex w-full flex-col items-center gap-3 sm:flex-row sm:items-start">
+          {orbsBefore.length > 0 && (
+            <div className="sm:pt-1.5">
+              <Orbs {...orbProps} buttons={orbsBefore} onReorder={(next) => handleSideReorder('before', next)} />
+            </div>
+          )}
           <div className="w-full flex-1">
             <CommandBar
               running={running}
@@ -472,28 +541,14 @@ export default function Bar() {
               suggestionsEnabled={suggestionsEnabled}
               recentPrompts={turns.slice(-5).map((t) => t.prompt)}
               authedFetch={authedFetch}
+              actionsRef={barActionsRef}
             />
           </div>
-          <div className="sm:pt-1.5">
-            <Orbs
-              buttons={barButtons}
-              connectedSlugs={connectedSlugs}
-              liveToolkit={liveToolkit}
-              policyVersion="v3"
-              currentUser={currentUser}
-              onToggleUser={() => setUserIdx((i) => (i + 1) % USERS.length)}
-              onConnect={handleOrbConnect}
-              onReorder={handleReorderButtons}
-              routines={routines}
-              onRunRoutine={handleRunRoutine}
-              onPollConnections={() => {
-                storeApi
-                  .listConnections(authedFetch)
-                  .then((list) => setConnections(list))
-                  .catch(() => undefined);
-              }}
-            />
-          </div>
+          {orbsAfter.length > 0 && (
+            <div className="sm:pt-1.5">
+              <Orbs {...orbProps} buttons={orbsAfter} onReorder={(next) => handleSideReorder('after', next)} />
+            </div>
+          )}
           {/* History — opens the past-sessions drawer. Sits with the orbs so
               the centered-bar layout is untouched. */}
           <div className="sm:pt-1.5">

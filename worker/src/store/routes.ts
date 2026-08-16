@@ -37,19 +37,23 @@ async function jsonBody(c: StoreContext): Promise<Record<string, unknown>> {
   return raw && typeof raw === 'object' ? raw : {};
 }
 
-storeRoutes.get('/settings', ...gate, async (c) => c.json(await getSettings(c.env.DB, uid(c))));
+// Anon-friendly like /connections below: an anonymous `__Host-anon` session
+// can arrange bar buttons, alignment, and theme before ever signing up, and
+// claim-on-login re-keys the row onto the account. Gating these behind
+// requireAuth made every anon/unverified Save 401 — the arranger's order
+// then "never changed no matter what" (reported live).
+storeRoutes.get('/settings', async (c) => c.json(await getSettings(c.env.DB, (await resolveActor(c)).userId)));
 
-storeRoutes.put('/settings', ...gate, async (c) => {
+storeRoutes.put('/settings', async (c) => {
   const v = validatePrefsPatch(await c.req.json().catch(() => null));
   if (!v.ok) return c.json({ error: v.reason }, 400);
-  return c.json(await putSettings(c.env.DB, uid(c), v.value, now()));
+  return c.json(await putSettings(c.env.DB, (await resolveActor(c)).userId, v.value, now()));
 });
 
 // Anon-friendly (resolveActor, not the requireAuth/requireVerified `gate`):
 // an unauthenticated caller can see and revoke connections started under
-// their own `__Host-anon` session before they ever sign up. `/settings`,
-// `/mcps`, `/tools` below are unchanged and stay Bearer + verified-email
-// only.
+// their own `__Host-anon` session before they ever sign up. `/mcps` and
+// `/tools` below are unchanged and stay Bearer + verified-email only.
 storeRoutes.get('/connections', async (c) => c.json(await listConnections(c.env.DB, (await resolveActor(c)).userId)));
 
 storeRoutes.delete('/connections/:toolkit', async (c) => {

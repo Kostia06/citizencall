@@ -116,9 +116,15 @@ export default function Settings() {
 
   async function handleSave() {
     setSaveState('saving');
+    // Mirror the draft to localStorage FIRST — the bar boots from these keys,
+    // so an arranger change shows up there even if the account PUT fails
+    // (silently-lost saves made "order never changes" a live report).
+    localStorage.setItem('understudy:bar-buttons', JSON.stringify(draft.buttons));
+    if (draft.barAlignment) localStorage.setItem('understudy:bar-alignment', draft.barAlignment);
     try {
       const saved = await storeApi.putSettings(authedFetch, draft);
       setDraft(saved);
+      localStorage.setItem('understudy:bar-buttons', JSON.stringify(saved.buttons));
       setSaveState('saved');
     } catch (err) {
       if (err instanceof AuthError && err.status === 401) {

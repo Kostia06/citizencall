@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { Reorder, useReducedMotion } from 'framer-motion';
-import { FIXED_BUTTON_ACTIONS } from '../../store/types';
+import { FIXED_BUTTON_ACTIONS, ensureInputButton } from '../../store/types';
 import type { Connection, FixedButtonAction, Routine, UserPrefsButton } from '../../store/types';
 import { APPS } from '../../store/apps';
 import type { ToolkitApp } from '../../store/apps';
@@ -25,6 +25,7 @@ const SLOT_LABELS: Record<string, string> = {
   gmail: 'Gmail orb',
   policy: 'Policy orb',
   user: 'User orb',
+  input: 'Input field',
 };
 
 function GithubGlyph() {
@@ -122,6 +123,34 @@ function MockOrb({
   onSelect(): void;
 }) {
   const meta = resolveActionMeta(button.action, routines, 'h-5 w-5');
+  // The input pseudo-slot drags like an orb but renders as a mini text pill
+  // — its position in `buttons` is where the real bar puts the text field.
+  if (button.id === 'input') {
+    return (
+      <Reorder.Item
+        as="div"
+        value={button}
+        drag={reduceMotion ? false : 'x'}
+        dragListener={!reduceMotion}
+        whileDrag={reduceMotion ? undefined : { scale: 1.05, zIndex: 1 }}
+        className="cursor-grab active:cursor-grabbing"
+      >
+        <button
+          type="button"
+          aria-label={`Input field — position among the orbs${selected ? ' (selected)' : ''}. Drag to move it.`}
+          aria-pressed={selected}
+          onClick={onSelect}
+          className={`flex h-11 w-32 items-center rounded-full border px-4 text-[12px] transition-colors ${
+            selected
+              ? 'border-accent/70 bg-accent/15 text-ink/70 shadow-glow-accent'
+              : 'border-ink/10 bg-ink/[0.04] text-ink/30 hover:bg-ink/[0.08]'
+          }`}
+        >
+          <span className="truncate">Ask anything…</span>
+        </button>
+      </Reorder.Item>
+    );
+  }
   return (
     <Reorder.Item
       as="div"
@@ -183,18 +212,22 @@ export default function ButtonEditor({
     return APPS.filter((a) => slugs.has(a.slug));
   }, [connections]);
 
-  const selected = buttons.find((b) => b.id === selectedId) ?? null;
-  const selectedIndex = selected ? buttons.indexOf(selected) : -1;
+  // The input field participates as a draggable pseudo-slot (`id:'input'`)
+  // — normalize older saved prefs that predate it so it always has a slot.
+  const editorButtons = ensureInputButton(buttons);
+
+  const selected = editorButtons.find((b) => b.id === selectedId) ?? null;
+  const selectedIndex = selected ? editorButtons.indexOf(selected) : -1;
 
   function update(id: string, patch: Partial<UserPrefsButton>) {
-    onChange(buttons.map((b) => (b.id === id ? { ...b, ...patch } : b)));
+    onChange(editorButtons.map((b) => (b.id === id ? { ...b, ...patch } : b)));
   }
 
   function move(direction: -1 | 1) {
     if (selectedIndex < 0) return;
     const target = selectedIndex + direction;
-    if (target < 0 || target >= buttons.length) return;
-    const next = buttons.slice();
+    if (target < 0 || target >= editorButtons.length) return;
+    const next = editorButtons.slice();
     [next[selectedIndex], next[target]] = [next[target], next[selectedIndex]];
     onChange(next);
   }
@@ -202,16 +235,15 @@ export default function ButtonEditor({
   return (
     <div className="flex flex-col gap-5">
       {/* The mockup — a miniature echo of the real bar pill + orbs. */}
-      <div className="flex items-center gap-4 rounded-full border border-ink/10 bg-ink/[0.03] px-5 py-3 shadow-lift backdrop-blur-soft">
-        <span className="min-w-0 flex-1 truncate text-[13px] text-ink/25">Ask anything…</span>
+      <div className="flex items-center justify-center gap-4 rounded-full border border-ink/10 bg-ink/[0.03] px-5 py-3 shadow-lift backdrop-blur-soft">
         <Reorder.Group
           as="div"
           axis="x"
-          values={buttons}
+          values={editorButtons}
           onReorder={onChange}
           className="flex items-center gap-2.5"
         >
-          {buttons.map((button) => (
+          {editorButtons.map((button) => (
             <MockOrb
               key={button.id}
               button={button}
@@ -232,7 +264,7 @@ export default function ButtonEditor({
         <div className="animate-chip-pop rounded-xl border border-accent/30 bg-surface-sunken/60 p-4">
           <div className="flex items-center justify-between gap-3">
             <span className="text-[12.5px] font-medium text-ink/70">
-              {SLOT_LABELS[selected.id] ?? selected.id} — position {selectedIndex + 1} of {buttons.length}
+              {SLOT_LABELS[selected.id] ?? selected.id} — position {selectedIndex + 1} of {editorButtons.length}
             </span>
             <div className="flex items-center gap-1.5">
               <button
@@ -247,7 +279,7 @@ export default function ButtonEditor({
               <button
                 type="button"
                 onClick={() => move(1)}
-                disabled={selectedIndex < 0 || selectedIndex >= buttons.length - 1}
+                disabled={selectedIndex < 0 || selectedIndex >= editorButtons.length - 1}
                 aria-label={`Move ${SLOT_LABELS[selected.id] ?? selected.id} right`}
                 className="flex h-7 w-7 items-center justify-center rounded-lg border border-ink/10 text-[12px] text-ink/50 transition-colors hover:border-accent/40 hover:text-ink/80 disabled:opacity-25 disabled:hover:border-ink/10 disabled:hover:text-ink/50"
               >
@@ -256,6 +288,9 @@ export default function ButtonEditor({
             </div>
           </div>
 
+          {/* The input slot is position-only — no action to rebind, no label. */}
+          {selected.id !== 'input' && (
+          <>
           <p className="mt-3 text-[10.5px] uppercase tracking-wide text-ink/30">Actions</p>
           <div className="mt-1.5 grid grid-cols-4 gap-2 sm:grid-cols-7">
             {FIXED_BUTTON_ACTIONS.map((action) => {
@@ -349,6 +384,8 @@ export default function ButtonEditor({
             aria-label={`Label for ${SLOT_LABELS[selected.id] ?? selected.id}`}
             className="mt-3 w-full rounded-lg border border-ink/10 bg-surface-sunken px-3 py-1.5 text-[13px] text-ink outline-none transition-colors placeholder:text-ink/25 focus:border-accent/60"
           />
+          </>
+          )}
         </div>
       )}
     </div>

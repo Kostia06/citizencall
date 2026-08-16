@@ -37,6 +37,11 @@ interface OrbsProps {
   routines?: Routine[];
   /** Fires a routine's prompt through the bar — `routine:<id>` orb click. */
   onRunRoutine?(routineId: string): void;
+  /** ▶ / ⚡ orb click — submits whatever is typed in the bar (bypassCache
+   * for ⚡), same as Enter / ⌘⏎. Omitted (Spotlight) leaves them inert. */
+  onRun?(bypassCache: boolean): void;
+  /** ✦ orb click — flips the next-action suggestions setting. */
+  onToggleSuggestions?(): void;
   /** Re-fetches connections — called on an interval after an orb-initiated
    * connect so a completed OAuth flow (new tab, no callback into this one)
    * lights the orb up without a manual reload. Polling and its cleanup live
@@ -252,6 +257,8 @@ export default function Orbs({
   onOpenRoute,
   routines = [],
   onRunRoutine,
+  onRun,
+  onToggleSuggestions,
   onPollConnections,
 }: OrbsProps) {
   const [userSpun, setUserSpun] = useState(false);
@@ -280,11 +287,21 @@ export default function Orbs({
     pollTimers.current.timeout = window.setTimeout(stopConnectPoll, CONNECT_POLL_WINDOW_MS);
   }
 
-  // Arranger = source of truth: render every configured button, in order.
-  const visibleButtons = buttons;
+  // Unconnected toolkit orbs are HIDDEN on the live bar (user request —
+  // reversed from the earlier dim-and-click-to-connect rendering); the
+  // settings arranger still shows every configured button.
+  const visibleButtons = buttons.filter((b) => {
+    const slug = actionToolkit(b.action);
+    return !slug || connectedSlugs.has(slug);
+  });
 
-  function handleReorder(next: UserPrefsButton[]) {
-    onReorder(next);
+  function handleReorder(nextVisible: UserPrefsButton[]) {
+    // Reorder only sees the visible subset — merge it back over the full
+    // list so hidden (unconnected) buttons keep their saved slots instead
+    // of being dropped from prefs by a drag.
+    const visibleIds = new Set(nextVisible.map((b) => b.id));
+    const queue = nextVisible.slice();
+    onReorder(buttons.map((b) => (visibleIds.has(b.id) ? queue.shift()! : b)));
   }
 
   function renderOrb(btn: UserPrefsButton) {
@@ -332,6 +349,10 @@ export default function Orbs({
       case 'open:roster':
         // Removed from the bar (user request) — Roster lives in the top nav.
         return null;
+      case 'input':
+        // The input pseudo-button is rendered by the PARENT as the command
+        // bar itself (Bar.tsx splits the row around it) — never as an orb.
+        return null;
       case 'toggle:theme':
         return (
           <Orb
@@ -348,7 +369,7 @@ export default function Orbs({
           <Orb
             as="button"
             className={`${orbBase} text-ink/70`}
-            title={btn.label ?? `Signed in as ${currentUser} — click to switch`}
+            title={btn.label ?? 'Account — settings & sign-in'}
             onClick={() => {
               setUserSpun((s) => !s);
               onToggleUser();
@@ -364,19 +385,19 @@ export default function Orbs({
         );
       case 'run':
         return (
-          <Orb className={`${orbBase} text-ink/70`} title={btn.label ?? 'Run (Enter in the bar)'}>
+          <Orb as="button" className={`${orbBase} text-ink/70`} title={btn.label ?? 'Run what you typed (Enter)'} onClick={() => onRun?.(false)}>
             <span className="text-[15px] leading-none">▶</span>
           </Orb>
         );
       case 'bypassCache':
         return (
-          <Orb className={`${orbBase} text-ink/70`} title={btn.label ?? 'Bypass cache (⌘⏎ in the bar)'}>
+          <Orb as="button" className={`${orbBase} text-ink/70`} title={btn.label ?? 'Run fresh, skip the cache (⌘⏎)'} onClick={() => onRun?.(true)}>
             <span className="text-lg leading-none">⚡</span>
           </Orb>
         );
       case 'suggest':
         return (
-          <Orb className={`${orbBase} text-ink/70`} title={btn.label ?? 'Next-action suggestions'}>
+          <Orb as="button" className={`${orbBase} text-ink/70`} title={btn.label ?? 'Toggle next-action suggestions'} onClick={() => onToggleSuggestions?.()}>
             <span className="text-lg leading-none">✦</span>
           </Orb>
         );
