@@ -38,7 +38,16 @@ const TOOL_HINTS: ReadonlyArray<{ pattern: RegExp; toolkit: string; tool: string
   // answered "I don't have access to GitHub" with GitHub connected.
   { pattern: /\b(pull requests?|prs?)\b/i, toolkit: 'github', tool: 'search_pull_requests' },
   { pattern: /\b(commits?|repos?|repositor(?:y|ies)|issues?|branch(?:es)?)\b/i, toolkit: 'github', tool: 'list_commits' },
-  { pattern: /\b(emails?|gmail|inbox|mails?)\b/i, toolkit: 'gmail', tool: 'fetch_emails' },
+  // Personal-mail contexts only — the bare word once hinted gmail into
+  // "write a professional email…" and "regex to validate an email address"
+  // (found live: writing/coding prompts got a forced gmail tool call, which
+  // pauses anonymous runs on a connect card instead of answering).
+  {
+    pattern:
+      /\b(gmail|inbox)\b|\bmy (emails?|mails?)\b|\b(unread|new|latest|recent) (emails?|mails?)\b|\bsend (an?|the|this) (email|mail)\b|\bcheck (my )?(emails?|mails?)\b|\b(emails?|mails?) (from|about)\b/i,
+    toolkit: 'gmail',
+    tool: 'fetch_emails',
+  },
 ];
 
 // Default read tool per toolkit when the model flags a tool need but the
