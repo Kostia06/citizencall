@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { motion, useReducedMotion } from 'framer-motion';
@@ -49,6 +49,38 @@ export default function Settings() {
   // so ButtonEditor's "Routines" picker group stays live as routines are
   // added/edited/deleted, without a second independent fetch of the same list.
   const [routines, setRoutines] = useState<Routine[]>([]);
+
+  // Bar-layout edits (orb actions/order, input slot, placement) apply
+  // INSTANTLY — localStorage first so the home bar reflects them even before
+  // the debounced account PUT lands. The bottom Save was too easy to miss:
+  // "the buttons don't reflect the home and they don't save", reported live
+  // after arranging and navigating away without scrolling down to Save.
+  const putTimerRef = useRef<number | undefined>(undefined);
+  const pendingPatchRef = useRef<Partial<UserPrefs>>({});
+  function schedulePut(patch: Partial<UserPrefs>) {
+    pendingPatchRef.current = { ...pendingPatchRef.current, ...patch };
+    if (putTimerRef.current) window.clearTimeout(putTimerRef.current);
+    putTimerRef.current = window.setTimeout(() => {
+      const toSend = pendingPatchRef.current;
+      pendingPatchRef.current = {};
+      storeApi.putSettings(authedFetch, toSend).catch(() => push('Saved on this device — account sync failed'));
+    }, 600);
+  }
+  // Navigating away inside the debounce window must not lose the account
+  // sync — the home bar re-fetches server prefs on mount and would override
+  // the fresher localStorage with the stale row.
+  useEffect(() => {
+    return () => {
+      if (putTimerRef.current) window.clearTimeout(putTimerRef.current);
+      const pending = pendingPatchRef.current;
+      if (Object.keys(pending).length > 0) storeApi.putSettings(authedFetch, pending).catch(() => undefined);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  function autoSaveButtons(buttons: UserPrefs['buttons']) {
+    localStorage.setItem('understudy:bar-buttons', JSON.stringify(buttons));
+    schedulePut({ buttons });
+  }
 
   const refreshConnections = useCallback(async () => {
     try {
@@ -198,10 +230,13 @@ export default function Settings() {
           />
         </SectionCard>
 
-        <SectionCard title="Buttons" subtitle="The four bar orbs — arrange them and pick each one's action.">
+        <SectionCard title="Buttons" subtitle="The bar layout — arrange the orbs and the input, pick each orb's action. Changes apply instantly.">
           <ButtonEditor
             buttons={draft.buttons}
-            onChange={(buttons) => setDraft((d) => ({ ...d, buttons }))}
+            onChange={(buttons) => {
+              setDraft((d) => ({ ...d, buttons }));
+              autoSaveButtons(buttons);
+            }}
             connections={connections}
             routines={routines}
           />
@@ -217,8 +252,10 @@ export default function Settings() {
                   onClick={() => {
                     setDraft((d) => ({ ...d, barAlignment: a }));
                     // Instant + anon-safe: the home bar reads this directly,
-                    // no Save/login required; Save still persists to account.
+                    // no Save/login required; the debounced PUT syncs the
+                    // account so it survives other devices too.
                     localStorage.setItem('understudy:bar-alignment', a);
+                    schedulePut({ barAlignment: a });
                   }}
                   aria-pressed={(draft.barAlignment ?? 'center') === a}
                   className={`px-3 py-1.5 text-[12px] capitalize transition-colors ${
