@@ -5,8 +5,9 @@ import { useAuth } from '../auth/useAuth';
 import { useTheme } from '../lib/theme';
 import AuthNav from './AuthNav';
 
+// Roster stays routable at /roster (judge-facing demo cold-open, linked from
+// Benchmark) but is out of the everyday nav — Benchmark tells the same story.
 const LINKS = [
-  { to: '/roster', label: 'Roster' },
   { to: '/benchmark', label: 'Benchmark' },
   { to: '/memory', label: 'Memory' },
   { to: '/settings', label: 'Settings' },

@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom';
 import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
@@ -32,6 +33,10 @@ export default function Benchmark() {
           <h1 className="mt-3 text-[clamp(1.5rem,3.5vw,2.25rem)] font-semibold text-ink">
             What this deployment actually spent
           </h1>
+        <p className="mt-1 text-[12px] text-ink/35">
+          Full specialist roster (per-kind ladder, prices, provenance):{' '}
+          <Link to="/roster" className="text-accent-bright hover:text-accent">/roster</Link>
+        </p>
           <p className="mt-3 max-w-xl text-[14px] leading-relaxed text-ink/50">
             Every run's measured cost vs the frontier baseline measured alongside it — and the honest
             comparison, the same tokens repriced at the obvious cheap default.
