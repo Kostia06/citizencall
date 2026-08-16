@@ -44,6 +44,12 @@ export default function Mic({ onInterim, onFinal, onToast, disabled }: MicProps)
   // onInterim); ElevenLabs stays the authoritative FINAL transcript. Chrome/
   // Safari only — recording works identically without it, just no live text.
   const recognizerRef = useRef<{ stop(): void } | null>(null);
+  // Chunked interim STT for browsers with NO SpeechRecognition (Firefox/Zen):
+  // every ~2.5s the accumulated audio is posted to /api/stt for a partial
+  // transcript. Serialized (skip while a request is in flight); the on-stop
+  // final transcription stays authoritative.
+  const interimTimerRef = useRef<number | undefined>(undefined);
+  const interimInFlightRef = useRef(false);
   const chunksRef = useRef<Blob[]>([]);
   const mimeTypeRef = useRef<string | undefined>(undefined);
   const audioCtxRef = useRef<AudioContext | null>(null);
@@ -142,10 +148,14 @@ export default function Mic({ onInterim, onFinal, onToast, disabled }: MicProps)
         void finishRecording();
       };
       mediaRecorderRef.current = recorder;
-      recorder.start();
+      // 1s timeslice so chunksRef grows during recording — the chunked
+      // interim path needs data before stop() (webm chunks are only valid
+      // concatenated from the start, so we always send the full prefix).
+      recorder.start(1000);
       setPhase('recording');
       attachAnalyser(stream);
       startInterimRecognition();
+      if (!recognizerRef.current && !MOCK) startChunkedInterim();
     } catch {
       onToast('Microphone blocked');
       setPhase('idle');
@@ -155,10 +165,41 @@ export default function Mic({ onInterim, onFinal, onToast, disabled }: MicProps)
   function stop() {
     // onstop (assembles the blob + kicks off transcription) fires
     // asynchronously off this call.
+    if (interimTimerRef.current) window.clearInterval(interimTimerRef.current);
+    interimTimerRef.current = undefined;
     recognizerRef.current?.stop();
     recognizerRef.current = null;
     mediaRecorderRef.current?.stop();
     mediaRecorderRef.current = null;
+  }
+
+  /** Cross-browser live transcript: POST the accumulated audio every ~2.5s
+   * for a partial transcript (Firefox/Zen have no SpeechRecognition). Costs
+   * one STT call per tick — bounded by the recording length. */
+  function startChunkedInterim() {
+    if (interimTimerRef.current) window.clearInterval(interimTimerRef.current);
+    interimTimerRef.current = window.setInterval(async () => {
+      if (interimInFlightRef.current) return;
+      const chunks = chunksRef.current;
+      if (chunks.length === 0) return;
+      interimInFlightRef.current = true;
+      try {
+        const blob = new Blob(chunks, { type: mimeTypeRef.current ?? chunks[0].type ?? 'audio/webm' });
+        const form = new FormData();
+        form.append('audio', blob, 'interim.webm');
+        const res = await fetch(`${API_BASE}/api/stt`, { method: 'POST', body: form, credentials: 'include' });
+        if (res.ok) {
+          const body = (await res.json()) as { text?: string };
+          // Still recording? (stop() clears the timer, but a request may
+          // resolve after.) Only then surface the partial.
+          if (interimTimerRef.current && body.text?.trim()) onInterim(body.text.trim());
+        }
+      } catch {
+        /* interim is best-effort */
+      } finally {
+        interimInFlightRef.current = false;
+      }
+    }, 2500);
   }
 
   /** Live interim words while recording — SpeechRecognition where available.
