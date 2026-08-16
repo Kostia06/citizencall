@@ -121,6 +121,8 @@ before starting work; update it when you finish.
 - [x] 2026-08-16 — **Dark-only by decision**: light theme cut — data-theme pinned to dark pre-paint, TopNav toggle + toggle:theme orb action retired (stale saved orbs hidden), defaults now [github, gmail, user], −123 LOC of theme machinery. Kills the whole light-parity maintenance class.
 - [x] 2026-08-16 — Deployed 02117c64; main = e837723; 425 tests / 58 files green.
 
+- [x] 2026-08-16 — **FINAL STATE**: packaged Understudy.app tested against the final prod build (capability answer 0.9s in the floating overlay, dark pinned, sign-in affordance; screenshot shows overlay + v0.1.0 release page + live benchmark: 98 runs · 82.6% saved · 18% cache-hit · 4.3s p50). Handoff updated with the full session record. Prod 02117c64 · main 36a6038 · 425 tests green. Known cosmetic edge: old-default anon profiles ([github,gmail,theme]) show zero orbs until sign-in/arranger touch. Human-gated leftovers only: Resend domain verification, demo filming, gold-label pass.
+
 ## Blocked
 
 - _Nothing blocked._
