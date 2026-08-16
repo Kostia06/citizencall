@@ -3,6 +3,7 @@
 // /start body, same idFromName routing — so SSE streaming, run persistence,
 // and session history all behave identically to a hand-typed run.
 import type { Env } from '../env';
+import { runWarmupSweep } from '../warmup';
 import { listScheduledCandidates, markRoutineRan, type Routine, type RoutineSchedule } from './store';
 
 // Coarse on purpose: the cron tick is every 15 minutes, so each threshold is
@@ -96,4 +97,7 @@ export async function scheduled(controller: ScheduledController, env: Env, _ctx:
   const { started, failed } = await runScheduledSweep(env, Date.now());
   const reconciled = await reconcileStuckRuns(env, Date.now()).catch(() => 0);
   console.log(`routines: sweep cron="${controller.cron}" started=${started} failed=${failed} stuckRunsReconciled=${reconciled}`);
+  // Cache keeper runs LAST and strictly best-effort — a warming failure must
+  // never break the routine sweep or the stuck-run reaper above.
+  await runWarmupSweep(env).catch((err) => console.warn('warmup: sweep crashed:', err));
 }
