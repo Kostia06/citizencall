@@ -131,7 +131,11 @@ export default function Background() {
       ctx!.fillStyle = base;
       ctx!.fillRect(0, 0, w, h);
 
-      ctx!.globalCompositeOperation = 'lighter';
+      // 'lighter' (additive) is what makes the dark mesh glow — but on a
+      // near-white base, adding light saturates straight to #fff and the
+      // blobs vanish. Light mode multiplies instead: the pastel palette
+      // tints DOWN from white, so the drifting blobs stay visible.
+      ctx!.globalCompositeOperation = theme === 'light' ? 'multiply' : 'lighter';
       blobs.forEach((b, i) => {
         let x = b.cx * w + Math.sin(t * b.f1 + b.phase) * b.ax;
         let y = b.cy * h + Math.cos(t * b.f2 + b.phase) * b.ay;
