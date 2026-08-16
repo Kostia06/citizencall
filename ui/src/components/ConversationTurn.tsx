@@ -1,35 +1,53 @@
 import { useEffect, useState } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
 import TracePipeline from './TracePipeline';
+import TypingIndicator from './chat/TypingIndicator';
+import StatusLine from './chat/StatusLine';
+import AnswerBubble from './chat/AnswerBubble';
+import TraceSummaryRow from './chat/TraceSummaryRow';
 import { entranceStandard, entranceStandardReduced } from '../lib/motion';
 import type { ConnectionGate, Turn } from '../lib/traceReducer';
 import { storeApi, type AuthedFetch } from '../api';
 import { MOCK } from '../api';
 import { APPS } from '../store/apps';
 
-/** One turn in the chat transcript: the submitted prompt as a right-aligned
- * bubble, followed by that run's TracePipeline output. Mounts once per turn
- * and never remounts — TracePipeline reads live off the turn's own
- * TraceState as events stream in, so re-renders (not remounts) drive the
- * trace forward. DESIGN.md's entrance-standard spring plays once when the
- * turn is appended to the transcript.
+/** One turn in the chat transcript, restructured answer-first (ChatGPT/
+ * Perplexity/Raycast-style): prompt bubble → typing indicator → status line
+ * → connection-gate pause card (if any) → the answer, revealed word-by-word
+ * → the trace, live and secondary while running, collapsed to one summary
+ * row once the run ends. Mounts once per turn and never remounts —
+ * everything below reads live off the turn's own TraceState as events
+ * stream in, so re-renders (not remounts) drive it forward. DESIGN.md's
+ * entrance-standard spring plays once when the turn is appended.
  *
  * `animate` is true only for the currently-running turn (see Bar.tsx) — it
  * gates TracePipeline's `layout` animations so a finished turn stops paying
  * framer-motion's re-measure cost on every event in the turn still running.
- * Finished turns also get `content-visibility: auto` so ones scrolled out
- * of view skip layout/paint entirely. */
+ * `onStop` (also only wired for the live turn) closes the run's SSE/mock
+ * handle and freezes the trace via the `stop_turn` conversation action. */
 export default function ConversationTurn({
   turn,
   animate = false,
   authedFetch,
+  onStop,
 }: {
   turn: Turn;
   animate?: boolean;
   authedFetch?: AuthedFetch;
+  onStop?: () => void;
 }) {
   const reduceMotion = useReducedMotion();
-  const gate = turn.trace.connectionGate;
+  const trace = turn.trace;
+  const gate = trace.connectionGate;
+  const running = trace.status === 'running';
+  const hasAnswer = !!trace.answerText;
+  const startedProgress = !!trace.normalize || !!trace.plan;
+  const gateWaiting = gate?.status === 'waiting';
+
+  const showTyping = running && !startedProgress && !hasAnswer && !gateWaiting;
+  const showStatus = running && startedProgress && !hasAnswer && !gateWaiting;
+  const collapseTrace = trace.status === 'done';
+  const showTraceLive = trace.status === 'running' || trace.status === 'error';
 
   return (
     <motion.div
@@ -46,25 +64,15 @@ export default function ConversationTurn({
           {turn.prompt}
         </div>
       </div>
-      <TracePipeline state={turn.trace} className="mx-auto mt-4 w-full max-w-2xl" animate={animate} />
-      {gate && (
-        <ConnectionGateCard gate={gate} runId={turn.trace.runId} authedFetch={authedFetch} />
+
+      {showTyping && <TypingIndicator />}
+      {showStatus && <StatusLine trace={trace} onStop={onStop} />}
+      {gate && <ConnectionGateCard gate={gate} runId={trace.runId} authedFetch={authedFetch} />}
+      {hasAnswer && <AnswerBubble text={trace.answerText!} running={running} onStop={onStop} />}
+      {showTraceLive && (
+        <TracePipeline state={trace} className="mx-auto mt-4 w-full max-w-2xl" animate={animate} />
       )}
-      {turn.trace.answerText && (
-        <motion.div
-          initial={reduceMotion ? { opacity: 0 } : { opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={reduceMotion ? entranceStandardReduced : entranceStandard}
-          className="mx-auto mt-4 w-full max-w-2xl px-1"
-        >
-          {/* The actual reply — left-aligned assistant bubble, the thing the
-              user came for; the trace above is the receipts. */}
-          <div className="mb-1.5 text-[10px] uppercase tracking-wide text-white/25">understudy</div>
-          <div className="max-w-[92%] whitespace-pre-wrap rounded-2xl rounded-bl-md border border-accent/20 bg-accent/[0.05] px-4 py-3 text-[13.5px] leading-relaxed text-white/90">
-            {turn.trace.answerText}
-          </div>
-        </motion.div>
-      )}
+      {collapseTrace && <TraceSummaryRow trace={trace} />}
     </motion.div>
   );
 }

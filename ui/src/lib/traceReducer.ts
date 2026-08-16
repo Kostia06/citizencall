@@ -45,6 +45,15 @@ export interface TraceState {
   /** Bumped on every `escalate` event — CommandBar watches this to spike
    * the conic border's spin speed for 400ms. DESIGN.md §5 Command bar. */
   escalateTick: number;
+  /** The model a rung is escalating TO, paired with `escalateTick` — the
+   * `escalate` TraceEvent carries `to` but nothing else stored it. Chat
+   * redesign's StatusLine reads this for "escalating to <model>…". */
+  escalateTarget?: string;
+  /** Set by the UI-only `stop_turn` conversation action (never a wire
+   * TraceEvent) when the user hits Stop mid-run — status flips to 'done'
+   * with whatever arrived. TraceSummaryRow renders "· stopped" instead of
+   * cost/savings when this is set and `runEnd` never landed. */
+  stoppedByUser?: boolean;
 }
 
 export function initialTraceState(): TraceState {
@@ -158,6 +167,7 @@ export function traceReducer(state: TraceState, event: TraceEvent): TraceState {
           [subTaskId]: [...rungs, { subTaskId, escalatedFrom: failedRung?.hop?.id }],
         },
         escalateTick: state.escalateTick + 1,
+        escalateTarget: event.to,
       };
     }
 
@@ -227,7 +237,11 @@ export interface ConversationState {
 
 export type ConversationAction =
   | { type: 'start_turn'; id: string; prompt: string; source: 'text' | 'voice' }
-  | { type: 'trace_event'; event: TraceEvent };
+  | { type: 'trace_event'; event: TraceEvent }
+  // UI-only action (never a wire TraceEvent — that union mirrors the worker
+  // contract and stays untouched) — Bar.tsx's Stop button closes the
+  // RunHandle and dispatches this to freeze the last turn's trace in place.
+  | { type: 'stop_turn' };
 
 export function initialConversationState(): ConversationState {
   return { turns: [] };
@@ -239,12 +253,20 @@ export function conversationReducer(state: ConversationState, action: Conversati
     return { turns: [...state.turns, turn] };
   }
 
-  // trace_event — apply to the last turn only. Events arriving with no
-  // turn yet (shouldn't happen — start_turn always precedes startRun) are
-  // dropped rather than crashing the reducer.
   const lastIdx = state.turns.length - 1;
   if (lastIdx < 0) return state;
   const lastTurn = state.turns[lastIdx];
+
+  if (action.type === 'stop_turn') {
+    if (lastTurn.trace.status !== 'running') return state;
+    const nextTurns = [...state.turns];
+    nextTurns[lastIdx] = { ...lastTurn, trace: { ...lastTurn.trace, status: 'done', stoppedByUser: true } };
+    return { ...state, turns: nextTurns };
+  }
+
+  // trace_event — apply to the last turn only. Events arriving with no
+  // turn yet (shouldn't happen — start_turn always precedes startRun) are
+  // dropped rather than crashing the reducer.
   const nextTurns = [...state.turns];
   nextTurns[lastIdx] = { ...lastTurn, trace: traceReducer(lastTurn.trace, action.event) };
   return { ...state, turns: nextTurns };

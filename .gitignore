@@ -29,3 +29,7 @@ ui/tsconfig.tsbuildinfo
 # Playwright scratch
 .playwright-mcp/
 *.png
+
+.dev.vars*
+!.dev.vars.example
+!.env.example

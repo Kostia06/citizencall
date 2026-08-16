@@ -73,6 +73,7 @@ export default function Bar() {
   const runHandleRef = useRef<RunHandle | null>(null);
   const liveTimeoutRef = useRef<number | undefined>(undefined);
   const transcriptRef = useRef<HTMLDivElement>(null);
+  const transcriptContentRef = useRef<HTMLDivElement>(null);
   const stickToBottomRef = useRef(true);
   const reduceMotion = useReducedMotion();
 
@@ -152,6 +153,33 @@ export default function Bar() {
     if (!el) return;
     const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
     stickToBottomRef.current = distanceFromBottom < 80;
+  }
+
+  // The typewriter answer reveal (chat/TypewriterText.tsx) and the trace
+  // collapse/expand toggle both grow/shrink the transcript's content WITHOUT
+  // dispatching a conversation action, so the effect above (keyed on
+  // `[conversation, restored]`) never re-fires for them. A ResizeObserver on
+  // the content wrapper catches every such reflow generically and re-applies
+  // the same stick-to-bottom rule, so reveals never fight a user who's
+  // scrolled up to reread an earlier turn.
+  useEffect(() => {
+    const content = transcriptContentRef.current;
+    const container = transcriptRef.current;
+    if (!content || !container) return;
+    const ro = new ResizeObserver(() => {
+      if (stickToBottomRef.current) container.scrollTop = container.scrollHeight;
+    });
+    ro.observe(content);
+    return () => ro.disconnect();
+  }, [hasContent]);
+
+  // Stop button (ConversationTurn/StatusLine/AnswerBubble) — closes the
+  // in-flight SSE/mock RunHandle and freezes the last turn's trace via the
+  // additive `stop_turn` conversation action (traceReducer.ts), whatever
+  // arrived stays.
+  function handleStop() {
+    runHandleRef.current?.close();
+    dispatch({ type: 'stop_turn' });
   }
 
   const currentUser = USERS[userIdx];
@@ -437,25 +465,28 @@ export default function Bar() {
           onScroll={handleTranscriptScroll}
           className={`transcript-scroll ${alignClass} min-h-0 w-full max-w-2xl flex-1 overflow-y-auto pb-8`}
         >
-          {restored
-            .filter((r) => r.afterTurnId === null)
-            .map((r) => (
-              <RestoredTurn key={r.key} run={r.run} />
+          <div ref={transcriptContentRef}>
+            {restored
+              .filter((r) => r.afterTurnId === null)
+              .map((r) => (
+                <RestoredTurn key={r.key} run={r.run} />
+              ))}
+            {turns.map((turn) => (
+              <div key={turn.id}>
+                <ConversationTurn
+                  turn={turn}
+                  animate={turn.id === lastTurn?.id && running}
+                  authedFetch={authedFetch}
+                  onStop={turn.id === lastTurn?.id && running ? handleStop : undefined}
+                />
+                {restored
+                  .filter((r) => r.afterTurnId === turn.id)
+                  .map((r) => (
+                    <RestoredTurn key={r.key} run={r.run} />
+                  ))}
+              </div>
             ))}
-          {turns.map((turn) => (
-            <div key={turn.id}>
-              <ConversationTurn
-                turn={turn}
-                animate={turn.id === lastTurn?.id && running}
-                authedFetch={authedFetch}
-              />
-              {restored
-                .filter((r) => r.afterTurnId === turn.id)
-                .map((r) => (
-                  <RestoredTurn key={r.key} run={r.run} />
-                ))}
-            </div>
-          ))}
+          </div>
         </div>
       )}
 

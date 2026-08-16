@@ -1,5 +1,6 @@
 import { motion, useReducedMotion } from 'framer-motion';
 import { entranceStandard, entranceStandardReduced } from '../../lib/motion';
+import AnswerBubble from '../chat/AnswerBubble';
 
 /** The stored fields a past run is restored from — a subset of the D1 run
  * row (GET /api/run/:id) or, in MOCK mode, of an in-memory turn. Rendered
@@ -36,10 +37,14 @@ const STATUS_TINT: Record<string, string> = {
 };
 
 /** A past session restored into the transcript from the history drawer:
- * the original prompt as the familiar right-aligned "you" bubble, then one
- * compact summary card with the run's stored outcome fields. Mirrors
+ * the original prompt as the familiar right-aligned "you" bubble, then the
+ * same answer-first presentation as a live turn (AnswerBubble, but
+ * `instant` — no typewriter, this already happened) with the run's meta
+ * (status/cost/time) collapsed to one small line underneath. Mirrors
  * ConversationTurn's layout language so restored turns read as part of the
- * same conversation, just visibly historical. */
+ * same conversation, just visibly historical. Runs with no stored answer
+ * (still running when captured, or errored before one landed) fall back to
+ * the plain meta card — there's nothing answer-first to show yet. */
 export default function RestoredTurn({ run }: { run: RestoredRun }) {
   const reduceMotion = useReducedMotion();
   return (
@@ -58,19 +63,35 @@ export default function RestoredTurn({ run }: { run: RestoredRun }) {
           {run.requestText}
         </div>
       </div>
-      <div className="mx-auto mt-4 w-full max-w-2xl px-1">
-        <div className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3">
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-white/40">
+      {run.answerText ? (
+        <>
+          <AnswerBubble text={run.answerText} instant />
+          <div className="mx-auto mt-1 w-full max-w-2xl px-2 text-[11px] text-white/35">
             <span className={STATUS_TINT[run.status] ?? 'text-white/50'}>{run.status}</span>
+            <span className="mx-2 text-white/15">·</span>
             <span>{formatCost(run.totalCostUsd)}</span>
-            {run.totalMs != null && run.totalMs > 0 && <span>{(run.totalMs / 1000).toFixed(1)}s</span>}
+            {run.totalMs != null && run.totalMs > 0 && (
+              <>
+                <span className="mx-2 text-white/15">·</span>
+                <span>{(run.totalMs / 1000).toFixed(1)}s</span>
+              </>
+            )}
+            <span className="mx-2 text-white/15">·</span>
             <span className="text-white/25">read-only — resubmit from the bar to run again</span>
           </div>
-          {run.answerText && (
-            <div className="mt-2 whitespace-pre-wrap text-[13px] leading-relaxed text-white/75">{run.answerText}</div>
-          )}
+        </>
+      ) : (
+        <div className="mx-auto mt-4 w-full max-w-2xl px-1">
+          <div className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3">
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-white/40">
+              <span className={STATUS_TINT[run.status] ?? 'text-white/50'}>{run.status}</span>
+              <span>{formatCost(run.totalCostUsd)}</span>
+              {run.totalMs != null && run.totalMs > 0 && <span>{(run.totalMs / 1000).toFixed(1)}s</span>}
+              <span className="text-white/25">read-only — resubmit from the bar to run again</span>
+            </div>
+          </div>
         </div>
-      </div>
+      )}
     </motion.div>
   );
 }

@@ -237,6 +237,27 @@ export function buildScenario(opts: {
     delay: 760,
   });
 
+  // Answer-first redesign: the worker sends the final reply whole in one
+  // `answer` event (never streamed server-side — TypewriterText fakes the
+  // reveal client-side); the mock scenario needs one too so MOCK mode
+  // demos the full new flow. Deliberately exercises markdown-lite: a
+  // newline-separated paragraph, an inline `code span`, a bare URL to
+  // linkify, and a fenced ```code block```.
+  const ANSWER_TEXT =
+    "Here's this week's summary and a draft PR:\n\n" +
+    'Most of the 12 commits touched the escalation ladder in `worker/src/router.ts`, adding a GLM-5.2 fallback for schema failures.\n\n' +
+    'I drafted the PR description in Gmail — https://github.com/understudy/agent/pull/482\n\n' +
+    '```\n' +
+    'feat: escalation ladder for extract_fields\n' +
+    '- adds GLM-5.2 fallback on fail_schema\n' +
+    '- wires cost tracking through hop_end\n' +
+    '```\n\n' +
+    'Want the tone adjusted before you send it?';
+  steps.push({
+    event: { t: 'answer', subTaskId: 'st_1', text: ANSWER_TEXT },
+    delay: 260,
+  });
+
   const totalCostUsd = 0.00061 + 0.00034 + 0.0071;
   const baselineCostUsd = 0.0412;
   steps.push({
