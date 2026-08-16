@@ -323,6 +323,15 @@ export default function ConnectionsPanel({
   const capped = filtered.length > RENDER_CAP;
   const visible = capped ? filtered.slice(0, RENDER_CAP) : filtered;
 
+  // Connected apps get their own pinned section above the catalog — the
+  // user must always SEE what's connected without hunting/searching for it
+  // (and a connected app deep in the catalog past the render cap would
+  // otherwise be invisible entirely).
+  const connectedApps = useMemo(
+    () => apps.filter((a) => connectedSlugs.has(a.slug)),
+    [apps, connectedSlugs],
+  );
+
   const loginRequiredApp = loginRequiredFor ? apps.find((a) => a.slug === loginRequiredFor) : undefined;
   const customizeApp = customizeSlug ? apps.find((a) => a.slug === customizeSlug) : undefined;
   const popoverApp = popover ? apps.find((a) => a.slug === popover.slug) : undefined;
@@ -375,6 +384,28 @@ export default function ConnectionsPanel({
           <FilterChip key={c} label={c} active={category === c} onClick={() => setCategory(category === c ? null : c)} />
         ))}
       </div>
+
+      {!loading && connectedApps.length > 0 && (
+        <div>
+          <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-white/35">
+            Connected · {connectedApps.length}
+          </div>
+          <div className="flex flex-wrap gap-2.5 rounded-xl border border-accent/20 bg-accent/[0.04] p-2.5">
+            {connectedApps.map((app) => (
+              <AppTile
+                key={`connected-${app.slug}`}
+                app={app}
+                connected
+                pending={pendingToolkit === app.slug}
+                active={popover?.slug === app.slug || customizeSlug === app.slug}
+                onOpen={(slug, anchor) =>
+                  setPopover((p) => (p?.slug === slug ? null : { slug, anchorRect: anchor.getBoundingClientRect() }))
+                }
+              />
+            ))}
+          </div>
+        </div>
+      )}
 
       {loading ? (
         <div className="flex flex-wrap gap-2.5 py-1">

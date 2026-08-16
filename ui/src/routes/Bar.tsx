@@ -233,6 +233,7 @@ export default function Bar() {
           status: run.status,
           totalCostUsd: run.total_cost_usd ?? 0,
           totalMs: run.total_ms,
+          ...(run.answer_text ? { answerText: run.answer_text } : {}),
         }),
       )
       .catch(() => push('Could not load that session'));

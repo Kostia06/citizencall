@@ -137,13 +137,14 @@ describe('runPipeline — run-result cache', () => {
 });
 
 describe('runPipeline — store wiring', () => {
-  it('prepends the user’s saved contextPrompt server-side', async () => {
+  it('carries the saved contextPrompt as user context, NOT in the planned text', async () => {
     await putSettings(env.DB, 'demo_teammate', { contextPrompt: 'Always answer in French.' }, Date.now());
     const { events } = await run('demo_teammate', 'summarize the weekly report');
     const plan = events.find((e) => e.t === 'plan') as Extract<TraceEvent, { t: 'plan' }>;
-    // Stub planner falls back to the heuristic single sub-task whose
-    // instruction is the effective text — context prompt included.
-    expect(plan.plan.subTasks[0]!.instruction).toContain('Always answer in French.');
+    // The context prompt now rides the SYSTEM message of each sub-task call
+    // (execute.ts buildMessages) instead of polluting the user text — the
+    // plan is built from the user's actual request only.
     expect(plan.plan.subTasks[0]!.instruction).toContain('summarize the weekly report');
+    expect(plan.plan.subTasks[0]!.instruction).not.toContain('Always answer in French.');
   });
 });

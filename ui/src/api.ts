@@ -519,6 +519,8 @@ export interface RunDetail {
     baseline_cost_usd: number | null;
     total_ms: number | null;
     cache_hits: number | null;
+    /** Persisted final reply (worker db.ts saveRunAnswer) — restored-session bubble. */
+    answer_text?: string | null;
   };
   hops: unknown[];
   toolCalls: unknown[];

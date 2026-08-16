@@ -15,7 +15,7 @@ import { executeSubTask, type PriorOutput, type ToolCallResult } from './execute
 import { buildRunEndEvent, sumCost } from './trace';
 import { asTraceEvent } from './events';
 import { listEnabledMcpToolkits } from './mcp';
-import { finalizeRun, flushHops, flushToolCalls, insertRun, insertSubTasks } from '../db';
+import { finalizeRun, flushHops, flushToolCalls, insertRun, insertSubTasks, saveRunAnswer } from '../db';
 import { loadUserContext } from '../store/context';
 import { buildMemoryContext } from '../memory/context';
 import { maybeAutoWriteMemory } from './memory-hook';
@@ -66,13 +66,16 @@ export async function runPipeline(
   // it shapes planning and every sub-task — and, because it changes the
   // normalized prompt, it is part of the run-cache key by construction.
   const userCtx = await loadUserContextSafe(db, body.userId);
-  // (memory, sub-project #3) Saved memories join the model input the same way
-  // the context prompt does — bounded ~1KB, cycle-safe (memory/context.ts),
-  // and part of the run-cache key by construction. '' ⇔ none ⇔ clean skip.
+  // (memory, sub-project #3) Saved memories + the context prompt form the
+  // USER CONTEXT block. It rides in the SYSTEM message of every sub-task
+  // call (execute.ts buildMessages) — NOT prepended to the user text, which
+  // made the model treat the context itself as the thing to answer about
+  // (found live: "say hu" replied about its own context blob). It still
+  // keys the run cache below, so changed context busts cached answers.
   const memoryBlock = await buildMemoryContextSafe(db, body.userId, body.text);
-  const effectiveText = [userCtx.contextPrompt, memoryBlock, body.text].filter(Boolean).join('\n\n');
+  const userContext = [userCtx.contextPrompt, memoryBlock].filter(Boolean).join('\n\n');
 
-  const norm = await normalize(env, db, policy, effectiveText, body.source);
+  const norm = await normalize(env, db, policy, body.text, body.source);
   if (body.source === 'voice') {
     emit({ t: 'normalized', from: body.text, to: norm.to, ms: norm.ms, modelId: norm.modelId });
   }
@@ -82,7 +85,9 @@ export async function runPipeline(
   // to operate without a userId (anon actors pass their anon id).
   const cacheKeyParams = {
     userId: body.userId,
-    normalizedText: normalizePlanKey(norm.to),
+    // User context is part of the key by construction — a changed context
+    // prompt or memory set must never serve a stale cached answer.
+    normalizedText: normalizePlanKey(norm.to) + (userContext ? `|uc:${userContext}` : ''),
     policyVersion: policy.version,
   };
 
@@ -112,6 +117,10 @@ export async function runPipeline(
         cacheHits: cached.hops.length,
         planCacheHit: true,
       });
+      // The replayed trace carries the original answer — persist it on THIS
+      // run's row too, so a restored cached session still shows the reply.
+      const cachedAnswer = cached.events.find((e): e is Extract<TraceEvent, { t: 'answer' }> => e.t === 'answer');
+      if (cachedAnswer) await saveRunAnswer(db, body.runId, cachedAnswer.text).catch(() => undefined);
       return;
     }
   }
@@ -157,6 +166,7 @@ export async function runPipeline(
         userId: body.userId,
         emit: record,
         mcpToolkits: mcpTokens,
+        ...(userContext ? { userContext } : {}),
         priorOutputs,
         ...(opts.waitForConnection ? { waitForConnection: opts.waitForConnection } : {}),
       },
@@ -169,7 +179,9 @@ export async function runPipeline(
     // LAST sub-task's output is the user-facing answer; earlier sub-tasks'
     // outputs are intermediate and stay internal (dependency threading).
     if (subTask === plan.subTasks[plan.subTasks.length - 1] && result.output.trim()) {
-      record({ t: 'answer', subTaskId: subTask.id, text: result.output.slice(0, 4000) });
+      const answerText = result.output.slice(0, 4000);
+      record({ t: 'answer', subTaskId: subTask.id, text: answerText });
+      await saveRunAnswer(db, body.runId, answerText).catch(() => undefined);
     }
     priorOutputs.set(subTask.id, { content: result.output, toolDerived: result.toolDerived });
     cacheHitCount += result.hops.filter((h) => h.cacheHit !== 'none').length;

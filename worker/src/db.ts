@@ -78,6 +78,19 @@ export async function markRunErrored(db: D1Database, runId: string): Promise<voi
   await db.prepare(`UPDATE runs SET status = 'error' WHERE id = ?`).bind(runId).run();
 }
 
+// Persist the user-visible reply on the run row so a restored session shows
+// the actual conversation, not just cost receipts (found in review: history
+// restore looked "unsaved" because no answer text survived the run). Lazy
+// idempotent ALTER — the column postdates shipped schemas.
+let answerColumnReady = false;
+export async function saveRunAnswer(db: D1Database, runId: string, text: string): Promise<void> {
+  if (!answerColumnReady) {
+    await db.exec(`ALTER TABLE runs ADD COLUMN answer_text TEXT`).catch(() => undefined); // exists already
+    answerColumnReady = true;
+  }
+  await db.prepare(`UPDATE runs SET answer_text = ? WHERE id = ?`).bind(text, runId).run();
+}
+
 export async function insertSubTasks(db: D1Database, runId: string, plan: Plan): Promise<void> {
   if (plan.subTasks.length === 0) return;
   const stmt = db.prepare(

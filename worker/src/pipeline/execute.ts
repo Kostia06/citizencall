@@ -43,6 +43,9 @@ export interface ExecuteContext {
   emit: (e: TraceEvent) => void;
   /** Planner-facing toolkit tokens of the user's enabled MCPs (pipeline/mcp.ts). */
   mcpToolkits?: ReadonlySet<string>;
+  /** Saved context prompt + injected memories — rides in the SYSTEM message
+   * of every sub-task call (see buildMessages). */
+  userContext?: string;
   /** MCP call transport — absent means "not implemented", never a crash. */
   mcpTransport?: McpTransport;
   /** Outputs of already-executed sub-tasks, keyed by sub-task id. */
@@ -127,10 +130,28 @@ function truncate(text: string, max: number): string {
   return text.length <= max ? text : `${text.slice(0, max)}…[truncated]`;
 }
 
-function buildMessages(subTask: SubTask, contextBlocks: string[]): FeatherlessMessage[] {
+// Base persona — every sub-task model call speaks as the user's agent, not a
+// bare task function. Without this, identity/preference context ("your name
+// is jeff") has nowhere to stick and small models answer as graders.
+const PERSONA =
+  "You are Understudy, the user's helpful personal agent. Answer directly and briefly. " +
+  'If the user context below states your name, the user’s name, or a preference, it OVERRIDES these defaults — always apply it.';
+
+function buildMessages(subTask: SubTask, contextBlocks: string[], userContext?: string): FeatherlessMessage[] {
   const content = [...contextBlocks, subTask.instruction].join('\n\n');
+  // User context (saved context prompt + memories) rides in the SYSTEM
+  // message — putting it in the user text made the model treat it as the
+  // thing to summarize/classify (found live: "say hu" answered "I don't
+  // understand your request" about its own context block).
+  const system = [
+    PERSONA,
+    SYSTEM_PROMPT_BY_KIND[subTask.kind],
+    userContext?.trim() ? `Known user context (apply it, do not mention it):\n${userContext.trim()}` : '',
+  ]
+    .filter(Boolean)
+    .join('\n\n');
   return [
-    { role: 'system', content: SYSTEM_PROMPT_BY_KIND[subTask.kind] },
+    { role: 'system', content: system },
     { role: 'user', content },
   ];
 }
@@ -359,7 +380,7 @@ async function runModel(
   const started = Date.now();
   const maxTokens = maxTokensFor(ctx.policy, model, subTask.kind);
   const { blocks, toolDerived } = contextBlocks(ctx, subTask, toolOutcome);
-  const messages = buildMessages(subTask, blocks);
+  const messages = buildMessages(subTask, blocks, ctx.userContext);
   const cacheParams = {
     modelId: model.id,
     prompt: messages.map((m) => `${m.role}:${m.content}`).join('\n'),

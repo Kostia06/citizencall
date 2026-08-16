@@ -67,8 +67,17 @@ async function upsertByTitle(
 export function extractExplicitRemember(prompt: string): { title: string; contentMd: string } | null {
   const m = /\bremember\b[:,]?\s*(?:that\s+|to\s+)?(.+)/is.exec(prompt);
   const fact = m?.[1]?.trim().replace(/\s+/g, ' ');
-  if (!fact) return null;
-  return { title: titleFromFact(fact), contentMd: fact };
+  if (fact) return { title: titleFromFact(fact), contentMd: fact };
+  // Identity/preference statements are durable facts even without the word
+  // "remember" — "your name is jeff" must stick (found live: it didn't).
+  const identity =
+    /\b(?:your name is|call me|my name is|i am called)\s+([a-z0-9 _-]{1,40})/i.exec(prompt) ??
+    /\b(i (?:prefer|like|want|always|never)\s+.{3,120})/i.exec(prompt);
+  if (identity?.[1]) {
+    const stated = identity[0].trim().replace(/\s+/g, ' ');
+    return { title: titleFromFact(stated), contentMd: stated };
+  }
+  return null;
 }
 
 function titleFromFact(fact: string): string {
