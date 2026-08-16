@@ -158,14 +158,19 @@ export interface UserMemoryDetail extends UserMemory {
 export type AttachmentKind = 'file' | 'clipboard-image' | 'clipboard-text';
 
 /** A file or clipboard blob attached to the command bar before a run starts
- * — CommandBar.tsx (drag-drop + clipboard read) and mock/scenario.ts. Only
- * metadata crosses the wire; raw bytes stay client-side for this demo. */
+ * — CommandBar.tsx (drag-drop, picker, clipboard) and mock/scenario.ts.
+ * Text-like files (txt/md/code/csv…) get their content read client-side
+ * into `text` (capped ~50KB) and the worker quotes it into the run's
+ * context; other kinds stay metadata-only and the worker drops them. */
 export interface RunAttachment {
   id: string;
   name: string;
   kind: AttachmentKind;
   size?: number;
   mimeType?: string;
+  /** Extracted text content — the part the agent actually reads. Absent for
+   * images/binaries or files the client could not decode. */
+  text?: string;
 }
 
 export interface RosterEntry {

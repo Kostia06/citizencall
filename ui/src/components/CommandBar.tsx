@@ -64,14 +64,43 @@ function nextAttachmentId(kind: string): string {
   return `${kind}-${Date.now().toString(36)}-${attachmentSeq}`;
 }
 
-function fileToAttachment(file: File, kind: Attachment['kind']): Attachment {
-  return {
+/** Mirrors worker/src/pipeline/attachments.ts MAX_ATTACHMENT_TEXT_CHARS —
+ * anything past this is truncated server-side anyway, so don't ship it. */
+const MAX_ATTACHMENT_TEXT_CHARS = 50_000;
+
+// Text-like files whose content the agent can actually read. MIME first
+// (text/*, JSON, XML), extension as fallback — drag-dropped source files
+// often arrive with an empty or generic type.
+const TEXT_EXTENSION_RE =
+  /\.(txt|md|markdown|csv|tsv|json|jsonl|yaml|yml|toml|xml|html|css|js|jsx|ts|tsx|py|rb|go|rs|java|kt|c|h|cpp|hpp|cs|swift|sh|sql|log|ini|cfg|conf|env|svg)$/i;
+
+function isTextLike(file: File): boolean {
+  if (file.type.startsWith('text/')) return true;
+  if (file.type === 'application/json' || file.type === 'application/xml') return true;
+  return TEXT_EXTENSION_RE.test(file.name);
+}
+
+async function fileToAttachment(file: File, kind: Attachment['kind']): Promise<Attachment> {
+  const attachment: Attachment = {
     id: nextAttachmentId(kind),
     name: file.name || (kind === 'clipboard-image' ? `clipboard-image-${attachmentSeq}.png` : 'clipboard file'),
     kind,
     size: file.size,
     mimeType: file.type || undefined,
   };
+  // Read text-like content here so the run request carries it — the worker
+  // quotes `text` into the model's context (pipeline/attachments.ts).
+  // Images/binaries stay metadata-only chips; the worker drops those from
+  // the run rather than erroring.
+  if (kind !== 'clipboard-image' && isTextLike(file)) {
+    try {
+      const text = await file.text();
+      if (text.trim()) attachment.text = text.slice(0, MAX_ATTACHMENT_TEXT_CHARS);
+    } catch {
+      // Unreadable (permissions, gone from disk) — keep the metadata chip.
+    }
+  }
+  return attachment;
 }
 
 /** The pinned glass pill — SPEC.md §6. Owns its own input state so the mic
@@ -334,13 +363,14 @@ export default function CommandBar({
     const fileItems = Array.from(items).filter((it) => it.kind === 'file');
     if (fileItems.length === 0) return; // plain text — let the browser paste it normally
     e.preventDefault();
-    const newAttachments = fileItems
-      .map((it) => it.getAsFile())
-      .filter((f): f is File => f !== null)
-      .map((f) => fileToAttachment(f, f.type.startsWith('image/') ? 'clipboard-image' : 'file'));
-    if (newAttachments.length === 0) return;
-    addAttachments(newAttachments);
-    onToast(`${newAttachments.length} item${newAttachments.length === 1 ? '' : 's'} attached from clipboard`);
+    const pastedFiles = fileItems.map((it) => it.getAsFile()).filter((f): f is File => f !== null);
+    if (pastedFiles.length === 0) return;
+    void Promise.all(
+      pastedFiles.map((f) => fileToAttachment(f, f.type.startsWith('image/') ? 'clipboard-image' : 'file'))
+    ).then((newAttachments) => {
+      addAttachments(newAttachments);
+      onToast(`${newAttachments.length} item${newAttachments.length === 1 ? '' : 's'} attached from clipboard`);
+    });
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
@@ -401,7 +431,7 @@ export default function CommandBar({
   return (
     <DropZone
       onFiles={(dropped) => {
-        addAttachments(dropped.map((f) => fileToAttachment(f, 'file')));
+        void Promise.all(dropped.map((f) => fileToAttachment(f, 'file'))).then(addAttachments);
         onFilesDropped(dropped);
       }}
     >
@@ -533,7 +563,7 @@ export default function CommandBar({
                   onChange={(e) => {
                     const files = Array.from(e.target.files ?? []);
                     if (files.length === 0) return;
-                    addAttachments(files.map((f) => fileToAttachment(f, 'file')));
+                    void Promise.all(files.map((f) => fileToAttachment(f, 'file'))).then(addAttachments);
                     onFilesDropped(files);
                     e.target.value = '';
                   }}
