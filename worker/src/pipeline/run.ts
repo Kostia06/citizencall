@@ -172,6 +172,7 @@ export async function runPipeline(
       ? buildMcpTransport(mcpToolkits, {
           allowLocalhost: env.APP_URL?.includes('localhost') ?? false,
           env,
+          db,
           // Tool selection is routing-critical: the summarize rung-0 model
           // maps synonym phrasings ('original' → check_novelty) that the
           // cheapest sub-1B model gets wrong.

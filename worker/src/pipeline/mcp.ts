@@ -12,6 +12,7 @@ import { listMcps } from '../store/mcps';
 import { isBlockedMcpUrl, McpHttpClient, type McpToolDef } from '../providers/mcp-client';
 import { buildToolArgs, defaultArgsModel, parseArgsJson, type ArgsModel, type ToolkitTool } from '../providers/composio-tools';
 import { callFeatherless } from '../providers/featherless';
+import { getCachedMcpSelection, getCachedMcpTools, putCachedMcpSelection, putCachedMcpTools } from '../cache/mcp';
 import type { Env } from '../env';
 
 export interface McpToolkit {
@@ -120,6 +121,9 @@ export interface BuildMcpTransportOptions {
    * the cheapest (sub-1B) model picks wrong tools on synonym phrasings, so
    * run.ts passes the summarize rung-0 here. Defaults to the cheapest model. */
   selectionModelId?: string;
+  /** Enables the cross-run MCP caches (tool lists 1h, tool selection 24h —
+   * cache/mcp.ts). Absent (tests) means live discovery every call. */
+  db?: D1Database;
 }
 
 /** Real McpTransport over the user's enabled MCP rows. One client per
@@ -151,11 +155,19 @@ export function buildMcpTransport(servers: readonly McpToolkit[], opts: BuildMcp
         clients.set(toolkit, client);
       }
 
-      // Resolve the planned name against the server's real tools. Discovery
-      // failing is fatal for the call (the same request path tools/call would
-      // use just failed) — surface the error instead of a doomed call.
-      const listed = await client.listTools();
-      if (!listed.ok) return { ok: false, output: listed.error };
+      // Resolve the planned name against the server's real tools. The list
+      // is cached globally per server URL (cache/mcp.ts) — tools/list cost
+      // ~1-2s per sub-task before that. Discovery failing on a cache miss is
+      // fatal for the call (the same request path tools/call would use just
+      // failed) — surface the error instead of a doomed call.
+      let tools = opts.db ? await getCachedMcpTools(opts.db, server.url) : null;
+      if (!tools) {
+        const listed = await client.listTools();
+        if (!listed.ok) return { ok: false, output: listed.error };
+        tools = listed.value;
+        if (opts.db) await putCachedMcpTools(opts.db, server.url, tools);
+      }
+      const listed = { value: tools };
 
       // Tool resolution, strongest signal first:
       //  1. exact planned-name match (the planner named a real tool);
@@ -168,11 +180,23 @@ export function buildMcpTransport(servers: readonly McpToolkit[], opts: BuildMcp
       const normalize = (s: string): string => s.toLowerCase().replace(/[^a-z0-9]/g, '');
       let resolved = listed.value.find((t) => normalize(t.name) === normalize(tool)) ?? null;
       let callArgs: Record<string, unknown> = { ...args };
+      if (!resolved && instruction && opts.db) {
+        // Selection cache: same instruction against the same server skips
+        // the selection model call entirely. Validated against the live
+        // tool list so a redeployed server can't replay a removed tool.
+        const cached = await getCachedMcpSelection(opts.db, server.url, instruction);
+        const cachedTool = cached ? listed.value.find((t) => t.name === cached.tool) : undefined;
+        if (cached && cachedTool) {
+          resolved = cachedTool;
+          callArgs = { ...args, ...cached.args };
+        }
+      }
       if (!resolved && argsModel && instruction) {
         const picked = await modelSelectTool(listed.value, instruction, argsModel);
         if (picked) {
           resolved = picked.tool;
           callArgs = { ...args, ...picked.args };
+          if (opts.db) await putCachedMcpSelection(opts.db, server.url, instruction, { tool: picked.tool.name, args: picked.args });
         }
       }
       resolved ??= matchMcpTool(listed.value, tool, `${instruction} ${argsInstruction(args)}`.trim());
