@@ -118,7 +118,12 @@ html.spotlight-shell body::-webkit-scrollbar {
    fill and hairline border are the iOS control treatment — a single soft
    surface, one hairline, no competing edges. */
 html.spotlight-shell .bar-pill {
-  background: rgba(30, 30, 32, 0.82);
+  /* Fully solid — the desktop behind the overlay must never bleed through a
+     component (a transparent Electron window can't blur it, and translucency
+     over a bright wallpaper wrecks legibility). */
+  background: rgb(28, 28, 30);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
   border-image: none;
   border: 0.5px solid rgba(255, 255, 255, 0.14);
   box-shadow:
@@ -153,6 +158,17 @@ html.spotlight-shell .spotlight-surface:focus-within .spotlight-orbs {
 html.spotlight-shell .app-card,
 html.spotlight-shell [class*='rounded-2xl'] {
   box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45);
+}
+
+/* Compact floating chips under the spotlight pill (connect/status, sign-in,
+   errors) — without a surface of their own they read as bare text hanging
+   over the desktop, invisible on light wallpapers. Fully solid (see the
+   .bar-pill note above); the raised token so chips sit a step above the
+   pill surface, flipping with the theme for free. */
+.float-chip {
+  background: rgb(var(--color-surface-raised));
+  border: 1px solid rgb(var(--color-ink) / 0.12);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.35);
 }
 
 /* The whole overlay is draggable except the controls inside it, which is how

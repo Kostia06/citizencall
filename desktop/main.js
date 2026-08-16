@@ -120,22 +120,25 @@ function createWindow(url) {
 
   win.loadURL(url);
 
-  // Glassmorphism, Spotlight-style: a translucent surface tint + backdrop
-  // blur. In a transparent Electron window backdrop-filter can only sample
-  // PAGE content (the desktop behind the window is out of reach), so the
-  // tint carries most of the effect — strong enough that nothing behind
-  // reads sharply, weak enough to stay visibly glassy. Injected here rather
+  // The window itself is transparent (that's what makes this an overlay), but
+  // every visible component gets a fully SOLID surface — the website's own
+  // surface colors at 100% opacity, no translucency, no backdrop-filter. A
+  // transparent Electron window can't blur the desktop behind it anyway
+  // (backdrop-filter only samples page content), and translucent tints let a
+  // bright desktop bleed through and wreck legibility. Injected here rather
   // than in ui/ so a browser tab at /spotlight is untouched.
   win.webContents.on('did-finish-load', () => {
     win?.webContents.insertCSS(
-      'html.spotlight-shell .bar-pill { background: rgba(28, 28, 32, 0.78) !important; backdrop-filter: blur(24px) saturate(140%); -webkit-backdrop-filter: blur(24px) saturate(140%); }' +
-        'html.spotlight-shell .spotlight-orbs button { background-color: rgba(28, 28, 32, 0.72) !important; backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px); }' +
-        'html.spotlight-shell [class*="rounded-2xl"] { background-color: rgba(24, 24, 28, 0.82) !important; backdrop-filter: blur(24px) saturate(140%); -webkit-backdrop-filter: blur(24px) saturate(140%); }' +
+      'html.spotlight-shell .bar-pill { background: rgb(28, 28, 30) !important; backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }' +
+        'html.spotlight-shell .spotlight-orbs button { background-color: rgb(28, 28, 30) !important; backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }' +
+        'html.spotlight-shell [class*="rounded-2xl"] { background-color: rgb(28, 28, 30) !important; backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }' +
+        'html.spotlight-shell .float-chip { background: rgb(36, 36, 38) !important; backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }' +
         // Light theme (data-theme flips live via the ☾ orb / account prefs);
         // the text inside uses the ink token, which flips with it.
-        "html.spotlight-shell[data-theme='light'] .bar-pill { background: rgba(245, 245, 247, 0.8) !important; border-color: rgba(0, 0, 0, 0.14) !important; }" +
-        "html.spotlight-shell[data-theme='light'] .spotlight-orbs button { background-color: rgba(245, 245, 247, 0.75) !important; }" +
-        "html.spotlight-shell[data-theme='light'] [class*='rounded-2xl'] { background-color: rgba(250, 250, 252, 0.85) !important; }" +
+        "html.spotlight-shell[data-theme='light'] .bar-pill { background: rgb(255, 255, 255) !important; border-color: rgba(0, 0, 0, 0.14) !important; }" +
+        "html.spotlight-shell[data-theme='light'] .spotlight-orbs button { background-color: rgb(255, 255, 255) !important; }" +
+        "html.spotlight-shell[data-theme='light'] [class*='rounded-2xl'] { background-color: rgb(255, 255, 255) !important; }" +
+        "html.spotlight-shell[data-theme='light'] .float-chip { background: rgb(240, 241, 246) !important; }" +
         // The command field is a TEXTAREA, which index.css's no-drag list
         // (input/button/a/canvas) misses — without this the whole field is a
         // drag region and clicks/keystrokes move the window instead of

@@ -260,11 +260,11 @@ export default function Spotlight() {
           browser's — until the user signs in here once, runs and prefs are
           anonymous. Kept subtle: one text link, only when actually anon. */}
       {authStatus === 'anon' && window.understudy && (
-        <div className="mx-auto mt-2 w-full max-w-[620px] px-1 text-right">
+        <div className="mx-auto mt-2 flex w-full max-w-[620px] justify-end px-1">
           <button
             type="button"
             onClick={() => window.understudy?.openAuth()}
-            className="text-[11px] text-ink/35 transition-colors hover:text-ink/70"
+            className="float-chip rounded-full px-3 py-1 text-[11px] text-ink/45 transition-colors hover:text-ink/80"
           >
             Sign in to use your account
           </button>
@@ -277,14 +277,14 @@ export default function Spotlight() {
           rendering the pipeline here. Only the LAST turn shows; prior turns
           live on in state purely as threading history. */}
       {panelOpen && lastTurn && (
-        <div className="mx-auto mt-4 w-full max-w-[620px]">
+        <div className="mx-auto mt-3 w-full max-w-[620px]">
           {/* A paused run (connection_required) looked like a hang in the
               result-only panel — the web app shows a connect card, here a
               compact chip opens OAuth in the system browser (window.open is
               routed there by desktop/main.js's window-open handler) and the
               worker's 5s self-poll resumes the run once linked. */}
           {running && !lastTurn.trace.answerText && lastTurn.trace.connectionGate?.status === 'waiting' ? (
-            <div className="flex items-center gap-2.5 px-1 text-[12px] text-ink/60">
+            <div className="float-chip mx-auto flex w-fit items-center gap-2.5 rounded-2xl px-4 py-2.5 text-[12px] text-ink/70">
               <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent" aria-hidden />
               Needs {lastTurn.trace.connectionGate.toolkit} —
               <button
@@ -308,15 +308,18 @@ export default function Spotlight() {
           ) : (
             running &&
             !lastTurn.trace.answerText && (
-              <div className="flex items-center gap-2 px-1 text-[12px] text-ink/50">
+              <div className="float-chip mx-auto flex w-fit items-center gap-2 rounded-2xl px-4 py-2.5 text-[12px] text-ink/60">
                 <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent" aria-hidden />
                 Working…
               </div>
             )
           )}
           {lastTurn.trace.answerText && (
-            <>
-              <div className="max-h-64 w-full overflow-y-auto whitespace-pre-wrap rounded-2xl border border-accent/20 bg-accent/[0.05] px-4 py-3 text-[13px] leading-relaxed text-ink/90">
+            /* One card: the scrollable answer, with the copy/view-steps row
+               attached below it inside the same surface — floating bare text
+               under the card was unreadable over light desktops. */
+            <div className="w-full overflow-hidden rounded-2xl border border-accent/20 bg-accent/[0.05]">
+              <div className="max-h-64 overflow-y-auto whitespace-pre-wrap px-4 py-3 text-[13px] leading-relaxed text-ink/90">
                 {renderMarkdownLite(lastTurn.trace.answerText)}
                 {running && (
                   <span
@@ -326,7 +329,7 @@ export default function Spotlight() {
                 )}
               </div>
               {!running && (
-                <div className="mt-1.5 flex items-center gap-3 px-1 text-[11px] text-ink/35">
+                <div className="flex items-center gap-3 border-t border-ink/10 px-4 py-2 text-[11px] text-ink/40">
                   <button
                     type="button"
                     onClick={() => handleCopy(lastTurn.trace.answerText ?? '')}
@@ -352,10 +355,10 @@ export default function Spotlight() {
                   </a>
                 </div>
               )}
-            </>
+            </div>
           )}
           {lastTurn.trace.status === 'error' && (
-            <div className="mt-1.5 px-1 text-[12px] text-red-300/80">
+            <div className="float-chip mx-auto mt-2 w-fit rounded-2xl px-3.5 py-2 text-[12px] text-red-300/80">
               {lastTurn.trace.error ?? 'Run failed'}
             </div>
           )}
