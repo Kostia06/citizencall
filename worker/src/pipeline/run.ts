@@ -199,7 +199,10 @@ export async function runPipeline(
     // LAST sub-task's output is the user-facing answer; earlier sub-tasks'
     // outputs are intermediate and stay internal (dependency threading).
     if (subTask === plan.subTasks[plan.subTasks.length - 1] && result.output.trim()) {
-      const answerText = result.output.slice(0, 4000);
+      // 12k, not 4k: streamed deltas show the FULL text live, so the final
+      // reconcile must not shrink it — GLM's 2048-token answers can pass 4k
+      // chars. Still a hard bound for the row/cache payload.
+      const answerText = result.output.slice(0, 12000);
       record({ t: 'answer', subTaskId: subTask.id, text: answerText });
       await saveRunAnswer(db, body.runId, answerText).catch(() => undefined);
     }
