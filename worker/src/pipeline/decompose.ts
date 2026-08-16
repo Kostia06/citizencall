@@ -33,8 +33,11 @@ const MAX_SUBTASKS = 4;
 const MAX_TOKENS = 2048;
 
 const TOOL_HINTS: ReadonlyArray<{ pattern: RegExp; toolkit: string; tool: string }> = [
-  { pattern: /\b(commit|repo|repository|pull request|\bpr\b)\b/i, toolkit: 'github', tool: 'list_commits' },
-  { pattern: /\b(email|gmail|inbox)\b/i, toolkit: 'gmail', tool: 'fetch_emails' },
+  // Plurals matter: "check any prs" failed to match \bpr\b and the run
+  // answered "I don't have access to GitHub" with GitHub connected.
+  { pattern: /\b(pull requests?|prs?)\b/i, toolkit: 'github', tool: 'search_pull_requests' },
+  { pattern: /\b(commits?|repos?|repositor(?:y|ies)|issues?|branch(?:es)?)\b/i, toolkit: 'github', tool: 'list_commits' },
+  { pattern: /\b(emails?|gmail|inbox|mails?)\b/i, toolkit: 'gmail', tool: 'fetch_emails' },
 ];
 
 // Default read tool per toolkit when the model flags a tool need but the
@@ -121,7 +124,7 @@ export interface DecomposeResult {
 // tool call even when the planner model shrugs — "post a discord update"
 // must pause on the discord connection deterministically, not only when GLM
 // happens to set needsTools (observed live: it often doesn't).
-const ACTION_VERB = /\b(send|post|message|announce|create|reply|update|upload|schedule|share|publish)\b/i;
+const ACTION_VERB = /\b(send|post|message|announce|create|reply|update|upload|schedule|share|publish|check|list|read|find|search|get|fetch|show)\b/i;
 
 export async function decompose(
   env: Env,

@@ -17,6 +17,7 @@ import { asTraceEvent } from './events';
 import { listEnabledMcpToolkits } from './mcp';
 import { finalizeRun, flushHops, flushToolCalls, insertRun, insertSubTasks, saveRunAnswer } from '../db';
 import { loadUserContext } from '../store/context';
+import { listConnections } from '../store/connections';
 import { buildMemoryContext } from '../memory/context';
 import { maybeAutoWriteMemory } from './memory-hook';
 import { buildConversationBlock, lastUserTurnHint, type ConversationTurn } from './conversation';
@@ -150,6 +151,13 @@ export async function runPipeline(
   // vocabulary so a needed-but-unconnected app plans a tool call and the
   // connection-required pause can name it.
   const mentioned = await detectMentionedToolkits(env, norm.to);
+  // CONNECTED toolkits are first-class planner vocabulary: with GitHub
+  // connected, "check any prs" must plan a github tool call even though the
+  // prompt never says "github" (found live: it answered "I don't have
+  // access to GitHub" instead).
+  const connected = await listConnections(db, body.userId)
+    .then((rows) => rows.filter((r) => r.status === 'active').map((r) => r.toolkit))
+    .catch(() => [] as string[]);
 
   const planStarted = Date.now();
   const { plan, cacheHit: planCacheHit, cacheKind } = await decompose(
@@ -157,7 +165,7 @@ export async function runPipeline(
     db,
     policy,
     norm.to,
-    [...new Set([...mcpTokens, ...mentioned])],
+    [...new Set([...mcpTokens, ...mentioned, ...connected])],
     mentioned,
     // (threading) One-line disambiguator only — plan text and cache keys stay
     // hint-free, so trivial prompts keep their fast path.
