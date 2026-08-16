@@ -26,7 +26,7 @@ const CAPABILITY_ANSWER = `I'm **CitizenCall** — one command bar that routes e
 - **Automate** — "create a routine that checks my email every morning", then bind it to a bar button
 - **Answer & write** — questions, comparisons, code, drafts — with the cost and model of every step in the trace below the answer
 
-There's also a macOS Spotlight-style bar — press ⌥Space anywhere (Settings → Personal → Download).`;
+You can also install CitizenCall as an app — Settings → Personal → Install, straight from the browser.`;
 
 /** Same event/persist contract as the routine-intent fast path: answer +
  * run_end + finalized row, so the stream, history, and GET /api/run/:id all

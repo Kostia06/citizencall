@@ -13,7 +13,7 @@ import { ToastStack, useToasts } from '../components/Toast';
 import { AuthError, DEFAULT_PREFS, MOCK, storeApi } from '../api';
 import type { Connection, Routine, UserPrefs } from '../api';
 import { useAuth } from '../auth/useAuth';
-import { MACOS_DMG_URL } from '../lib/downloads';
+import { promptInstall } from '../lib/pwa';
 import { entranceStandard, entranceStandardReduced } from '../lib/motion';
 import { syncThemeFromPrefs } from '../lib/theme';
 
@@ -460,21 +460,24 @@ export default function Settings() {
             </SectionCard>
 
             <SectionCard
-              title="macOS app"
-              subtitle="A Spotlight-style overlay bar — press ⌥Space anywhere. Shows just the answer; full steps stay here on the web."
+              title="Install the app"
+              subtitle="CitizenCall installs straight from the browser — its own window, Dock icon, no download."
               action={
-                <a
-                  href={MACOS_DMG_URL}
-                  target="_blank"
-                  rel="noopener noreferrer"
+                <button
+                  type="button"
+                  onClick={() => {
+                    void promptInstall().then((ok) => {
+                      if (!ok) push('In Safari: File → Add to Dock. In Chrome: the install icon in the address bar.');
+                    });
+                  }}
                   className="rounded-lg border border-accent/40 px-3 py-1.5 text-[12.5px] text-accent-bright transition-colors hover:bg-accent/10"
                 >
-                  Download for macOS (.dmg)
-                </a>
+                  Install
+                </button>
               }
             >
               <p className="text-[11.5px] text-ink/35">
-                Apple Silicon, unsigned dev build — right-click → Open the first time.
+                Works in Chrome, Edge, and Safari (File → Add to Dock). Already installed? You're set.
               </p>
             </SectionCard>
           </div>

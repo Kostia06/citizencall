@@ -1,6 +1,0 @@
-# pnpm 10 skips dependency build scripts unless allowlisted; without this
-# electron's postinstall never downloads the binary and `electron .` throws
-# "Electron failed to install correctly". (`allowBuilds` is not a pnpm key —
-# the correct one is onlyBuiltDependencies.)
-onlyBuiltDependencies:
-  - electron

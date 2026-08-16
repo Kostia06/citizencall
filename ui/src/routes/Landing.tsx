@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { Link, useNavigate } from 'react-router-dom';
 import { entranceStandard, entranceStandardReduced } from '../lib/motion';
-import { MACOS_DMG_URL } from '../lib/downloads';
+import { promptInstall } from '../lib/pwa';
 
 /** The hero IS the product: each example types into the pill, resolves into a
  * one-line answer, then clears for the next. */
@@ -134,9 +134,20 @@ export default function Landing() {
           >
             Try CitizenCall
           </button>
-          <a href={MACOS_DMG_URL} className="text-sm text-ink/60 transition-colors hover:text-ink">
-            Download for macOS&nbsp;↓
-          </a>
+          <button
+            type="button"
+            onClick={() => {
+              // PWA install (replaced the Electron download): Chrome-family
+              // shows the native dialog; Safari has no prompt API, so the
+              // fallback is a one-line instruction.
+              void promptInstall().then((ok) => {
+                if (!ok) window.alert('Install CitizenCall: in Safari use File → Add to Dock; in Chrome click the install icon in the address bar.');
+              });
+            }}
+            className="text-sm text-ink/60 transition-colors hover:text-ink"
+          >
+            Install the app&nbsp;↓
+          </button>
         </motion.div>
       </main>
 

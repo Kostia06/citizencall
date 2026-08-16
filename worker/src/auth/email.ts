@@ -115,7 +115,7 @@ export function sendWelcomeEmail(env: Env, to: string): Promise<boolean> {
        <strong style="color:#14151a;">Connect your apps</strong> — GitHub, Gmail, Discord and 1,200+ more, then "list my open pull requests".<br/><br/>
        <strong style="color:#14151a;">Teach it about you</strong> — "my name is Jeff — remember that". It shows up on your Memory page.<br/><br/>
        <strong style="color:#14151a;">Automate</strong> — "create a routine that checks my email every morning", then bind it to a bar button.<br/><br/>
-       <strong style="color:#14151a;">Take it to your desktop</strong> — the macOS Spotlight-style bar lives under Settings → Personal. ⌥Space anywhere.
+       <strong style="color:#14151a;">Install it</strong> — CitizenCall installs as an app straight from the browser: Settings → Personal → Install.
      </p>
      <div style="text-align:center;padding:6px 0 4px;">${button('https://citizencall.dev', 'Open CitizenCall')}</div>`
   );
