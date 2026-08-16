@@ -48,6 +48,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // authedFetch needs the *current* token synchronously (it can fire
   // between renders); state alone would read a stale closure value.
   const tokenRef = useRef<string | null>(null);
+  // Deferred that settles when the mount-time silent refresh completes, so
+  // authedFetch never races the bootstrap and fires token-less requests
+  // (see authedFetch.ts `whenReady`). Created during render — authedFetch
+  // is built before the effect runs.
+  const readyRef = useRef<{ promise: Promise<void>; resolve: () => void } | null>(null);
+  if (!readyRef.current) {
+    let resolve!: () => void;
+    const promise = new Promise<void>((r) => {
+      resolve = r;
+    });
+    readyRef.current = { promise, resolve };
+  }
 
   const setSession = useCallback((token: string | null, nextUser: AuthUser | null) => {
     tokenRef.current = token;
@@ -66,7 +78,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       })
       .catch(() => {
         if (!cancelled) setSession(null, null);
-      });
+      })
+      .finally(() => readyRef.current?.resolve());
     return () => {
       cancelled = true;
     };
@@ -76,6 +89,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     createAuthedFetch({
       getAccessToken: () => tokenRef.current,
       onSession: setSession,
+      whenReady: () => readyRef.current?.promise ?? Promise.resolve(),
     }),
   ).current;
 
