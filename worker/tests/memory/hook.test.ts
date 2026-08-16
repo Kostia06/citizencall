@@ -8,7 +8,7 @@ import { applyStoreSchema } from '../../src/db';
 import { applyRunCacheSchema } from '../../src/cache/schema';
 import { applyMemorySchema } from '../../src/memory/schema';
 import { createMemory, listMemories, deleteMemory } from '../../src/memory/store';
-import { extractExplicitRemember, maybeAutoWriteMemory, parseExtraction } from '../../src/pipeline/memory-hook';
+import { extractExplicitRemember, extractRetraction, isQuestionOnly, maybeAutoWriteMemory } from '../../src/pipeline/memory-hook';
 import { runPipeline } from '../../src/pipeline/run';
 import type { ModelCandidate, Policy, TraceEvent } from '../../src/types';
 import { applyCoreSchema } from '../support/schema';
@@ -75,26 +75,45 @@ async function run(userId: string, text: string): Promise<AnyEvent[]> {
 
 const kinds = (events: AnyEvent[]) => events.map((e) => e.t);
 
-describe('extractExplicitRemember / parseExtraction', () => {
-  it('lifts the fact out of a "remember that …" prompt', () => {
+describe('extractExplicitRemember', () => {
+  it('lifts the fact out of a "remember that …" prompt with a clean subject title', () => {
     const f = extractExplicitRemember('Please remember that I prefer short answers.');
     expect(f!.contentMd).toBe('I prefer short answers.');
-    expect(f!.title).toBe('I prefer short answers');
+    expect(f!.title).toBe('Preference: short answers');
+  });
+
+  it('normalizes identity statements under canonical titles', () => {
+    const agent = extractExplicitRemember('your name is jeff');
+    expect(agent!.title).toBe("Agent's name");
+    expect(agent!.contentMd).toBe('The agent should be called Jeff.');
+    const user = extractExplicitRemember('call me ann, please summarize this');
+    expect(user!.title).toBe("User's name");
+    expect(user!.contentMd).toBe("User's name is Ann.");
   });
 
   it('returns null when there is nothing to remember', () => {
     expect(extractExplicitRemember('summarize the standup notes')).toBeNull();
     expect(extractExplicitRemember('remember')).toBeNull();
   });
+});
 
-  it('parses TITLE/FACT, tolerates think-blocks, rejects NONE and noise', () => {
-    expect(parseExtraction('TITLE: Prefers dark mode\nFACT: The user prefers dark mode.')).toEqual({
-      title: 'Prefers dark mode',
-      contentMd: 'The user prefers dark mode.',
-    });
-    expect(parseExtraction('<think>hmm</think>\nNONE')).toBeNull();
-    expect(parseExtraction('NONE')).toBeNull();
-    expect(parseExtraction('The user likes cats, probably.')).toBeNull();
+describe('extractRetraction', () => {
+  it('maps "forget my/your name" to the canonical titles', () => {
+    expect(extractRetraction('forget my name')).toEqual({ title: "User's name" });
+    expect(extractRetraction('please forget your name now')).toEqual({ title: "Agent's name" });
+  });
+
+  it('pure questions never reach extraction (mis-attribution guard, found live)', () => {
+    expect(isQuestionOnly("what's your name?")).toBe(true);
+    expect(isQuestionOnly('how do I deploy this?  ')).toBe(true);
+    expect(isQuestionOnly('my name is Ann, what can you do?')).toBe(false); // carries a fact
+    expect(isQuestionOnly('summarize the report')).toBe(false); // not a question
+  });
+
+  it('keeps a free-form topic and ignores non-retractions', () => {
+    expect(extractRetraction('forget about my coffee preference')).toEqual({ topic: 'my coffee preference' });
+    expect(extractRetraction("don't forget I like tea")).toBeNull(); // a remember, not a retraction
+    expect(extractRetraction('summarize the report')).toBeNull();
   });
 });
 
@@ -106,6 +125,34 @@ describe('maybeAutoWriteMemory', () => {
     const again = await maybeAutoWriteMemory(env, env.DB, { userId: U, prompt: 'remember that I deploy on Fridays', answer: 'ok' });
     expect(again!.id).toBe(first!.id); // updated, not duplicated
     expect((await listMemories(env.DB, U)).length).toBe(1);
+  });
+
+  it('updates the same subject instead of duplicating: Jeff → Bob is one memory', async () => {
+    const U = 'hook-user-name';
+    const jeff = await maybeAutoWriteMemory(env, env.DB, { userId: U, prompt: 'your name is jeff', answer: 'ok' });
+    expect(jeff!.title).toBe("Agent's name");
+    expect(jeff!.contentMd).toBe('The agent should be called Jeff.');
+    const bob = await maybeAutoWriteMemory(env, env.DB, { userId: U, prompt: 'actually, call yourself Bob from now on', answer: 'ok' });
+    expect(bob!.id).toBe(jeff!.id); // UPDATE, never a second row
+    expect(bob!.contentMd).toBe('The agent should be called Bob.');
+    expect((await listMemories(env.DB, U)).length).toBe(1);
+  });
+
+  it('a retraction deletes the memory: "forget your name"', async () => {
+    const U = 'hook-user-forget';
+    await maybeAutoWriteMemory(env, env.DB, { userId: U, prompt: 'your name is jeff', answer: 'ok' });
+    expect((await listMemories(env.DB, U)).length).toBe(1);
+    const saved = await maybeAutoWriteMemory(env, env.DB, { userId: U, prompt: 'forget your name', answer: 'ok' });
+    expect(saved).toBeNull(); // deletions announce nothing
+    expect(await listMemories(env.DB, U)).toEqual([]);
+  });
+
+  it('canonical retraction also catches a mis-titled row about the same subject', async () => {
+    const U = 'hook-user-forget-2';
+    // A model-written row: right subject, wrong title (found live).
+    await createMemory(env.DB, { userId: U, title: "User's name", contentMd: 'The agent should be called Bob.', source: 'agent' });
+    await maybeAutoWriteMemory(env, env.DB, { userId: U, prompt: 'forget your name', answer: 'ok' });
+    expect(await listMemories(env.DB, U)).toEqual([]);
   });
 
   it('writes nothing for a plain prompt without a provider key', async () => {
@@ -123,7 +170,7 @@ describe('runPipeline — memory wiring', () => {
     const events = await run(U, 'remember that I prefer short answers');
     const saved = events.find((e) => e.t === 'memory_saved') as Extract<TraceEvent, { t: 'memory_saved' }>;
     expect(saved).toBeDefined();
-    expect(saved.title).toBe('I prefer short answers');
+    expect(saved.title).toBe('Preference: short answers');
     expect(kinds(events).indexOf('memory_saved')).toBeLessThan(kinds(events).indexOf('run_end'));
     const rows = await listMemories(env.DB, U);
     expect(rows.length).toBe(1);

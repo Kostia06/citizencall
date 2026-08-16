@@ -44,6 +44,43 @@ describe('buildMemoryContext', () => {
     expect(ctx.memoryIds).toContain(recent.id);
   });
 
+  it('recency decay: a fresh near-tie outranks a stale slightly-better overlap', async () => {
+    const U = 'ctx-decay-user';
+    const now = Date.now();
+    // Stale memory overlaps the prompt on 3 tokens; fresh one on 2. Decay
+    // (floor 0.5 after many half-lives) makes 3*~0.5 < 2*~1.0.
+    const stale = await createMemory(env.DB, {
+      userId: U,
+      title: 'Old deploy habit',
+      contentMd: 'deploy checklist smoke rollback',
+      source: 'agent',
+      now: now - 90 * 24 * 60 * 60 * 1000, // ~13 half-lives old
+    });
+    const fresh = await createMemory(env.DB, {
+      userId: U,
+      title: 'New deploy habit',
+      contentMd: 'deploy canary rollback',
+      source: 'agent',
+      now,
+    });
+    const ctx = await buildMemoryContext(env.DB, U, 'deploy smoke checklist rollback canary plan');
+    // stale overlap 3+ vs fresh overlap 2 — hold that precondition, then
+    // assert decay flipped the order.
+    expect(ctx.memoryIds[0]).toBe(fresh.id);
+    expect(ctx.memoryIds).toContain(stale.id); // decay reorders, never evicts
+  });
+
+  it('near-identical facts are injected once (legacy duplicate rows)', async () => {
+    const U = 'ctx-dedupe-user';
+    await createMemory(env.DB, { userId: U, title: 'This: my espresso preference', contentMd: 'User prefers a double espresso every morning', source: 'agent' });
+    await createMemory(env.DB, { userId: U, title: 'Espresso preference', contentMd: 'User prefers a double espresso every morning', source: 'agent' });
+    const other = await createMemory(env.DB, { userId: U, title: 'Tea', contentMd: 'User drinks green tea at night', source: 'agent' });
+    const ctx = await buildMemoryContext(env.DB, U, 'what espresso do I prefer in the morning routine?');
+    expect(ctx.memoryIds.length).toBe(2); // one espresso entry + tea, not both twins
+    expect(ctx.memoryIds).toContain(other.id);
+    expect(ctx.block.match(/double espresso/g)!.length).toBe(1);
+  });
+
   it('inlines [[linked]] memory content cycle-safely (self-link terminates)', async () => {
     const U = 'ctx-cycle-user';
     await createMemory(env.DB, { userId: U, title: 'Loop', contentMd: 'stack preference is bun, see [[Loop]] and [[Detail]]', source: 'user' });
