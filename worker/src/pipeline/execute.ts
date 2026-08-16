@@ -138,7 +138,7 @@ const PERSONA =
   "You are Understudy, the user's helpful personal agent. Answer directly and briefly. " +
   'If the user context below states your name, the user’s name, or a preference, it OVERRIDES these defaults — always apply it.';
 
-function buildMessages(subTask: SubTask, contextBlocks: string[], userContext?: string): FeatherlessMessage[] {
+function buildMessages(subTask: SubTask, contextBlocks: string[], userContext?: string, hasToolOutput = false): FeatherlessMessage[] {
   const content = [...contextBlocks, subTask.instruction].join('\n\n');
   // User context (saved context prompt + memories) rides in the SYSTEM
   // message — putting it in the user text made the model treat it as the
@@ -147,6 +147,11 @@ function buildMessages(subTask: SubTask, contextBlocks: string[], userContext?: 
   const system = [
     PERSONA,
     SYSTEM_PROMPT_BY_KIND[subTask.kind],
+    // Tool output arrives as raw JSON; small models echoed it verbatim
+    // (guild-ID dumps, observed live). Present it like a human would.
+    hasToolOutput
+      ? 'The tool output above is raw data. Answer with the human-relevant facts in plain language — names, counts, summaries — never raw JSON, IDs, or field names.'
+      : '',
     userContext?.trim() ? `Known user context (apply it, do not mention it):\n${userContext.trim()}` : '',
   ]
     .filter(Boolean)
@@ -414,7 +419,7 @@ async function runModel(
   const started = Date.now();
   const maxTokens = maxTokensFor(ctx.policy, model, subTask.kind);
   const { blocks, toolDerived } = contextBlocks(ctx, subTask, toolOutcome);
-  const messages = buildMessages(subTask, blocks, ctx.userContext);
+  const messages = buildMessages(subTask, blocks, ctx.userContext, toolDerived);
   const cacheParams = {
     modelId: model.id,
     prompt: messages.map((m) => `${m.role}:${m.content}`).join('\n'),
