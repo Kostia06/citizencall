@@ -97,6 +97,8 @@ before starting work; update it when you finish.
 - [x] 2026-08-16 — **mem0-style memory**: multi-fact extraction + ADD/UPDATE/DELETE reconcile, canonical titles, retraction, recency-decay retrieval; PROD-verified (jeff→Bob = one clean updated row); found+fixed answer-misattribution bug
 - [x] 2026-08-16 — Full sweep (19/5/1) + fixes: zombie-run reaper verified + instant resume-reconcile; cross-browser LIVE mic transcript (chunked STT for Firefox/Zen); button-order persistence (local+account); roster out of nav; teammate's main (desktop/ Electron shell, Spotlight, harness silver-pass) merged cleanly — 49 files / 325 worker tests green
 
+- [x] 2026-08-16 — **Answer streaming + regenerate** (last OSS-plan item): real Featherless SSE deltas for the final sub-task → throttled `answer_delta` events → live-growing bubble (typewriter kept for replays); escalate clears the draft; final `answer` reconciles (cap raised to 12k so streams never shrink); ↻ regenerate reruns with noCache. LIVE: 5 deltas concat===answer locally, incremental bubble growth verified in the PROD browser, regenerate skipped the run cache. 52 files / 340 worker tests green.
+
 ## Blocked
 
 - _Nothing blocked._
