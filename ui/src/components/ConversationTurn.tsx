@@ -197,7 +197,7 @@ function ConnectionGateCard({
             type="button"
             onClick={handleConnect}
             disabled={busy !== null}
-            className="rounded-full bg-accent px-4 py-1.5 text-[12px] font-semibold text-black transition-opacity hover:opacity-90 disabled:opacity-50"
+            className="rounded-full bg-accent px-4 py-1.5 text-[12px] font-semibold text-paper transition-opacity hover:opacity-90 disabled:opacity-50"
           >
             Connect
           </button>

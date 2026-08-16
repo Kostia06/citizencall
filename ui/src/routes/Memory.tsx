@@ -122,7 +122,7 @@ export default function Memory() {
           <button
             type="button"
             onClick={() => setMode({ kind: 'new' })}
-            className="rounded-xl bg-accent px-4 py-1.5 text-[13px] font-medium text-white transition hover:bg-accent-bright"
+            className="rounded-xl bg-accent px-4 py-1.5 text-[13px] font-medium text-paper transition hover:bg-accent-bright"
           >
             New memory
           </button>
@@ -170,7 +170,7 @@ export default function Memory() {
                       <button
                         type="button"
                         onClick={() => remove(selected.id)}
-                        className="rounded-xl bg-red-500/80 px-4 py-1.5 text-[13px] font-medium text-white transition hover:bg-red-500"
+                        className="rounded-xl bg-red-500/80 px-4 py-1.5 text-[13px] font-medium text-paper transition hover:bg-red-500"
                       >
                         Really delete
                       </button>

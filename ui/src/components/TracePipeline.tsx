@@ -205,7 +205,7 @@ function RunEndSummary({ runEnd }: { runEnd: NonNullable<TraceState['runEnd']> }
       </div>
       <div className="mt-3 flex items-center justify-between">
         <span className="text-[11px] text-white/40">{formatMs(runEnd.totalMs)} total</span>
-        <span className="rounded-full bg-accent px-3 py-1 text-[12px] font-semibold text-black">
+        <span className="rounded-full bg-accent px-3 py-1 text-[12px] font-semibold text-paper">
           {formatPct(savings)} saved
         </span>
       </div>

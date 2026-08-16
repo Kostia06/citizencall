@@ -157,7 +157,7 @@ function McpRow({
             <button
               type="button"
               onClick={submit}
-              className="rounded-lg bg-accent px-3 py-1.5 text-[12.5px] font-medium text-black transition-colors hover:bg-accent-bright"
+              className="rounded-lg bg-accent px-3 py-1.5 text-[12.5px] font-medium text-paper transition-colors hover:bg-accent-bright"
             >
               Save
             </button>
@@ -358,7 +358,7 @@ export default function CustomMcpsPanel({ authedFetch }: { authedFetch: AuthedFe
             type="button"
             onClick={handleAdd}
             disabled={!name.trim() || !url.trim()}
-            className="mt-1 self-start rounded-lg bg-accent px-3.5 py-1.5 text-[12.5px] font-medium text-black transition-colors hover:bg-accent-bright disabled:opacity-40"
+            className="mt-1 self-start rounded-lg bg-accent px-3.5 py-1.5 text-[12.5px] font-medium text-paper transition-colors hover:bg-accent-bright disabled:opacity-40"
           >
             Add MCP
           </button>

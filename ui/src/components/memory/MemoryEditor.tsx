@@ -40,7 +40,7 @@ export default function MemoryEditor({ initialTitle = '', initialContentMd = '',
           type="button"
           disabled={!valid || saving}
           onClick={() => onSave(title.trim(), contentMd)}
-          className="rounded-xl bg-accent px-4 py-1.5 text-[13px] font-medium text-white transition hover:bg-accent-bright disabled:opacity-40"
+          className="rounded-xl bg-accent px-4 py-1.5 text-[13px] font-medium text-paper transition hover:bg-accent-bright disabled:opacity-40"
         >
           {saving ? 'Saving…' : 'Save'}
         </button>

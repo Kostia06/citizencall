@@ -77,7 +77,7 @@ function AppTile({
           />
         )}
         {connected && (
-          <span className="absolute -bottom-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-accent text-[9px] font-bold leading-none text-black">
+          <span className="absolute -bottom-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-accent text-[9px] font-bold leading-none text-paper">
             ✓
           </span>
         )}
@@ -187,7 +187,7 @@ function ConnectPopover({
                 autoFocus
                 disabled={pending}
                 onClick={onConnect}
-                className="flex-1 rounded-lg bg-accent px-3 py-1.5 text-[12.5px] font-medium text-black transition-colors hover:bg-accent-bright disabled:opacity-50"
+                className="flex-1 rounded-lg bg-accent px-3 py-1.5 text-[12.5px] font-medium text-paper transition-colors hover:bg-accent-bright disabled:opacity-50"
               >
                 {pending ? 'Connecting…' : 'Connect'}
               </button>

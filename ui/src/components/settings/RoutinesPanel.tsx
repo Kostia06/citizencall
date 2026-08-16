@@ -114,7 +114,7 @@ function RoutineRow({
               type="button"
               onClick={submit}
               disabled={!name.trim() || !prompt.trim()}
-              className="rounded-lg bg-accent px-3 py-1.5 text-[12.5px] font-medium text-black transition-colors hover:bg-accent-bright disabled:opacity-40"
+              className="rounded-lg bg-accent px-3 py-1.5 text-[12.5px] font-medium text-paper transition-colors hover:bg-accent-bright disabled:opacity-40"
             >
               Save
             </button>
@@ -333,7 +333,7 @@ export default function RoutinesPanel({
             type="button"
             onClick={handleAdd}
             disabled={!name.trim() || !prompt.trim()}
-            className="mt-1 self-start rounded-lg bg-accent px-3.5 py-1.5 text-[12.5px] font-medium text-black transition-colors hover:bg-accent-bright disabled:opacity-40"
+            className="mt-1 self-start rounded-lg bg-accent px-3.5 py-1.5 text-[12.5px] font-medium text-paper transition-colors hover:bg-accent-bright disabled:opacity-40"
           >
             Add routine
           </button>
