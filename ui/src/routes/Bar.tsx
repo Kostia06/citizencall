@@ -72,6 +72,15 @@ export default function Bar() {
   // typed without lifting the input state out of the bar.
   const barActionsRef = useRef<{ submit(bypassCache: boolean): void } | null>(null);
   const navigate = useNavigate();
+  // First visit, not signed in → show the landing once. Returning visitors
+  // (understudy:visited) and authed users never get redirected; 'loading'
+  // waits for auth to settle rather than flashing the landing at users with
+  // a session.
+  useEffect(() => {
+    if (status === 'anon' && !localStorage.getItem('understudy:visited')) {
+      navigate('/welcome', { replace: true });
+    }
+  }, [status, navigate]);
   // /oauth/done can return the browser HERE (returnTo:'/' — pause-card and
   // orb connects) with ?connected=<toolkit>&status=… — greet, refresh
   // connections (the paused run self-resumes worker-side), strip params.

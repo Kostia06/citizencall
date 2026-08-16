@@ -11,6 +11,7 @@ import Reset from './routes/Reset';
 import Settings from './routes/Settings';
 import Spotlight from './routes/Spotlight';
 import Memory from './routes/Memory';
+import Landing from './routes/Landing';
 import { AuthProvider } from './auth/AuthProvider';
 import './index.css';
 
@@ -40,6 +41,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
             <Route path="/reset" element={<Reset />} />
             <Route path="/settings" element={<Settings />} />
             <Route path="/memory" element={<Memory />} />
+            <Route path="/welcome" element={<Landing />} />
           </Routes>
         </AuthProvider>
       </BrowserRouter>
