@@ -7,6 +7,7 @@ import ButtonEditor from '../components/settings/ButtonEditor';
 import ConnectionsPanel from '../components/settings/ConnectionsPanel';
 import CustomMcpsPanel from '../components/settings/CustomMcpsPanel';
 import RoutinesPanel from '../components/settings/RoutinesPanel';
+import ProvidersPanel from '../components/settings/ProvidersPanel';
 import TopNav from '../components/TopNav';
 import { ToastStack, useToasts } from '../components/Toast';
 import { AuthError, DEFAULT_PREFS, MOCK, storeApi } from '../api';
@@ -457,8 +458,13 @@ export default function Settings() {
                 className="w-full resize-none rounded-lg border border-ink/10 bg-surface-sunken px-3.5 py-2.5 text-[13px] text-ink outline-none transition-colors placeholder:text-ink/25 focus:border-accent/60"
               />
             </SectionCard>
-            {/* Future "Models & API keys" section mounts here as another
-                SectionCard. */}
+
+            <SectionCard
+              title="Models & API keys"
+              subtitle="Bring your own model key — it becomes the fallback when the built-in models fail a check."
+            >
+              <ProvidersPanel authedFetch={authedFetch} />
+            </SectionCard>
           </div>
         </div>
       </motion.div>
