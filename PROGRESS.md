@@ -92,6 +92,11 @@ before starting work; update it when you finish.
 - [x] 2026-08-15 — UX round: theme orb (☾ replaces demo user-spin), drag-reorder no longer triggers actions, bar placement left/middle/right (instant + anon-safe), multi-line pill squares off, live mic transcript (Web Speech interim + ElevenLabs final), Connected section pinned in grid, answers persisted on run rows (restored sessions show the reply), Roster demoted out of nav (route kept for the demo)
 - [x] 2026-08-15 — citizencall.dev custom domain live (+ www); Resend domain registered w/ DNS live (verification propagating; sender flips via RESEND_FROM secret)
 
+- [x] 2026-08-16 — **Real Composio tool execution**: per-toolkit tool discovery (globally cached), planner sees real slugs, intent→tool resolver + schema-grounded args, raw-API execute (SDK version bug found+bypassed); LIVE: DISCORD_LIST_MY_GUILDS returned real guilds, verify pass; human-phrased tool answers
+- [x] 2026-08-16 — **Session threading** (vercel/ai-chatbot + LibreChat patterns): bar sends last 6 turns, budgeted conversation block in the system channel, cache-keyed; PROD-verified ("what is my favorite animal?" → "red panda")
+- [x] 2026-08-16 — **mem0-style memory**: multi-fact extraction + ADD/UPDATE/DELETE reconcile, canonical titles, retraction, recency-decay retrieval; PROD-verified (jeff→Bob = one clean updated row); found+fixed answer-misattribution bug
+- [x] 2026-08-16 — Full sweep (19/5/1) + fixes: zombie-run reaper verified + instant resume-reconcile; cross-browser LIVE mic transcript (chunked STT for Firefox/Zen); button-order persistence (local+account); roster out of nav; teammate's main (desktop/ Electron shell, Spotlight, harness silver-pass) merged cleanly — 49 files / 325 worker tests green
+
 ## Blocked
 
 - _Nothing blocked._
