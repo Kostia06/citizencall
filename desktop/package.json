@@ -6,9 +6,12 @@
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "dev": "node ./wait-for-ui.mjs && electron ."
+    "start:prod": "UNDERSTUDY_URL=https://citizencall.dev/spotlight electron .",
+    "dev": "node ./wait-for-ui.mjs && electron .",
+    "dist": "electron-packager . Understudy --platform=darwin --arch=arm64 --overwrite --out=dist --ignore=\"^/dist($|/)\" && ditto -c -k --keepParent dist/Understudy-darwin-arm64/Understudy.app dist/Understudy-macos-arm64.zip"
   },
   "devDependencies": {
+    "@electron/packager": "^18.3.6",
     "electron": "^33.2.0"
   }
 }
