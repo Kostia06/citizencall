@@ -17,7 +17,8 @@
 // the worker still produces a usable plan deterministically.
 import { z } from 'zod';
 import type { Env } from '../env';
-import { getPlan, normalizePlanKey } from '../cache/plan';
+import { normalizePlanKey } from '../cache/plan';
+import { getPlanCacheEntry } from '../db';
 import { findNearPlan, putPlanIndexed } from '../cache/planSemantic';
 import { callFeatherless } from '../providers/featherless';
 import { getToolkitTools } from '../providers/composio-tools';
@@ -138,19 +139,28 @@ export async function decompose(
   // plan text — it only rides the model call on a cache miss.
   conversationHint = ''
 ): Promise<DecomposeResult> {
+  // The toolkit vocabulary is part of BOTH cache keys: a plan minted when
+  // the planner couldn't see a toolkit must not hit the same prompt once it
+  // can. Found live TWICE: first the semantic path (stale discord plan), and
+  // then the exact path — it looked up the UNsuffixed key while new plans
+  // are stored under the suffixed one, so a legacy tool-less plan ("check
+  // any prs" from before the vocab fix) exact-hit forever and fresh plans
+  // never exact-hit their own rows.
+  const vocab = [...extraToolkits].sort().join(',');
+  const key = normalizePlanKey(normalizedText) + (vocab ? `|tk:${vocab}` : '');
+
   // A cached plan carries the sub-task ids of the run that minted it —
   // sub_tasks.id is a global PK, so EVERY cache hit (exact or semantic) must
   // re-key the plan (fresh ids, dependsOn remapped) before inserting its rows.
-  const cached = await getPlan(db, normalizedText);
-  if (cached) return { plan: rekeyPlan(cached), cacheHit: true, cacheKind: 'exact' };
-
-  // The toolkit vocabulary is part of the key: a plan minted when the
-  // planner couldn't see "discord" (pre-mention-detection, or before the
-  // user enabled an MCP) must not exact-hit the same prompt once it can —
-  // found live: a stale cached plan skipped the discord tool call entirely,
-  // so the connection-required pause never fired.
-  const vocab = [...extraToolkits].sort().join(',');
-  const key = normalizePlanKey(normalizedText) + (vocab ? `|tk:${vocab}` : '');
+  const cachedEntry = await getPlanCacheEntry(db, key);
+  if (cachedEntry) {
+    try {
+      const plan = JSON.parse(cachedEntry.planJson) as Plan;
+      return { plan: rekeyPlan(plan), cacheHit: true, cacheKind: 'exact' };
+    } catch {
+      // corrupt row — fall through to re-plan; the write below overwrites it
+    }
+  }
   const near = await findNearPlan(db, key);
   if (near) {
     // Promote the borrow to an exact row under the new key (provenance in
