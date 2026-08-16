@@ -49,7 +49,14 @@ function Toggle({ on, onClick, label }: { on: boolean; onClick(): void; label: s
  * "which model backs me up". CRUD talks to /api/providers directly (own
  * fetch helpers, not storeApi — the routes are new here); anon sessions can
  * save too and claim-on-login re-parents the rows. */
-export default function ProvidersPanel({ authedFetch }: { authedFetch: AuthedFetch }) {
+export default function ProvidersPanel({
+  authedFetch,
+  refreshToken = 0,
+}: {
+  authedFetch: AuthedFetch;
+  /** Bumped when this panel's tab activates — see RoutinesPanel for why. */
+  refreshToken?: number;
+}) {
   const [providers, setProviders] = useState<ProviderRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -77,7 +84,7 @@ export default function ProvidersPanel({ authedFetch }: { authedFetch: AuthedFet
     return () => {
       cancelled = true;
     };
-  }, [authedFetch]);
+  }, [authedFetch, refreshToken]);
 
   async function handleAdd() {
     if (!model.trim() || !apiKey.trim() || saving) return;

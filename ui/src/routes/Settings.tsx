@@ -140,6 +140,17 @@ export default function Settings() {
     schedulePut(patch);
   }
 
+  // Panels stay mounted across tab switches (form state survives), so
+  // clicking a tab must actively re-pull that tab's user data — "when I
+  // click apps it doesn't pull the user table", reported live after
+  // connections made elsewhere never appeared.
+  const [tabRefresh, setTabRefresh] = useState(0);
+  useEffect(() => {
+    if (activeTab === 'apps') void refreshConnections();
+    if (activeTab === 'automation' || activeTab === 'personal') setTabRefresh((t) => t + 1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab]);
+
   const refreshConnections = useCallback(async () => {
     try {
       const list = await storeApi.listConnections(authedFetch);
@@ -426,7 +437,7 @@ export default function Settings() {
               title="Routines"
               subtitle="Saved prompts you can run on demand or bind to a bar button — optionally on a schedule."
             >
-              <RoutinesPanel authedFetch={authedFetch} onRoutinesChange={setRoutines} />
+              <RoutinesPanel authedFetch={authedFetch} onRoutinesChange={setRoutines} refreshToken={tabRefresh} />
             </SectionCard>
           </div>
 
@@ -445,7 +456,7 @@ export default function Settings() {
               title="Models & API keys"
               subtitle="Bring your own model key — it becomes the fallback when the built-in models fail a check."
             >
-              <ProvidersPanel authedFetch={authedFetch} />
+              <ProvidersPanel authedFetch={authedFetch} refreshToken={tabRefresh} />
             </SectionCard>
 
             <SectionCard

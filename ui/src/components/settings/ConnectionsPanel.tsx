@@ -320,8 +320,26 @@ export default function ConnectionsPanel({
     });
   }, [apps, query, category]);
 
-  const capped = filtered.length > RENDER_CAP;
-  const visible = capped ? filtered.slice(0, RENDER_CAP) : filtered;
+  // Incremental rendering, not a hard wall — the old fixed 150-tile cap read
+  // as "the catalog only has 150 apps" (reported live). A sentinel div at
+  // the bottom of the grid raises the limit as it scrolls into view, so all
+  // 1,200+ apps are reachable while the DOM still grows in steps.
+  const [renderLimit, setRenderLimit] = useState(RENDER_CAP);
+  useEffect(() => {
+    setRenderLimit(RENDER_CAP); // narrowing/widening the filter restarts paging
+  }, [query, category]);
+  const sentinelRef = useRef<HTMLDivElement>(null);
+  const canRenderMore = filtered.length > renderLimit;
+  useEffect(() => {
+    const el = sentinelRef.current;
+    if (!el || !canRenderMore) return;
+    const io = new IntersectionObserver((entries) => {
+      if (entries.some((e) => e.isIntersecting)) setRenderLimit((l) => l + RENDER_CAP);
+    });
+    io.observe(el);
+    return () => io.disconnect();
+  }, [canRenderMore]);
+  const visible = canRenderMore ? filtered.slice(0, renderLimit) : filtered;
 
   // Connected apps get their own pinned section above the catalog — the
   // user must always SEE what's connected without hunting/searching for it
@@ -370,9 +388,7 @@ export default function ConnectionsPanel({
         <span className="text-[11.5px] text-white/35">
           {loading
             ? 'Loading…'
-            : capped
-              ? `${apps.length.toLocaleString()} apps · showing ${RENDER_CAP} · connected ${connectedSlugs.size} — refine search to see more`
-              : `${filtered.length === apps.length ? apps.length.toLocaleString() : `${filtered.length} of ${apps.length.toLocaleString()}`} apps · ${connectedSlugs.size} connected`}
+            : `${filtered.length === apps.length ? apps.length.toLocaleString() : `${filtered.length} of ${apps.length.toLocaleString()}`} apps · ${connectedSlugs.size} connected`}
         </span>
       </div>
 
@@ -429,6 +445,13 @@ export default function ConnectionsPanel({
               }
             />
           ))}
+          {canRenderMore && (
+            <div ref={sentinelRef} className="flex w-full items-center justify-center py-2">
+              <span className="text-[11px] text-white/25">
+                Loading more… {visible.length.toLocaleString()} of {filtered.length.toLocaleString()}
+              </span>
+            </div>
+          )}
         </div>
       )}
 

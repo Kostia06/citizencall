@@ -171,8 +171,13 @@ function RoutineRow({
 export default function RoutinesPanel({
   authedFetch,
   onRoutinesChange,
+  refreshToken = 0,
 }: {
   authedFetch: AuthedFetch;
+  /** Bumped by Settings when this panel's tab becomes active — panels stay
+   * mounted across tab switches, so without this a routine created
+   * elsewhere (chat, another tab) never appears until a full reload. */
+  refreshToken?: number;
   /** Mirrors this panel's up-to-date list up to Settings, so ButtonEditor's
    * "Routines" picker group reflects create/edit/delete without owning its
    * own separate fetch (and separate loading/error states) for the same data. */
@@ -214,7 +219,7 @@ export default function RoutinesPanel({
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authedFetch]);
+  }, [authedFetch, refreshToken]);
 
   async function handleAdd() {
     if (!name.trim() || !prompt.trim()) return;
