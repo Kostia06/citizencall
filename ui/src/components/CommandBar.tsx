@@ -406,7 +406,7 @@ export default function CommandBar({
       }}
     >
       {({ isDragOver }) => (
-        <div className="w-full">
+        <div className="relative w-full">
           <motion.div
             // NOT a `layout` element: framer layout-projection writes inline
             // border-radius every frame, which both fought the .is-multiline
@@ -574,14 +574,17 @@ export default function CommandBar({
           <AnimatePresence>
           {showSuggestions && (
             <motion.div
-              // The list used to pop in with no transition ("instant and
-              // doesn't look smooth", reported live) — a soft drop+fade in,
-              // quick fade out, none of it under reduced motion.
+              // Absolutely anchored under the pill (top-full on the relative
+              // DropZone wrapper) so opening it never adds layout height —
+              // the in-flow version pushed the vertically-centered bar UP
+              // when the list appeared ("without moving it up", reported
+              // live). Soft drop+fade in, quick fade out; static under
+              // reduced motion.
               initial={reduceMotion ? false : { opacity: 0, y: -8, scale: 0.98 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={reduceMotion ? { opacity: 0 } : { opacity: 0, y: -6, scale: 0.985, transition: { duration: 0.12 } }}
               transition={reduceMotion ? { duration: 0 } : { type: 'spring', stiffness: 480, damping: 34 }}
-              className="relative mx-1 mt-2 overflow-hidden rounded-2xl border border-white/10 bg-surface-raised/95 backdrop-blur-xl"
+              className="absolute left-1 right-1 top-full z-20 mt-2 origin-top overflow-hidden rounded-2xl border border-white/10 bg-surface-raised/95 shadow-lift backdrop-blur-xl"
             >
               {filtered.map((s, i) => (
                 <button
