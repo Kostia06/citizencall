@@ -129,6 +129,8 @@ before starting work; update it when you finish.
 - [x] 2026-08-16 — Prod at f5fbb451, dark-only, main synced continuously. User's prod account created (their earlier logins were all against local dev D1 — "Invalid email or password" on prod was accurate, not a bug).
 - [x] 2026-08-16 — **Cache keeper LIVE** (prod 8f14dffc): every 15-min cron tick re-mints ≤5 missing/expiring curated plans (69 planner-bound prompts, anon-keyed), refreshes tool lists (12 top toolkits) + catalog before TTL, resolves Composio auth configs (negative-cached when unsupported). Seed: plan_cache 76→149, toolkit_tools 6→19, 11/12 auth configs; fresh-anon verify: plan hit 5/6 at 0.76–2.5s, connect card ≤1.2s. Self-sustained across two live prod ticks. 59 files / full suite green.
 
+- [x] 2026-08-16 — **SESSION CLOSED — final verified state**: prod = `5a588685` (deployed from HEAD, main == feature/ui == remote). Final packaged-app test against this exact version: solid pill rgb(28,28,30), autofocus, capability answer 0.7s, Esc collapse — release v0.1.0 assets are this bundle. Cache keeper self-sustaining on prod cron. Nothing in flight; human-gated only: Resend domain verify → RESEND_FROM swap, demo filming (voice in Chrome), optional gold-label pass.
+
 ## Blocked
 
 - _Nothing blocked._
