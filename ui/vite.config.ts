@@ -7,6 +7,17 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     sourcemap: true,
+    rollupOptions: {
+      output: {
+        // The 1,201-app Composio catalog JSON and framer-motion dominated a
+        // single 500KB+ main chunk — split them so the app shell loads fast
+        // and the catalog arrives in parallel.
+        manualChunks: {
+          catalog: ['./src/store/composio-apps.json'],
+          motion: ['framer-motion'],
+        },
+      },
+    },
   },
   server: {
     port: 5173,
