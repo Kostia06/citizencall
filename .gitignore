@@ -33,3 +33,4 @@ ui/tsconfig.tsbuildinfo
 .dev.vars*
 !.dev.vars.example
 !.env.example
+node-compile-cache/
