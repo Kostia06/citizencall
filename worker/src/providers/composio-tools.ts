@@ -213,6 +213,34 @@ export function resetToolkitToolsCacheForTests(): void {
   d1SchemaReady = false;
 }
 
+// --- Cache-keeper seams (warmup.ts) ---------------------------------------
+// getToolkitTools never refreshes a still-fresh row, so the cron warmer needs
+// its own "how old is the row" read and a forced re-fetch that keeps the
+// stale row on failure (stale still beats nothing when Composio is down).
+
+export const TOOLKIT_TOOLS_D1_TTL_MS = D1_TTL_MS;
+
+/** fetched_at of the global D1 row, or null when absent/corrupt. */
+export async function getToolkitToolsFetchedAt(db: D1Database, toolkit: string): Promise<number | null> {
+  const row = await readToolsRow(db, toolkit);
+  return row?.fetchedAt ?? null;
+}
+
+/** Force a live re-fetch + D1/memory write. False on any failure — the
+ * existing row (fresh or stale) is left untouched. */
+export async function refreshToolkitTools(env: Env, toolkit: string): Promise<boolean> {
+  if (!env.COMPOSIO_API_KEY) return false;
+  try {
+    const now = Date.now();
+    const tools = await fetchLiveTools(env.COMPOSIO_API_KEY, toolkit);
+    await writeToolsRow(env.DB, toolkit, tools, now);
+    memoryCache.set(toolkit, { tools, expiresAt: now + CACHE_TTL_MS });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Resolution: planned tool name -> real tool.
 

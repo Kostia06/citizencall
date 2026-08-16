@@ -161,8 +161,7 @@ export async function decompose(
   // are stored under the suffixed one, so a legacy tool-less plan ("check
   // any prs" from before the vocab fix) exact-hit forever and fresh plans
   // never exact-hit their own rows.
-  const vocab = [...extraToolkits].sort().join(',');
-  const key = normalizePlanKey(normalizedText) + (vocab ? `|tk:${vocab}` : '');
+  const key = planCacheKeyFor(normalizedText, extraToolkits);
 
   // A cached plan carries the sub-task ids of the run that minted it —
   // sub_tasks.id is a global PK, so EVERY cache hit (exact or semantic) must
@@ -217,6 +216,20 @@ function isTrivialPrompt(text: string, extraToolkits: string[]): boolean {
   if (TOOL_HINTS.some((h) => h.pattern.test(text))) return false;
   const lower = text.toLowerCase();
   return !extraToolkits.some((t) => lower.includes(t.toLowerCase()));
+}
+
+/** The exact plan-cache key decompose uses — the cache keeper (warmup.ts)
+ * must mint under the SAME key a live run will look up, vocab suffix
+ * included, or warmed rows never hit. */
+export function planCacheKeyFor(normalizedText: string, extraToolkits: string[]): string {
+  const vocab = [...extraToolkits].sort().join(',');
+  return normalizePlanKey(normalizedText) + (vocab ? `|tk:${vocab}` : '');
+}
+
+/** True when this prompt+vocab would reach the model planner rather than the
+ * ~0ms heuristic — the only prompts worth pre-warming. */
+export function wouldUsePlannerModel(text: string, extraToolkits: string[]): boolean {
+  return !isTrivialPrompt(text, extraToolkits);
 }
 
 // Planning ran on the frontier baseline (GLM), a REASONING model that spends

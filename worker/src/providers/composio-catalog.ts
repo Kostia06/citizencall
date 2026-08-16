@@ -177,6 +177,34 @@ export function resetToolkitCatalogCacheForTests(): void {
   cached = null;
 }
 
+// --- Cache-keeper seams (warmup.ts) ---------------------------------------
+// getToolkitCatalog never refreshes a still-fresh row, so the cron warmer
+// needs its own age read and a forced live walk that keeps the old row on
+// failure.
+
+export const TOOLKIT_CATALOG_D1_TTL_MS = D1_TTL_MS;
+
+/** fetched_at of the global D1 catalog row, or null when absent/corrupt. */
+export async function getToolkitCatalogFetchedAt(db: D1Database): Promise<number | null> {
+  const row = await readCatalogRow(db);
+  return row?.fetchedAt ?? null;
+}
+
+/** Force a full live walk + D1/memory write. False on any failure — the
+ * existing row is left untouched. */
+export async function refreshToolkitCatalog(env: Env): Promise<boolean> {
+  if (!env.COMPOSIO_API_KEY) return false;
+  try {
+    const now = Date.now();
+    const toolkits = await fetchLiveCatalog(env.COMPOSIO_API_KEY);
+    await writeCatalogRow(env.DB, toolkits, now);
+    cached = { catalog: { toolkits, source: 'composio' }, expiresAt: now + CACHE_TTL_MS };
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 // Bundled fallback: 100+ real, popular Composio-supported apps spanning the
 // categories a "connect an app" picker actually needs. logo is a Clearbit
 // Logo API URL keyed off each app's real domain.
