@@ -28,10 +28,9 @@ export interface UserPrefs {
 export const DEFAULT_PREFS: UserPrefs = {
   version: 1,
   keybindings: { run: 'Enter', newline: 'Shift+Enter', bypassCache: 'Mod+Enter', focus: 'Mod+K', clear: 'Escape' },
-  buttons: [
-    { id: 'github', action: 'connect:github' },
-    { id: 'gmail', action: 'connect:gmail' },
-  ],
+  // No seeded orbs (user request 2026-08-16): the bar starts as just the
+  // input; app orbs are added via the arranger's + once apps are connected.
+  buttons: [],
   contextPrompt: '',
   suggestions: true,
 };
@@ -43,20 +42,23 @@ export const DEFAULT_PREFS: UserPrefs = {
 export const INPUT_BUTTON: UserPrefsButton = { id: 'input', action: 'input' };
 
 /** Saved prefs predate the input slot — older rows lack it, so normalize by
- * prepending (input-first matches the historical layout). */
+ * prepending (input-first matches the historical layout). Also strips the
+ * retired seeded `connect:github`/`connect:gmail` buttons (user request
+ * 2026-08-16: gone completely, bar and arranger both) — app orbs are
+ * `toolkit:<slug>` rows the user adds themselves now. */
 export function ensureInputButton(buttons: UserPrefsButton[]): UserPrefsButton[] {
-  return buttons.some((b) => b.id === 'input') ? buttons : [INPUT_BUTTON, ...buttons];
+  const kept = buttons.filter((b) => !b.action.startsWith('connect:'));
+  return kept.some((b) => b.id === 'input') ? kept : [INPUT_BUTTON, ...kept];
 }
 
 /** The fixed keybinding actions the editor exposes — spec §5. */
 export const KEYBINDING_ACTIONS = ['run', 'newline', 'bypassCache', 'focus', 'clear'] as const;
 
 // The fixed action list is GONE (user request 2026-08-16): orbs bind only
-// to connected apps (`toolkit:<slug>`) and routines (`routine:<id>`). The
-// legacy fixed actions — 'connect:github'/'connect:gmail' (still valid in
-// saved prefs and DEFAULT_PREFS; Orbs maps them to their toolkits),
-// 'toggle:user'/'toggle:theme'/'run'/'bypassCache'/'suggest' (retired,
-// hidden by Orbs) — no longer appear in the arranger's picker.
+// to connected apps (`toolkit:<slug>`) and routines (`routine:<id>`).
+// Legacy 'connect:*' buttons are stripped by ensureInputButton above;
+// 'toggle:user'/'toggle:theme'/'run'/'bypassCache'/'suggest' remain hidden
+// by Orbs for any stale saved rows.
 
 export interface Connection {
   toolkit: string;

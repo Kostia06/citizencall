@@ -14,10 +14,8 @@ export interface UserPrefs {
 export const DEFAULT_PREFS: UserPrefs = {
   version: 1,
   keybindings: { run: 'Enter', newline: 'Shift+Enter', bypassCache: 'Mod+Enter', focus: 'Mod+K', clear: 'Escape' },
-  buttons: [
-    { id: 'github', action: 'connect:github' },
-    { id: 'gmail', action: 'connect:gmail' },
-  ],
+  // No seeded orbs (user request 2026-08-16) — the bar starts as input-only.
+  buttons: [],
   contextPrompt: '',
   suggestions: true,
 };
