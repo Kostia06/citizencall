@@ -678,3 +678,21 @@ Repo /Users/kostiailn/Projects/forge-hack, branch feature/ui == main == e837723,
 3. macOS app: packaged Understudy.app in desktop/dist, DMG on release v0.1.0; `cd desktop && pnpm dev` (local) / `pnpm start:prod` (prod) / `pnpm dist` + `dist:dmg` (rebuild → `gh release upload v0.1.0 desktop/dist/Understudy.dmg --clobber`).
 4. If judges report slowness: check plan-cache hits first (global, anon-keyed), then Featherless status; capability/routine intents bypass models entirely.
 5. Memory notes live in mem0 (search "forge-hack"): settings-gate pattern, SSE measurement artifact, plan-cache poisoning order.
+
+## Handoff: 2026-08-16T13:15:00Z (manual — evening final state)
+
+### Model Summary
+- App RENAMED to **CitizenCall** everywhere user-visible (title, landing, persona/capability answer, email sender+subjects, macOS bundle CitizenCall.app, release retitled). Internal ids unchanged on purpose: window.understudy bridge, understudy:* localStorage keys, CF worker/D1 names ("understudy").
+- Prod citizencall.dev at version f5fbb451; main == feature/ui == 28435f9+ (later commits pushed as they land). electron-packager silently no-ops on Node 26 — packaged-app updates are done by copying main.js/preload.js into dist/CitizenCall-darwin-arm64/CitizenCall.app/Contents/Resources/app/, ad-hoc re-sign, re-zip/dmg, `gh release upload v0.1.0 ... --clobber`.
+- Overlay FINAL LOOK (user-iterated): transparent window, hasShadow:false, ALL components fully solid opaque (website-identical styles), per-row card backgrounds (status/connect chip, sign-in chip, answer card w/ footer actions inside). Desktop-capture blur was built, proven, then deleted per user pivot. Hands-on tested: typed prompt → solid answer card, clean margins (screenshot in scratchpad/final-solid-overlay.png). "Whole-window shade" was a stacked old app copy.
+- User's prod account: ilnkostia@gmail.com did NOT exist on prod (all their earlier accounts were local dev D1) — they signed up fresh; 2FA + branded emails now in place. Welcome email sends after signup (waitUntil, guarded for tests).
+- Emails: branded card templates (auth/email.ts shell/button helpers) for verify/reset/2FA-code + NEW welcome email. RESEND_FROM swap on domain verification still pending.
+- UX fixes this wave: suggestions dropdown = absolute overlay under pill (bar no longer jumps), animated spring in/out; starter suggestions replaced with zero-setup prompts (capability/memory/routine); "Bar placement" settings section removed; auth screens' "home" link removed; catalog grid = infinite scroll (150-step sentinel, all 1,209 reachable); settings tabs re-pull user data on activation (connections/routines/providers refreshTokens).
+- IN FLIGHT: cache-keeper agent — worker cron warming (common-prompt plan cache, tool discovery for top toolkits, catalog row, Composio auth configs w/ negative cache) + one-time prod seed. On landing: integrate, targeted tests, deploy, sync main.
+
+### Handoff Context (paste into next session)
+Repo /Users/kostiailn/Projects/forge-hack, branch feature/ui. Dev: vite :5173, wrangler dev :8787. Prod deploys ONLY from worker/ (`cd worker && npx wrangler deploy`), UI build first (`cd ui && pnpm build`).
+1. If the cache-keeper agent's work is uncommitted/unmerged: its scope is worker/src/warmup.ts + scheduled handler + composio-tools/connect touch-ups + tests/warmup.test.ts, report at scratchpad/cache-keeper-report.md. Integrate → `npx vitest run tests/warmup.test.ts tests/routines` → full suite (dangerouslyDisableSandbox; kills :8787, restart) → deploy → ff main.
+2. Packaged-app update recipe is in the summary above (Node 26 packager bug — do NOT trust `pnpm dist` until Node is downgraded or packager fixed).
+3. Resend domain still pending (id cb283894-…-b80bbdb7b994, NEVER recreate). When verified: `cd worker && printf '%s' "CitizenCall <auth@citizencall.dev>" | npx wrangler secret put RESEND_FROM`.
+4. Remaining human-gated: demo filming (voice in Chrome), gold-label pass. Everything else shipped.
