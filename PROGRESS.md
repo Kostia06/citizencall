@@ -86,6 +86,12 @@ before starting work; update it when you finish.
 - [x] 2026-08-15 — **DEPLOYED: https://citizencall.dev** (Workers custom domain + www; prod D1 + schemas + all secrets incl RESEND; global catalog cache; prod smoke: SPA+6 APIs+e2e run all green). 44 files / 256 worker tests green.
 - [x] 2026-08-15 — 2FA prefs-schema fix (suggestions/theme were 400ing the full-prefs Save); runs.user_id index; Resend domain citizencall.dev registered + DNS records live (verification propagating)
 
+- [x] 2026-08-15 — **Answer-first chat UX** (ChatGPT/Perplexity-style): typing indicator, live status line, typewriter answer w/ caret, trace collapsed to a one-line summary (expandable), Copy + Stop, markdown-lite — prod-verified on citizencall.dev
+- [x] 2026-08-15 — **Full production audit** (22 pass / 4 partial / 6 fail) + all fails fixed: prod 2FA lockout (configurable Resend sender + fail-open on undelivered email — verified: signup→login→token on prod), pause self-resume (worker polls connections every 5s — no tab needed; live-proven), OAuth returnTo lands back on the run, stuck-run cron reconcile, routine schedule 'none' 400, Settings anon-data race, Esc handlers
+- [x] 2026-08-15 — Speed: planner moved to Qwen2.5-14B (49s → 3.5s planning); trivial prompts ~1s; tool-call throws degrade to fail_tool (never error the run)
+- [x] 2026-08-15 — UX round: theme orb (☾ replaces demo user-spin), drag-reorder no longer triggers actions, bar placement left/middle/right (instant + anon-safe), multi-line pill squares off, live mic transcript (Web Speech interim + ElevenLabs final), Connected section pinned in grid, answers persisted on run rows (restored sessions show the reply), Roster demoted out of nav (route kept for the demo)
+- [x] 2026-08-15 — citizencall.dev custom domain live (+ www); Resend domain registered w/ DNS live (verification propagating; sender flips via RESEND_FROM secret)
+
 ## Blocked
 
 - _Nothing blocked._
