@@ -94,6 +94,11 @@ function systemPrompt(extraToolkits: string[], toolListing = ''): string {
     // fields because the source text never reached it).
     'Executors see ONLY each instruction, never the original request: when a step reads data quoted in the',
     'request (an invoice, email, review, document), copy that source text verbatim into the instruction.',
+    // Conversational prompts planned as extract_fields answered the user
+    // with "Field: value" JSON bullets (observed live: "whats your name" →
+    // "Agent's name: Jeff") — chit-chat is a reply, not a data extraction.
+    'For conversational prompts (greetings, small talk, questions about the user or about you), plan a',
+    'SINGLE summarize sub-task whose instruction is to reply naturally in first person — never extract_fields.',
     ...(toolListing
       ? [
           'Available tools per toolkit. When a step uses a toolkit, set "tool" to the ONE exact slug',
