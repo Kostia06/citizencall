@@ -14,9 +14,14 @@ async function send(env: Env, to: string, subject: string, html: string): Promis
     const res = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: { Authorization: `Bearer ${env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },
-      // citizencall.dev is the Resend-registered sender domain for this
-      // project — a from-address on an unowned domain is always rejected.
-      body: JSON.stringify({ from: 'Understudy <auth@citizencall.dev>', to, subject, html }),
+      // Sender is configurable: while the citizencall.dev domain is still
+      // verifying, Resend ACCEPTS sends from it (202, delivered=true) and
+      // drops them async — which silently defeated the devCode fail-open
+      // and locked production login (audit FAIL #1/#2). onboarding@resend.dev
+      // rejects non-owner recipients SYNCHRONOUSLY, so the fail-open fires.
+      // Once the domain verifies: `wrangler secret put RESEND_FROM` with
+      // "Understudy <auth@citizencall.dev>" — zero code change.
+      body: JSON.stringify({ from: env.RESEND_FROM ?? 'Understudy <onboarding@resend.dev>', to, subject, html }),
     });
     if (!res.ok) console.error(`[email] resend failed ${res.status}: ${(await res.text()).slice(0, 200)}`);
     return res.ok;

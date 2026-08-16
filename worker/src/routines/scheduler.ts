@@ -73,10 +73,27 @@ export async function runScheduledSweep(env: Env, now: number): Promise<SweepRes
   return { started, failed };
 }
 
+// A run's pause/progress lives in RunDO memory — if the isolate is evicted
+// mid-pause (deploy, idle timeout), the row stays 'running' forever and the
+// UI freezes on it (audit FAIL #3). The cron tick reconciles: anything
+// 'running' for >15 min is dead — no legitimate run lives that long (pause
+// timeout is 5 min, hops are seconds).
+const STUCK_RUN_MS = 15 * 60_000;
+
+export async function reconcileStuckRuns(env: Env, now: number): Promise<number> {
+  const res = await env.DB.prepare(
+    `UPDATE runs SET status = 'error' WHERE status = 'running' AND created_at < ?`
+  )
+    .bind(now - STUCK_RUN_MS)
+    .run();
+  return res.meta.changes ?? 0;
+}
+
 // Module-worker `scheduled` handler, attached to the default export in
 // index.ts. Awaited directly (not waitUntil) so cron invocation logs reflect
 // the real outcome.
 export async function scheduled(controller: ScheduledController, env: Env, _ctx: ExecutionContext): Promise<void> {
   const { started, failed } = await runScheduledSweep(env, Date.now());
-  console.log(`routines: sweep cron="${controller.cron}" started=${started} failed=${failed}`);
+  const reconciled = await reconcileStuckRuns(env, Date.now()).catch(() => 0);
+  console.log(`routines: sweep cron="${controller.cron}" started=${started} failed=${failed} stuckRunsReconciled=${reconciled}`);
 }

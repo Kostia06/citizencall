@@ -27,6 +27,8 @@ interface PendingConnection {
   toolkit: string;
   resolve: (resolution: ConnectionResolution) => void;
   timer: ReturnType<typeof setTimeout>;
+  /** 5s store poll — self-resume when the OAuth completes in another tab. */
+  poll?: ReturnType<typeof setInterval>;
 }
 
 export class RunDO {
@@ -71,12 +73,24 @@ export class RunDO {
   /** Pipeline callback (threaded via RunPipelineOptions): emit
    * `connection_required`, then block the run until POST /resume settles the
    * pause or the timeout treats it as a skip. `run_resumed` is emitted here,
-   * in settleConnectionWait, so the trace always shows the pair. */
+   * in settleConnectionWait, so the trace always shows the pair.
+   *
+   * SELF-RESUME: the OAuth flow finishes in another tab (or the user's
+   * original tab navigated away entirely — observed live), so the DO also
+   * polls the store every 5s and resumes ITSELF the moment the connection
+   * exists. No tab needs to survive for a paused run to complete. */
   waitForConnection(userId: string, toolkit: string, subTaskId: string): Promise<ConnectionResolution> {
     this.push({ t: 'connection_required', toolkit, subTaskId });
     return new Promise((resolve) => {
       const timer = setTimeout(() => this.settleConnectionWait('skipped'), this.connectionTimeoutMs);
-      this.pendingConnection = { userId, toolkit, resolve, timer };
+      const poll = setInterval(() => {
+        getConnectedAccountId(this.env.DB, userId, toolkit)
+          .then((id) => {
+            if (id) this.settleConnectionWait('connected');
+          })
+          .catch(() => undefined);
+      }, 5_000);
+      this.pendingConnection = { userId, toolkit, resolve, timer, poll };
     });
   }
 
@@ -85,6 +99,7 @@ export class RunDO {
     if (!pending) return;
     this.pendingConnection = null;
     clearTimeout(pending.timer);
+    if (pending.poll) clearInterval(pending.poll);
     this.push({ t: 'run_resumed', toolkit: pending.toolkit, skipped: resolution === 'skipped' });
     pending.resolve(resolution);
   }

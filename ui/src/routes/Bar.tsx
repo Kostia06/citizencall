@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useReducer, useRef, useState } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
+import { useSearchParams } from 'react-router-dom';
 import CommandBar from '../components/CommandBar';
 import ConversationTurn from '../components/ConversationTurn';
 import Orbs from '../components/Orbs';
@@ -53,6 +54,22 @@ export default function Bar() {
     return stored === 'left' || stored === 'right' ? stored : 'center';
   });
   const reorderSaveRef = useRef<number | undefined>(undefined);
+  // /oauth/done can return the browser HERE (returnTo:'/' — pause-card and
+  // orb connects) with ?connected=<toolkit>&status=… — greet, refresh
+  // connections (the paused run self-resumes worker-side), strip params.
+  const [searchParams, setSearchParams] = useSearchParams();
+  useEffect(() => {
+    const toolkit = searchParams.get('connected');
+    if (!toolkit) return;
+    const status = searchParams.get('status');
+    push(status === 'success' ? `${toolkit} connected — resuming` : `Connecting ${toolkit} did not complete`);
+    storeApi
+      .listConnections(authedFetch)
+      .then((list) => setConnections(list))
+      .catch(() => undefined);
+    setSearchParams({}, { replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
   const runHandleRef = useRef<RunHandle | null>(null);
   const liveTimeoutRef = useRef<number | undefined>(undefined);
   const transcriptRef = useRef<HTMLDivElement>(null);
@@ -170,7 +187,7 @@ export default function Bar() {
   // the connect and just refreshes the list.
   function handleOrbConnect(slug: string) {
     storeApi
-      .connect(authedFetch, slug)
+      .connect(authedFetch, slug, '/')
       .then(({ url }) => {
         // Never open a stub-mode link (worker without a Composio key) — the
         // domain doesn't exist; the connect is already faked server-side.
@@ -215,6 +232,44 @@ export default function Bar() {
     setRestored((prev) => [...prev, { key: `restored-${prev.length}-${run.id}`, afterTurnId, run }]);
     setHistoryOpen(false);
   }
+
+  // A restored run that is still RUNNING (e.g. paused on a connection while
+  // the user was off in the OAuth tab) keeps polling until it settles, so
+  // the restored card finishes in place — status flips and the answer
+  // appears — instead of freezing at "running" forever.
+  useEffect(() => {
+    if (MOCK) return;
+    const runningIds = restored.filter((r) => r.run.status === 'running').map((r) => r.run.id);
+    if (runningIds.length === 0) return;
+    const id = window.setInterval(() => {
+      for (const runId of runningIds) {
+        storeApi
+          .getRunDetail(runId)
+          .then(({ run }) => {
+            if (run.status === 'running') return;
+            setRestored((prev) =>
+              prev.map((r) =>
+                r.run.id === runId
+                  ? {
+                      ...r,
+                      run: {
+                        ...r.run,
+                        status: run.status,
+                        totalCostUsd: run.total_cost_usd ?? r.run.totalCostUsd,
+                        totalMs: run.total_ms,
+                        ...(run.answer_text ? { answerText: run.answer_text } : {}),
+                      },
+                    }
+                  : r,
+              ),
+            );
+          })
+          .catch(() => undefined);
+      }
+    }, 4000);
+    return () => window.clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [restored.map((r) => `${r.run.id}:${r.run.status}`).join(',')]);
 
   function handleSelectSession(id: string) {
     if (MOCK) {

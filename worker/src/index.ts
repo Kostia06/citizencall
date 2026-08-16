@@ -151,6 +151,8 @@ const connectRequestSchema = z.object({
     .max(100)
     .regex(/^[a-z0-9_-]+$/i, 'toolkit must be a catalog slug'),
   authConfigId: z.string().optional(),
+  // Where /oauth/done returns the browser — allowlisted, default /settings.
+  returnTo: z.enum(['/', '/settings']).optional(),
 });
 
 // Actor-resolved, never body-supplied: the user comes from a verified
@@ -189,7 +191,7 @@ app.post('/api/connect', async (c) => {
     }
   }
 
-  const link = await createConnectionLink(c.env, userId, toolkit, authConfigId);
+  const link = await createConnectionLink(c.env, userId, toolkit, authConfigId, parsed.data.returnTo);
   // `redirectUrl` is the cross-agent contract; `url` + `state` remain for
   // existing callers of the older shape.
   return c.json({ redirectUrl: link.url, url: link.url, state: link.state });
@@ -253,7 +255,8 @@ app.get('/oauth/done', async (c) => {
   // Vite dev proxy origin in dev, the Worker (which serves the SPA) in
   // prod — so the user lands on their own settings page either way.
   const params = new URLSearchParams({ connected: payload.toolkit, status });
-  return c.redirect(`/settings?${params.toString()}`, 302);
+  const dest = payload.returnTo === '/' ? '/' : '/settings';
+  return c.redirect(`${dest}?${params.toString()}`, 302);
 });
 
 // The default export stays the Hono app (tests rely on app.request), with

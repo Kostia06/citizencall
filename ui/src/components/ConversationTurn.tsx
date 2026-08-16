@@ -129,7 +129,7 @@ function ConnectionGateCard({
     if (!authedFetch || busy) return;
     setBusy('connect');
     storeApi
-      .connect(authedFetch, gate.toolkit)
+      .connect(authedFetch, gate.toolkit, '/')
       .then(({ url }) => {
         // New tab so this page's SSE stream survives; never open a
         // stub-mode link (see Bar.tsx's orb connect).

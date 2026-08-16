@@ -583,10 +583,10 @@ export const storeApi = {
     );
   },
 
-  async connect(authedFetch: AuthedFetch, toolkit: string): Promise<{ url: string }> {
+  async connect(authedFetch: AuthedFetch, toolkit: string, returnTo?: '/' | '/settings'): Promise<{ url: string }> {
     return withMockFallback(
       async () => {
-        const res = await authedFetch('/api/connect', { method: 'POST', body: JSON.stringify({ toolkit }) });
+        const res = await authedFetch('/api/connect', { method: 'POST', body: JSON.stringify({ toolkit, ...(returnTo ? { returnTo } : {}) }) });
         if (!res.ok) throw new AuthError(await readJsonError(res), res.status);
         return res.json();
       },
@@ -770,7 +770,10 @@ export const storeApi = {
   ): Promise<Routine> {
     return withMockFallback(
       async () => {
-        const res = await authedFetch('/api/routines', { method: 'POST', body: JSON.stringify(input) });
+        // The worker's schema wants `schedule: null` for manual-only; the UI's
+        // select uses the sentinel 'none' (audit FAIL #5 — a silent 400).
+        const body = { ...input, schedule: input.schedule === 'none' ? null : input.schedule };
+        const res = await authedFetch('/api/routines', { method: 'POST', body: JSON.stringify(body) });
         if (!res.ok) throw new AuthError(await readJsonError(res), res.status);
         return res.json();
       },

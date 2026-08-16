@@ -65,6 +65,10 @@ function bytesToHex(bytes: ArrayBuffer): string {
 export interface OAuthStatePayload {
   userId: string;
   toolkit: string;
+  /** Where /oauth/done sends the browser afterwards — a connect started
+   * from the run's pause card must land back on the RUN ('/'), not dump
+   * the user in settings mid-conversation. Allowlisted at the route. */
+  returnTo?: string;
 }
 
 export async function createState(env: Env, payload: OAuthStatePayload): Promise<string> {
@@ -108,9 +112,10 @@ export async function createConnectionLink(
   env: Env,
   userId: string,
   toolkit: string,
-  authConfigId: string
+  authConfigId: string,
+  returnTo?: string
 ): Promise<ConnectionLink> {
-  const state = await createState(env, { userId, toolkit });
+  const state = await createState(env, { userId, toolkit, ...(returnTo ? { returnTo } : {}) });
   if (!env.COMPOSIO_API_KEY) return stubLink(toolkit, userId, state);
 
   // The narrow `state` option this used to pass isn't part of Composio's

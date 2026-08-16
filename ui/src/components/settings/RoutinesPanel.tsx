@@ -182,6 +182,7 @@ export default function RoutinesPanel({
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [loginRequired, setLoginRequired] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   const [name, setName] = useState('');
   const [prompt, setPrompt] = useState('');
@@ -236,6 +237,10 @@ export default function RoutinesPanel({
         setLoginRequired(true); // keep the optimistic row — session-only
       } else {
         setRoutines((list) => list.filter((r) => r.id !== tempId));
+        // Never fail silently — a rejected create looked like it "just
+        // disappeared" (audit FAIL #5).
+        setSaveError(err instanceof Error ? err.message : 'Could not save the routine — try again.');
+        window.setTimeout(() => setSaveError(null), 6000);
       }
     }
   }
@@ -333,6 +338,9 @@ export default function RoutinesPanel({
         </div>
       </div>
 
+      {saveError && (
+        <p className="text-[12px] text-red-400/80">{saveError}</p>
+      )}
       {loginRequired && (
         <p className="text-[12px] text-ink/40">
           Kept for this session —{' '}

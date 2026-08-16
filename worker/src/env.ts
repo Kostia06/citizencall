@@ -10,6 +10,7 @@ export interface Env {
   COMPOSIO_API_KEY?: string;
   ELEVENLABS_API_KEY?: string;
   RESEND_API_KEY?: string;
+  RESEND_FROM?: string;
   AUTH_JWT_SECRET?: string;
   APP_URL?: string;
   DEV_AUTH_BYPASS?: string;

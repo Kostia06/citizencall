@@ -307,9 +307,18 @@ async function runTool(ctx: ExecuteContext, subTask: SubTask): Promise<ToolOutco
   if (cached) {
     ({ ok, output } = cached);
   } else {
-    const result = await executeTool(ctx.env, params);
-    ({ ok, output } = result);
-    await putTool(ctx.db, params, { ok, output });
+    try {
+      const result = await executeTool(ctx.env, params);
+      ({ ok, output } = result);
+      await putTool(ctx.db, params, { ok, output });
+    } catch (err) {
+      // A throwing tool call (unknown tool name for this toolkit, Composio
+      // 4xx/5xx, SDK error) must degrade to a failed TOOL, never error the
+      // whole run — found live: post-connect discord `call` crashed the run.
+      // Failures are NOT cached: a transient upstream error shouldn't pin.
+      ok = false;
+      output = { error: err instanceof Error ? err.message.slice(0, 300) : String(err) };
+    }
   }
 
   const latencyMs = Date.now() - started;

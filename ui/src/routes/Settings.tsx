@@ -61,6 +61,10 @@ export default function Settings() {
   }, [authedFetch]);
 
   useEffect(() => {
+    // Wait for the silent session restore — fetching while auth is still
+    // 'loading' returned the ANON cookie's data for a logged-in user on
+    // hard reload (audit FAIL #6).
+    if (status === 'loading') return;
     let cancelled = false;
     (async () => {
       try {
@@ -83,7 +87,7 @@ export default function Settings() {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [authedFetch]);
+  }, [authedFetch, status]);
 
   // Connections can change out-of-band (the Composio OAuth redirect returns
   // to a fresh page load, but refreshing on focus also covers a same-tab
