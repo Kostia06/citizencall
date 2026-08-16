@@ -115,6 +115,8 @@ before starting work; update it when you finish.
 - [x] 2026-08-16 — **Design-QA sweep**: 13 findings, 7 fixed (light-mode black ground in index.html — the "no bg at white mode" root cause; unreadable history drawer; invisible benchmark bar; token unification). NOTE: a long-running vite dev server caches tailwind.config — restart :5173 after theme-token changes.
 - [x] 2026-08-16 — Deployed to citizencall.dev version aa1e0c3b (404 tests / 57 files green); `main` = `669f094`.
 
+- [x] 2026-08-16 — **Judge-readiness wave**: landing page at /welcome (hero = the pill w/ typewriter, first-visit anon redirect); one-click Understudy.dmg on release v0.1.0, linked from Settings + landing; loop validation found+fixed 3 pipeline defects (escalate event ordering, quoted source text now threaded to executors — was all-null extractions, verifier tolerates ```json fences); benchmarks internally consistent; gmail hint scoped to personal-mail phrasing ("regex to validate an email address" no longer forces a gmail connect card); plan cache WARMED for anon judges (35 prompts, warm answers 1.7-3.1s measured) — after purging 5 pre-fix poisoned gmail plans from prod D1. Deployed 64c9ae1a; main = 948cfcd; 404 tests green.
+
 ## Blocked
 
 - _Nothing blocked._
