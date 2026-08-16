@@ -278,11 +278,41 @@ export default function Spotlight() {
           live on in state purely as threading history. */}
       {panelOpen && lastTurn && (
         <div className="mx-auto mt-4 w-full max-w-[620px]">
-          {running && !lastTurn.trace.answerText && (
-            <div className="flex items-center gap-2 px-1 text-[12px] text-ink/50">
+          {/* A paused run (connection_required) looked like a hang in the
+              result-only panel — the web app shows a connect card, here a
+              compact chip opens OAuth in the system browser (window.open is
+              routed there by desktop/main.js's window-open handler) and the
+              worker's 5s self-poll resumes the run once linked. */}
+          {running && !lastTurn.trace.answerText && lastTurn.trace.connectionGate?.status === 'waiting' ? (
+            <div className="flex items-center gap-2.5 px-1 text-[12px] text-ink/60">
               <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent" aria-hidden />
-              Working…
+              Needs {lastTurn.trace.connectionGate.toolkit} —
+              <button
+                type="button"
+                onClick={() => {
+                  const toolkit = lastTurn.trace.connectionGate?.toolkit;
+                  if (!toolkit) return;
+                  storeApi
+                    .connect(authedFetch, toolkit, '/')
+                    .then(({ url }) => {
+                      if (url && url !== '#' && !url.includes('composio.stub')) window.open(url, '_blank', 'noopener');
+                    })
+                    .catch(() => push(`Could not start connecting ${toolkit}`));
+                }}
+                className="rounded-full border border-accent/40 px-2.5 py-0.5 text-accent-bright transition-colors hover:bg-accent/10"
+              >
+                Connect ↗
+              </button>
+              <span className="text-ink/35">then it resumes on its own</span>
             </div>
+          ) : (
+            running &&
+            !lastTurn.trace.answerText && (
+              <div className="flex items-center gap-2 px-1 text-[12px] text-ink/50">
+                <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent" aria-hidden />
+                Working…
+              </div>
+            )
           )}
           {lastTurn.trace.answerText && (
             <>
