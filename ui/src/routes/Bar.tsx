@@ -551,6 +551,7 @@ export default function Bar() {
               recentPrompts={turns.slice(-5).map((t) => t.prompt)}
               authedFetch={authedFetch}
               actionsRef={barActionsRef}
+              hasConversation={hasContent}
             />
           </div>
           {orbsAfter.length > 0 && (

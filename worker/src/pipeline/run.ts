@@ -23,6 +23,7 @@ import { buildMemoryContext } from '../memory/context';
 import { maybeAutoWriteMemory } from './memory-hook';
 import { buildConversationBlock, lastUserTurnHint, type ConversationTurn } from './conversation';
 import { createRoutineFromChat, isRoutineCreationIntent } from './routine-intent';
+import { answerCapability, isCapabilityIntent } from './capability-intent';
 import { normalizePlanKey } from '../cache/plan';
 import { getRunResult, putRunResult } from '../cache/runResult';
 
@@ -74,6 +75,14 @@ export async function runPipeline(
   // without the side effect, and planning buys nothing the regex didn't.
   if (isRoutineCreationIntent(body.text)) {
     await createRoutineFromChat(env, db, emit, body);
+    return;
+  }
+
+  // Identity/capability questions ("what can you do") — deterministic
+  // product-true answer instead of a cheap model's generic-assistant sludge
+  // (capability-intent.ts has the live failure this replaces).
+  if (isCapabilityIntent(body.text)) {
+    await answerCapability(db, emit, body);
     return;
   }
 

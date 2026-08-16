@@ -48,6 +48,10 @@ interface CommandBarProps {
    * closure always sees current input state; parent calls
    * `actionsRef.current?.submit(bypass)`. */
   actionsRef?: React.MutableRefObject<{ submit(bypassCache: boolean): void } | null>;
+  /** True once the transcript has turns — suppresses the idle starter-prompt
+   * dropdown (it overlapped the first answer). Ghost next-action text is
+   * unaffected. */
+  hasConversation?: boolean;
 }
 
 let attachmentSeq = 0;
@@ -80,6 +84,7 @@ export default function CommandBar({
   recentPrompts,
   authedFetch,
   actionsRef,
+  hasConversation = false,
 }: CommandBarProps) {
   const isSpotlight = variant === 'spotlight';
   const [value, setValue] = useState('');
@@ -178,8 +183,11 @@ export default function CommandBar({
   // list mid-navigation. Empty + focused opens it; navigating keeps it.
   // The spotlight overlay shows neither list nor ghost: it is a search field
   // that waits for a cursor, so both are suppressed there.
+  // Once a conversation exists the starter list is retired — it rendered ON
+  // TOP of the first answer (the field refocuses empty after submit), which
+  // buried the product's own output under example prompts.
   const showSuggestions =
-    !isSpotlight && focused && !running && (value.trim().length === 0 || highlight >= 0);
+    !isSpotlight && !hasConversation && focused && !running && (value.trim().length === 0 || highlight >= 0);
   const filtered = SUGGESTIONS;
   // Only shown while the input is empty — this is a context-aware next
   // ACTION, not a completion of whatever's been typed, so a partial prefix

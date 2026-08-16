@@ -48,4 +48,34 @@ describe('verify — structural verdicts only, independent of Wilson/quality sta
     expect(mediocre).toBe('pass');
     expect(great).toBe('pass');
   });
+
+  it('fails degenerate line repetition (live: rung-0 looped "Offer travel tips" bullets and passed)', () => {
+    const sludge = [
+      '- Offer mental health support',
+      '- Provide travel itineraries',
+      '- Offer travel tips',
+      '- Help with travel bookings',
+      '- Offer travel tips',
+      '- Provide travel itineraries',
+      '- Offer travel insurance advice',
+      '- Offer travel tips',
+      '- Provide travel itineraries',
+      '- Offer travel insurance advice',
+    ].join('\n');
+    expect(verify({ kind: 'summarize', output: sludge, needsTools: false })).toBe('fail_schema');
+  });
+
+  it('fails an inline 5-word shingle repeated 5+ times', () => {
+    const loop = 'I can help you with that. '.repeat(8);
+    expect(verify({ kind: 'summarize', output: loop, needsTools: false })).toBe('fail_schema');
+  });
+
+  it('does NOT fail legitimate lists, code (repeated short lines), or JSON with repeated keys', () => {
+    const list = ['- Learn basic greetings', '- Practice with a partner daily', '- Watch films with subtitles'].join('\n');
+    expect(verify({ kind: 'summarize', output: list, needsTools: false })).toBe('pass');
+    const code = 'function a() {\n  return 1;\n}\nfunction b() {\n  return 2;\n}\nfunction c() {\n  return 3;\n}\n}\n}\n}\n}\n}\n}\n}';
+    expect(verify({ kind: 'summarize', output: code, needsTools: false })).toBe('pass');
+    const json = JSON.stringify({ items: [{ name: 'a', qty: 1 }, { name: 'b', qty: 2 }, { name: 'c', qty: 3 }] }, null, 2);
+    expect(verify({ kind: 'extract_fields', output: json, needsTools: false })).toBe('pass');
+  });
 });

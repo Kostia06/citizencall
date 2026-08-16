@@ -24,6 +24,30 @@ function stripEnclosingFence(text: string): string {
   return fenced ? fenced[1]!.trim() : text;
 }
 
+// Small models under-sample into loops — seen live: rung-0 answered "what
+// can you do" with dozens of near-identical "Offer travel tips" bullets and
+// passed, because nothing here looked at CONTENT. Two cheap detectors: a
+// mostly-duplicate line set, and one 5-word shingle repeating 5+ times.
+// Lines under 12 chars don't count (code braces, list dashes legitimately
+// repeat); JSON output is exempt (keys repeat by design).
+function isDegenerateRepetition(text: string): boolean {
+  const lines = text
+    .split('\n')
+    .map((l) => l.trim().toLowerCase())
+    .filter((l) => l.length >= 12);
+  if (lines.length >= 8 && new Set(lines).size / lines.length < 0.6) return true;
+
+  const words = text.toLowerCase().split(/\s+/);
+  const shingles = new Map<string, number>();
+  for (let i = 0; i + 5 <= words.length; i++) {
+    const key = words.slice(i, i + 5).join(' ');
+    const n = (shingles.get(key) ?? 0) + 1;
+    if (n >= 5) return true;
+    shingles.set(key, n);
+  }
+  return false;
+}
+
 export function verify(input: VerifyInput): Verdict {
   if (input.needsTools && input.toolOk === false) return 'fail_tool';
 
@@ -43,6 +67,8 @@ export function verify(input: VerifyInput): Verdict {
     // model didn't follow the output contract.
     if (trimmed.includes('\n') || trimmed.length > 100) return 'fail_schema';
   }
+
+  if (input.kind !== 'extract_fields' && isDegenerateRepetition(trimmed)) return 'fail_schema';
 
   return 'pass';
 }
