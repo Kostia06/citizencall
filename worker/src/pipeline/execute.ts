@@ -113,7 +113,7 @@ const MAX_TOKENS_BY_KIND: Record<TaskKind, number> = {
 const SYSTEM_PROMPT_BY_KIND: Record<TaskKind, string> = {
   classify: 'Classify the input. Reply with only the label, nothing else.',
   extract_fields: 'Extract structured fields from the input as a single JSON object. Reply with only JSON.',
-  summarize: 'Summarize the input in 1-2 sentences.',
+  summarize: 'Summarize the input concisely. Use clean Markdown when structure helps: a bullet list (- item) for multiple points, **bold** for the key fact, `code` for identifiers.',
   normalize: 'Clean up this messy transcript into one clear instruction.',
 };
 
@@ -159,7 +159,8 @@ function buildMessages(subTask: SubTask, contextBlocks: string[], userContext?: 
     // Tool output arrives as raw JSON; small models echoed it verbatim
     // (guild-ID dumps, observed live). Present it like a human would.
     hasToolOutput
-      ? 'The tool output above is raw data. Answer with the human-relevant facts in plain language — names, counts, summaries — never raw JSON, IDs, or field names.'
+      ? 'The tool output above is raw data. Answer with the human-relevant facts in plain language — names, counts, summaries — never raw JSON, IDs, or field names. ' +
+        'Format for reading: a one-line **bold** lead when it helps, then a bullet list (- item) for multiple items, `code` for identifiers like branch or repo names.'
       : '',
     userContext?.trim() ? `Known user context (apply it, do not mention it):\n${userContext.trim()}` : '',
   ]
