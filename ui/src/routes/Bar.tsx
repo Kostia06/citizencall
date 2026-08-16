@@ -46,7 +46,20 @@ export default function Bar() {
   const [restored, setRestored] = useState<Array<{ key: string; afterTurnId: string | null; run: RestoredRun }>>([]);
   const [contextPrompt, setContextPrompt] = useState('');
   const [suggestionsEnabled, setSuggestionsEnabled] = useState(true);
-  const [barButtons, setBarButtons] = useState<UserPrefsButton[]>(DEFAULT_PREFS.buttons);
+  const [barButtons, setBarButtons] = useState<UserPrefsButton[]>(() => {
+    try {
+      const stored = localStorage.getItem('understudy:bar-buttons');
+      if (stored) {
+        const parsed = JSON.parse(stored) as UserPrefsButton[];
+        if (Array.isArray(parsed) && parsed.every((b) => b && typeof b.id === 'string' && typeof b.action === 'string')) {
+          return parsed;
+        }
+      }
+    } catch {
+      /* corrupt/absent — defaults */
+    }
+    return DEFAULT_PREFS.buttons;
+  });
   // localStorage is the anon/instant path (Settings writes it on selection);
   // server prefs override once loaded so the choice follows the account.
   const [barAlignment, setBarAlignment] = useState<'left' | 'center' | 'right'>(() => {
@@ -116,7 +129,10 @@ export default function Bar() {
         if (!cancelled) {
           setContextPrompt(prefs.contextPrompt);
           setSuggestionsEnabled(prefs.suggestions);
-          if (prefs.buttons.length > 0) setBarButtons(prefs.buttons);
+          if (prefs.buttons.length > 0) {
+            setBarButtons(prefs.buttons);
+            localStorage.setItem('understudy:bar-buttons', JSON.stringify(prefs.buttons));
+          }
           if (prefs.barAlignment) {
             setBarAlignment(prefs.barAlignment);
             localStorage.setItem('understudy:bar-alignment', prefs.barAlignment);
@@ -204,9 +220,14 @@ export default function Bar() {
   // server-side and keeps the order for this session.
   function handleReorderButtons(next: UserPrefsButton[]) {
     setBarButtons(next);
+    // Instant local persistence — the account save below is best-effort
+    // (silently failing PUTs made reorders vanish on reload, reported live).
+    localStorage.setItem('understudy:bar-buttons', JSON.stringify(next));
     if (reorderSaveRef.current) window.clearTimeout(reorderSaveRef.current);
     reorderSaveRef.current = window.setTimeout(() => {
-      storeApi.putSettings(authedFetch, { buttons: next }).catch(() => undefined);
+      storeApi
+        .putSettings(authedFetch, { buttons: next })
+        .catch(() => push('Order saved on this device — log in to sync it to your account'));
     }, 800);
   }
 
