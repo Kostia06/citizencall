@@ -15,7 +15,6 @@ import { ToastStack, useToasts } from '../components/Toast';
 import { AuthError, DEFAULT_PREFS, MOCK, storeApi } from '../api';
 import type { Connection, Routine, UserPrefs } from '../api';
 import { useAuth } from '../auth/useAuth';
-import { promptInstall } from '../lib/pwa';
 import { entranceStandard, entranceStandardReduced } from '../lib/motion';
 import { syncThemeFromPrefs } from '../lib/theme';
 
@@ -475,27 +474,6 @@ export default function Settings() {
               <SessionsPanel refreshToken={tabRefresh} />
             </SectionCard>
 
-            <SectionCard
-              title="Install the app"
-              subtitle="CitizenCall installs straight from the browser — its own window, Dock icon, no download."
-              action={
-                <button
-                  type="button"
-                  onClick={() => {
-                    void promptInstall().then((ok) => {
-                      if (!ok) push('In Safari: File → Add to Dock. In Chrome: the install icon in the address bar.');
-                    });
-                  }}
-                  className="rounded-lg border border-accent/40 px-3 py-1.5 text-[12.5px] text-accent-bright transition-colors hover:bg-accent/10"
-                >
-                  Install
-                </button>
-              }
-            >
-              <p className="text-[11.5px] text-ink/35">
-                Works in Chrome, Edge, and Safari (File → Add to Dock). Already installed? You're set.
-              </p>
-            </SectionCard>
           </div>
         </div>
       </motion.div>
