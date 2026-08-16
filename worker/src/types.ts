@@ -89,6 +89,12 @@ export type TraceEvent =
   | { t: 'escalate'; from: string; to: string; reason: Verdict }
   | { t: 'cache_hit'; runId: string; cachedAt: number; ageMs: number }
   | { t: 'tool_skipped'; toolkit: string; tool: string; reason: string }
+  // A streamed chunk of the FINAL sub-task's model output — live runs only.
+  // Coalesced to ~10 events/sec worker-side; never recorded into the run
+  // cache (replays emit only the final `answer`). The `answer` event that
+  // always follows carries the FULL text and the UI reconciles to it, so a
+  // dropped or duplicated delta can never corrupt the displayed reply.
+  | { t: 'answer_delta'; subTaskId: string; text: string }
   // The final sub-task's model output — the user-visible reply bubble.
   | { t: 'answer'; subTaskId: string; text: string }
   // Agent auto-wrote a user memory after this run (memory/*, memory-hook.ts).

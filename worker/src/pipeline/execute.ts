@@ -13,6 +13,8 @@ import { asTraceEvent } from './events';
 import type { McpTransport } from './mcp';
 import {
   callFeatherless,
+  callFeatherlessStream,
+  createDeltaCoalescer,
   FeatherlessBackpressureError,
   FeatherlessCapacityError,
   FeatherlessColdError,
@@ -57,6 +59,13 @@ export interface ExecuteContext {
    * `run_resumed` itself before resolving. Absent (tests, callers without a
    * DO) means the legacy behavior: an error trace + fail_tool. */
   waitForConnection?: (toolkit: string, subTaskId: string) => Promise<'connected' | 'skipped'>;
+  /** Set by run.ts for the FINAL sub-task only: runModel then streams the
+   * model call and forwards content chunks here (already coalesced to ~10
+   * events/sec). Every rung of the final sub-task streams — if the primary
+   * fails verify and escalates, the escalation rung streams fresh and the UI
+   * discards the failed rung's deltas on the `escalate` event. L1-exact hits
+   * produce no deltas; the final `answer` event covers those. */
+  emitAnswerDelta?: (subTaskId: string, text: string) => void;
 }
 
 export interface ToolCallResult {
@@ -445,6 +454,20 @@ async function runModel(
     if (exactHit) {
       ({ content, promptTokens, completionTokens } = exactHit);
       cacheHit = 'exact';
+    } else if (ctx.emitAnswerDelta) {
+      // Final sub-task: stream the model call so the answer paints as it
+      // generates. verify() below still runs on the FULL accumulated content
+      // — streaming changes delivery, never correctness.
+      const emitDelta = ctx.emitAnswerDelta;
+      const coalescer = createDeltaCoalescer((text) => emitDelta(subTask.id, text));
+      const result = await callFeatherlessStream(
+        ctx.env,
+        { modelId: model.id, messages, maxTokens },
+        (text) => coalescer.push(text)
+      );
+      coalescer.end(); // flush the tail before verify/answer
+      ({ content, promptTokens, completionTokens } = result);
+      if (l1Allowed) await putExact(ctx.db, cacheParams, { content, promptTokens, completionTokens });
     } else {
       const result = await callFeatherless(ctx.env, { modelId: model.id, messages, maxTokens });
       ({ content, promptTokens, completionTokens } = result);

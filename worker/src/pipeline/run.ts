@@ -137,7 +137,10 @@ export async function runPipeline(
   // run replays exactly this event stream.
   const recorded: TraceEvent[] = [];
   const record = (e: TraceEvent): void => {
-    recorded.push(e);
+    // answer_delta is live-delivery only: a cached replay emits the final
+    // `answer` (whole text — the client typewriter covers the reveal), so
+    // recording per-chunk deltas would only bloat the stored trace.
+    if (e.t !== 'answer_delta') recorded.push(e);
     emit(e);
   };
 
@@ -168,6 +171,9 @@ export async function runPipeline(
   const priorOutputs = new Map<string, PriorOutput>();
   let cacheHitCount = 0;
   for (const subTask of plan.subTasks) {
+    // Only the FINAL sub-task's model attempt streams — its output is the
+    // user-facing answer; earlier sub-tasks' outputs stay internal.
+    const isFinal = subTask === plan.subTasks[plan.subTasks.length - 1];
     const result = await executeSubTask(
       {
         env,
@@ -180,6 +186,9 @@ export async function runPipeline(
         ...(userContext ? { userContext } : {}),
         priorOutputs,
         ...(opts.waitForConnection ? { waitForConnection: opts.waitForConnection } : {}),
+        ...(isFinal
+          ? { emitAnswerDelta: (subTaskId: string, text: string) => record({ t: 'answer_delta', subTaskId, text }) }
+          : {}),
       },
       subTask
     );
