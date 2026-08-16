@@ -15,6 +15,12 @@ export interface UserPrefs {
   /** Context-aware next-action ghost suggestion in the command bar —
    * on by default, toggled in /settings. */
   suggestions: boolean;
+  /** Account-level dark/light choice — optional so older rows/anon drafts
+   * omit it entirely (means "no saved preference", not "dark"). Mirrors
+   * `Theme` in lib/theme.ts; kept as a literal here rather than imported to
+   * avoid a store/types -> lib dependency. Written by the TopNav toggle via
+   * `putSettings({ theme })`, read back by `syncThemeFromPrefs` on load. */
+  theme?: 'dark' | 'light';
 }
 
 export const DEFAULT_PREFS: UserPrefs = {
@@ -78,5 +84,21 @@ export interface UserMcp {
 export interface ToolOverride {
   toolkit: string;
   tool: string;
+  enabled: boolean;
+}
+
+/** A user-defined scheduled/manual prompt — worker table `routines` (not yet
+ * built; contract: GET/POST/PUT/DELETE `/api/routines(/:id)`, see api.ts's
+ * `storeApi.listRoutines` etc). Bar orbs bind to one via the `routine:<id>`
+ * action (Orbs.tsx / ButtonEditor.tsx); RoutinesPanel.tsx (Settings) owns
+ * CRUD. `schedule: 'none'` means manual-trigger-only (orb click / bar). */
+export const ROUTINE_SCHEDULES = ['none', 'hourly', 'daily', 'weekly'] as const;
+export type RoutineSchedule = (typeof ROUTINE_SCHEDULES)[number];
+
+export interface Routine {
+  id: string;
+  name: string;
+  prompt: string;
+  schedule: RoutineSchedule;
   enabled: boolean;
 }

@@ -92,12 +92,20 @@ export type TraceEvent =
     }
   | { t: 'transcript'; raw: string; final: boolean } // ← S2T
   | { t: 'normalized'; from: string; to: string; ms: number; modelId: string }
-  | { t: 'plan'; plan: Plan; cacheHit: boolean; ms: number }
+  | { t: 'plan'; plan: Plan; cacheHit: boolean; cacheKind?: 'exact' | 'semantic'; ms: number }
   | { t: 'route'; decision: RouteDecision }
   | { t: 'hop_start'; hop: Pick<Hop, 'id' | 'subTaskId' | 'modelId' | 'paramsB'> }
   | { t: 'hop_end'; hop: Hop }
   | { t: 'tool_call'; toolkit: string; tool: string; cacheHit: boolean; ms: number }
   | { t: 'escalate'; from: string; to: string; reason: Verdict }
+  // Connection-required pause: the run is waiting for the user to connect a
+  // toolkit (or skip). Status stays 'running'; run_resumed always follows.
+  | { t: 'answer'; subTaskId: string; text: string }
+  // Agent auto-wrote a user memory after this run (worker memory-hook.ts);
+  // arrives just before run_end. Rendered as a small note, viewable at /memory.
+  | { t: 'memory_saved'; memoryId: string; title: string }
+  | { t: 'connection_required'; toolkit: string; subTaskId: string }
+  | { t: 'run_resumed'; toolkit: string; skipped: boolean }
   | {
       t: 'run_end';
       runId: string;
@@ -120,6 +128,28 @@ export interface Policy {
 }
 
 // ---- UI-only types (not part of the worker contract) ----
+
+/** A per-user memory row served by /api/memories (worker memory/routes.ts).
+ * `contentMd` may reference other memories as [[title-or-id]] and tools as
+ * @toolkit — the /memory page renders those as clickable jumps. */
+export interface UserMemory {
+  id: string;
+  title: string;
+  contentMd: string;
+  source: 'agent' | 'user';
+  createdAt: number;
+  updatedAt: number;
+}
+
+/** GET /api/memories/:id — the memory plus its cycle-safely resolved links. */
+export interface UserMemoryDetail extends UserMemory {
+  links: {
+    memories: Array<{ id: string; title: string }>;
+    tools: string[];
+    unresolved: string[];
+    truncated: boolean;
+  };
+}
 
 export type AttachmentKind = 'file' | 'clipboard-image' | 'clipboard-text';
 

@@ -78,3 +78,50 @@ describe('shipped policy.json resolves against the shipped runtime catalog', () 
     expect(id).not.toBe(policy.baselines.frontier);
   });
 });
+
+// v3-live-widened: policy.json carries per-kind `alternates` — live-probed
+// servable models at other size/price points. route.ts only ever routes the
+// 2-rung ladders (it slices ladder[0]/[1]), so alternates are display/manual-
+// promotion material — but they must still resolve and be genuinely servable,
+// or the roster page would advertise models that 403/404 at runtime.
+describe('policy.json alternates resolve against the runtime catalog', () => {
+  const alternates = (policy as unknown as { alternates?: Record<string, string[]> }).alternates ?? {};
+
+  it('every kind has at least one alternate', () => {
+    for (const kind of kinds) {
+      expect(alternates[kind]?.length ?? 0, `${kind} alternates`).toBeGreaterThan(0);
+    }
+  });
+
+  it('every alternate exists in the catalog, is warm, on-plan, and cheaper than the frontier', () => {
+    const frontier = byId.get(policy.baselines.frontier)!;
+    const frontierPrice = frontier.pricePerMTokIn + frontier.pricePerMTokOut;
+    for (const kind of kinds) {
+      for (const id of alternates[kind] ?? []) {
+        const m = byId.get(id);
+        expect(m, `${kind} alternate ${id} missing from catalog_sample.json`).toBeDefined();
+        expect(m!.availability, `${id} availability`).toBe('warm');
+        expect(m!.availableOnPlan, `${id} availableOnPlan`).toBe(true);
+        expect(
+          m!.pricePerMTokIn + m!.pricePerMTokOut,
+          `${id} should undercut the frontier`
+        ).toBeLessThan(frontierPrice);
+      }
+    }
+  });
+
+  it('alternates never duplicate the ladder they back up', () => {
+    for (const kind of kinds) {
+      for (const id of alternates[kind] ?? []) {
+        expect(policy.ladders[kind]).not.toContain(id);
+      }
+    }
+  });
+
+  it('models the live probe rejected are marked off-plan (gated 403 / delisted)', () => {
+    for (const id of ['google/gemma-2-9b-it', 'meta-llama/Llama-3.1-8B-Instruct', 'deepseek-ai/DeepSeek-V3-Lite']) {
+      const m = byId.get(id);
+      if (m) expect(m.availableOnPlan, `${id} must not claim servability`).toBe(false);
+    }
+  });
+});

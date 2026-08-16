@@ -3,13 +3,23 @@
 // or the real Worker being unreachable). State lives only for the page's
 // lifetime. See docs/superpowers/specs/2026-08-14-web-ui-design.md §4.
 import { DEFAULT_PREFS } from './types';
-import type { Connection, ToolOverride, UserMcp, UserPrefs } from './types';
+import type { Connection, Routine, RoutineSchedule, ToolOverride, UserMcp, UserPrefs } from './types';
 
 let prefs: UserPrefs = clone(DEFAULT_PREFS);
 const connections = new Map<string, Connection>();
 const mcps = new Map<string, UserMcp>();
 // keyed `${toolkit}:${tool}`
 const toolOverrides = new Map<string, ToolOverride>();
+
+// One seeded sample so the ButtonEditor/RoutinesPanel/Orbs `routine:<id>`
+// flow is demoable with zero backend (mirrors the mcps/connections stubs
+// above) — dark/light + routines UI/UX slice.
+const routines = new Map<string, Routine>([
+  [
+    'sample-standup',
+    { id: 'sample-standup', name: 'Morning standup digest', prompt: 'Summarize overnight PR activity and open issues across the roster.', schedule: 'daily', enabled: true },
+  ],
+]);
 
 function clone<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
@@ -25,6 +35,7 @@ function mergePrefs(base: UserPrefs, patch: Partial<UserPrefs>): UserPrefs {
     buttons: patch.buttons ?? base.buttons,
     contextPrompt: patch.contextPrompt ?? base.contextPrompt,
     suggestions: patch.suggestions ?? base.suggestions,
+    theme: patch.theme ?? base.theme,
   };
 }
 
@@ -98,5 +109,27 @@ export const mockStoreStore = {
   },
   async setToolOverride(toolkit: string, tool: string, enabled: boolean): Promise<void> {
     toolOverrides.set(`${toolkit}:${tool}`, { toolkit, tool, enabled });
+  },
+
+  async listRoutines(): Promise<Routine[]> {
+    return [...routines.values()].map(clone);
+  },
+  async createRoutine(input: { name: string; prompt: string; schedule: RoutineSchedule; enabled: boolean }): Promise<Routine> {
+    const routine: Routine = { id: crypto.randomUUID(), ...input };
+    routines.set(routine.id, routine);
+    return clone(routine);
+  },
+  async updateRoutine(
+    id: string,
+    patch: Partial<{ name: string; prompt: string; schedule: RoutineSchedule; enabled: boolean }>,
+  ): Promise<Routine | null> {
+    const existing = routines.get(id);
+    if (!existing) return null;
+    const next: Routine = { ...existing, ...patch };
+    routines.set(id, next);
+    return clone(next);
+  },
+  async deleteRoutine(id: string): Promise<void> {
+    routines.delete(id);
   },
 };

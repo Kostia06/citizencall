@@ -1,6 +1,23 @@
 import { useEffect, useRef, useState } from 'react';
 import { MESH_COLORS } from '../lib/motion';
 
+// Light-mode mesh — NOT an inversion of MESH_COLORS (that would read as a
+// muddy grey wash). Soft pastel blue/lavender/cyan tints on a pale base, so
+// the same drifting-blob composition still reads as premium in daylight.
+// Dark/light mode slice — see lib/theme.ts.
+const LIGHT_MESH_COLORS = [
+  '#EEF1FB', // base top
+  '#C9D6FF', // indigo tint
+  '#8FB0FF', // signal blue, lightened
+  '#8FE3F2', // cyan, lightened
+  '#C6B4F5', // violet, lightened
+  '#FFC3DC', // magenta, lightened (sparing)
+] as const;
+
+function currentMeshTheme(): 'dark' | 'light' {
+  return document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark';
+}
+
 interface Blob {
   cx: number; // natural center, in internal-canvas fraction (0..1)
   cy: number;
@@ -28,13 +45,14 @@ function lerpColor(a: string, b: string, t: number): string {
   return `rgb(${r},${g},${bch})`;
 }
 
-function makeBlobs(w: number, h: number): Blob[] {
+function makeBlobs(w: number, h: number, theme: 'dark' | 'light'): Blob[] {
+  const c = theme === 'light' ? LIGHT_MESH_COLORS : MESH_COLORS;
   const defs: Array<[number, number, string, string]> = [
-    [0.22, 0.28, MESH_COLORS[2], MESH_COLORS[4]], // signal blue -> violet
-    [0.75, 0.22, MESH_COLORS[3], MESH_COLORS[2]], // cyan -> blue
-    [0.5, 0.65, MESH_COLORS[4], MESH_COLORS[1]], // violet -> indigo
-    [0.85, 0.75, MESH_COLORS[1], MESH_COLORS[2]], // indigo -> blue
-    [0.15, 0.8, MESH_COLORS[5], MESH_COLORS[4]], // magenta (sparing) -> violet
+    [0.22, 0.28, c[2], c[4]], // signal blue -> violet
+    [0.75, 0.22, c[3], c[2]], // cyan -> blue
+    [0.5, 0.65, c[4], c[1]], // violet -> indigo
+    [0.85, 0.75, c[1], c[2]], // indigo -> blue
+    [0.15, 0.8, c[5], c[4]], // magenta (sparing) -> violet
   ];
   return defs.map(([cx, cy, colorA, colorB], i) => ({
     cx,
@@ -70,6 +88,7 @@ export default function Background() {
     let w = 0;
     let h = 0;
     let blobs: Blob[] = [];
+    let theme = currentMeshTheme();
 
     function resize() {
       const vw = window.innerWidth;
@@ -78,10 +97,21 @@ export default function Background() {
       h = Math.round(vh * 0.28 * dpr);
       canvas!.width = w;
       canvas!.height = h;
-      blobs = makeBlobs(w, h);
+      blobs = makeBlobs(w, h, theme);
     }
     resize();
     window.addEventListener('resize', resize);
+
+    // Re-derive the palette on a theme toggle (Orbs/TopNav flip
+    // `data-theme` at runtime, no reload) — the mesh must not just invert.
+    const themeObserver = new MutationObserver(() => {
+      const next = currentMeshTheme();
+      if (next === theme) return;
+      theme = next;
+      blobs = makeBlobs(w, h, theme);
+      if (reduceMotion) draw(0);
+    });
+    themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
 
     // Cursor: smoothed toward target via cheap exponential lerp, never a
     // literal chase — DESIGN.md §4 step 4.
@@ -94,13 +124,18 @@ export default function Background() {
 
     function draw(t: number) {
       ctx!.globalCompositeOperation = 'source-over';
+      const baseColors = theme === 'light' ? LIGHT_MESH_COLORS : MESH_COLORS;
       const base = ctx!.createLinearGradient(0, 0, 0, h);
-      base.addColorStop(0, MESH_COLORS[0]);
-      base.addColorStop(1, '#050506');
+      base.addColorStop(0, baseColors[0]);
+      base.addColorStop(1, theme === 'light' ? '#dbe1f5' : '#050506');
       ctx!.fillStyle = base;
       ctx!.fillRect(0, 0, w, h);
 
-      ctx!.globalCompositeOperation = 'lighter';
+      // 'lighter' (additive) is what makes the dark mesh glow — but on a
+      // near-white base, adding light saturates straight to #fff and the
+      // blobs vanish. Light mode multiplies instead: the pastel palette
+      // tints DOWN from white, so the drifting blobs stay visible.
+      ctx!.globalCompositeOperation = theme === 'light' ? 'multiply' : 'lighter';
       blobs.forEach((b, i) => {
         let x = b.cx * w + Math.sin(t * b.f1 + b.phase) * b.ax;
         let y = b.cy * h + Math.cos(t * b.f2 + b.phase) * b.ay;
@@ -125,7 +160,10 @@ export default function Background() {
     if (reduceMotion) {
       draw(0);
       setReady(true);
-      return () => window.removeEventListener('resize', resize);
+      return () => {
+        window.removeEventListener('resize', resize);
+        themeObserver.disconnect();
+      };
     }
 
     let rafId = 0;
@@ -158,6 +196,7 @@ export default function Background() {
       window.removeEventListener('resize', resize);
       window.removeEventListener('pointermove', onPointerMove);
       document.removeEventListener('visibilitychange', onVisibility);
+      themeObserver.disconnect();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

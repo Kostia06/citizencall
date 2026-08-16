@@ -10,6 +10,7 @@ import Signup from './routes/Signup';
 import Reset from './routes/Reset';
 import Settings from './routes/Settings';
 import Spotlight from './routes/Spotlight';
+import Memory from './routes/Memory';
 import { AuthProvider } from './auth/AuthProvider';
 import './index.css';
 
@@ -38,6 +39,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
             <Route path="/signup" element={<Signup />} />
             <Route path="/reset" element={<Reset />} />
             <Route path="/settings" element={<Settings />} />
+            <Route path="/memory" element={<Memory />} />
           </Routes>
         </AuthProvider>
       </BrowserRouter>

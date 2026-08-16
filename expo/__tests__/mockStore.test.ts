@@ -19,4 +19,22 @@ describe('mockStoreStore', () => {
     const after = await mockStoreStore.listConnections();
     expect(after.find((c) => c.toolkit === 'github')).toBeUndefined();
   });
+
+  it('suggests a rule-matched next action based on the last prompt', async () => {
+    const pr = await mockStoreStore.suggest(['check my inbox', 'any open pull requests?']);
+    expect(pr.suggestion).toMatch(/pull requests/i);
+
+    const email = await mockStoreStore.suggest(['summarize the repo', 'check my gmail inbox']);
+    expect(email.suggestion).toMatch(/emails/i);
+  });
+
+  it('falls back to the default suggestion when no rule matches', async () => {
+    const { suggestion } = await mockStoreStore.suggest(['what is the weather']);
+    expect(suggestion).toBe('Summarize what changed since your last run.');
+  });
+
+  it('falls back to the default suggestion for empty context', async () => {
+    const { suggestion } = await mockStoreStore.suggest([]);
+    expect(suggestion).toBe('Summarize what changed since your last run.');
+  });
 });

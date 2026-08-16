@@ -71,7 +71,7 @@ function AppTile({
             aria-hidden
             onLoad={() => setLoaded(true)}
             onError={() => setFailed(true)}
-            className={`h-6 w-6 rounded-sm bg-white/95 object-contain p-0.5 transition-opacity duration-200 ${
+            className={`h-6 w-6 rounded-sm bg-paper object-contain p-0.5 transition-opacity duration-200 ${
               loaded ? 'opacity-100' : 'opacity-0'
             }`}
           />
@@ -153,7 +153,7 @@ function ConnectPopover({
       >
         <div className="flex items-center gap-2">
           {app.logo && (
-            <img src={app.logo} alt="" aria-hidden className="h-6 w-6 shrink-0 rounded-sm bg-white/95 object-contain p-0.5" />
+            <img src={app.logo} alt="" aria-hidden className="h-6 w-6 shrink-0 rounded-sm bg-paper object-contain p-0.5" />
           )}
           <p className="truncate text-[13px] font-medium text-white">{app.name}</p>
         </div>

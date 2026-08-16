@@ -15,7 +15,7 @@ function Toggle({ on, onClick, label }: { on: boolean; onClick(): void; label: s
       className={`relative h-5 w-9 shrink-0 rounded-full transition-colors duration-200 ${on ? 'bg-accent' : 'bg-white/10'}`}
     >
       <span
-        className={`absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-white transition-transform duration-200 ${
+        className={`absolute left-0.5 top-0.5 h-4 w-4 rounded-full bg-paper transition-transform duration-200 ${
           on ? 'translate-x-4' : 'translate-x-0'
         }`}
       />
@@ -101,7 +101,7 @@ export default function ToolCustomizePanel({
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-2.5">
           {app.logo && (
-            <img src={app.logo} alt="" aria-hidden className="h-6 w-6 rounded-sm bg-white/95 object-contain p-0.5" />
+            <img src={app.logo} alt="" aria-hidden className="h-6 w-6 rounded-sm bg-paper object-contain p-0.5" />
           )}
           <div>
             <p className="text-[13.5px] font-medium text-white">{app.name}</p>

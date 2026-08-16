@@ -10,12 +10,15 @@ import type { Hop, ModelCandidate, Policy, TraceEvent } from '../types';
 import { policy as bootPolicy, candidates as bootCandidates } from '../policy';
 import { normalize } from './normalize';
 import { decompose } from './decompose';
+import { detectMentionedToolkits } from './toolkit-mentions';
 import { executeSubTask, type PriorOutput, type ToolCallResult } from './execute';
 import { buildRunEndEvent, sumCost } from './trace';
 import { asTraceEvent } from './events';
 import { listEnabledMcpToolkits } from './mcp';
 import { finalizeRun, flushHops, flushToolCalls, insertRun, insertSubTasks } from '../db';
 import { loadUserContext } from '../store/context';
+import { buildMemoryContext } from '../memory/context';
+import { maybeAutoWriteMemory } from './memory-hook';
 import { normalizePlanKey } from '../cache/plan';
 import { getRunResult, putRunResult } from '../cache/runResult';
 
@@ -28,11 +31,14 @@ export interface RunRequest {
   noCache?: boolean;
 }
 
-/** Test seam only — production always runs on the boot-loaded policy.json +
- * candidate roster (SPEC.md §13). */
+/** `policy`/`candidates` are test seams only — production always runs on the
+ * boot-loaded policy.json + candidate roster (SPEC.md §13).
+ * `waitForConnection` is production wiring: the DO (run.do.ts) provides it so
+ * a missing Composio connection pauses the run instead of erroring. */
 export interface RunPipelineOptions {
   policy?: Policy;
   candidates?: ModelCandidate[];
+  waitForConnection?: (toolkit: string, subTaskId: string) => Promise<'connected' | 'skipped'>;
 }
 
 export async function runPipeline(
@@ -60,7 +66,11 @@ export async function runPipeline(
   // it shapes planning and every sub-task — and, because it changes the
   // normalized prompt, it is part of the run-cache key by construction.
   const userCtx = await loadUserContextSafe(db, body.userId);
-  const effectiveText = userCtx.contextPrompt ? `${userCtx.contextPrompt}\n\n${body.text}` : body.text;
+  // (memory, sub-project #3) Saved memories join the model input the same way
+  // the context prompt does — bounded ~1KB, cycle-safe (memory/context.ts),
+  // and part of the run-cache key by construction. '' ⇔ none ⇔ clean skip.
+  const memoryBlock = await buildMemoryContextSafe(db, body.userId, body.text);
+  const effectiveText = [userCtx.contextPrompt, memoryBlock, body.text].filter(Boolean).join('\n\n');
 
   const norm = await normalize(env, db, policy, effectiveText, body.source);
   if (body.source === 'voice') {
@@ -116,10 +126,21 @@ export async function runPipeline(
 
   const mcpToolkits = await listEnabledMcpToolkits(db, body.userId).catch(() => []);
   const mcpTokens = new Set(mcpToolkits.map((m) => m.toolkit));
+  // Catalog toolkits the prompt mentions (e.g. "discord") join the planner's
+  // vocabulary so a needed-but-unconnected app plans a tool call and the
+  // connection-required pause can name it.
+  const mentioned = await detectMentionedToolkits(env, norm.to);
 
   const planStarted = Date.now();
-  const { plan, cacheHit: planCacheHit } = await decompose(env, db, policy, norm.to, [...mcpTokens]);
-  record({ t: 'plan', plan, cacheHit: planCacheHit, ms: Date.now() - planStarted });
+  const { plan, cacheHit: planCacheHit, cacheKind } = await decompose(
+    env,
+    db,
+    policy,
+    norm.to,
+    [...new Set([...mcpTokens, ...mentioned])],
+    mentioned
+  );
+  record({ t: 'plan', plan, cacheHit: planCacheHit, ...(cacheKind ? { cacheKind } : {}), ms: Date.now() - planStarted });
   await insertSubTasks(db, body.runId, plan);
 
   const hops: Hop[] = [];
@@ -137,14 +158,34 @@ export async function runPipeline(
         emit: record,
         mcpToolkits: mcpTokens,
         priorOutputs,
+        ...(opts.waitForConnection ? { waitForConnection: opts.waitForConnection } : {}),
       },
       subTask
     );
     hops.push(...result.hops);
     toolCalls.push(...result.toolCalls);
+    // Surface the actual model reply in the transcript — the trace used to
+    // show only cost/verdict cards, so "say hi" answered invisibly. The
+    // LAST sub-task's output is the user-facing answer; earlier sub-tasks'
+    // outputs are intermediate and stay internal (dependency threading).
+    if (subTask === plan.subTasks[plan.subTasks.length - 1] && result.output.trim()) {
+      record({ t: 'answer', subTaskId: subTask.id, text: result.output.slice(0, 4000) });
+    }
     priorOutputs.set(subTask.id, { content: result.output, toolDerived: result.toolDerived });
     cacheHitCount += result.hops.filter((h) => h.cacheHit !== 'none').length;
   }
+
+  // (memory, sub-project #3) Agent auto-write, before run_end because the UI
+  // closes the stream on run_end. Emitted via `emit` (NOT `record`) so the
+  // event never enters the cached replay stream; a cache-hit replay returns
+  // early above and therefore never reaches this hook at all. Errors degrade
+  // to "no memory" — the hook and this catch both refuse to fail the run.
+  const lastSubTaskId = plan.subTasks[plan.subTasks.length - 1]?.id;
+  const answerText = lastSubTaskId ? priorOutputs.get(lastSubTaskId)?.content ?? '' : '';
+  const savedMemory = await maybeAutoWriteMemory(env, db, { userId: body.userId, prompt: body.text, answer: answerText }).catch(
+    () => null
+  );
+  if (savedMemory) emit({ t: 'memory_saved', memoryId: savedMemory.id, title: savedMemory.title });
 
   const totalMs = Date.now() - startedAt;
   const baselineCostUsd = estimateBaselineCost(hops, policy, candidates);
@@ -189,6 +230,18 @@ async function loadUserContextSafe(
   } catch (err) {
     console.error(`loadUserContext failed for ${userId}; running without per-user context:`, err);
     return { contextPrompt: '' };
+  }
+}
+
+// (memory, sub-project #3) Same degradation contract as the store above: a
+// missing memory table or transient D1 error means "no memory context",
+// loudly, never a dead run.
+async function buildMemoryContextSafe(db: D1Database, userId: string, prompt: string): Promise<string> {
+  try {
+    return (await buildMemoryContext(db, userId, prompt)).block;
+  } catch (err) {
+    console.error(`buildMemoryContext failed for ${userId}; running without memory context:`, err);
+    return '';
   }
 }
 

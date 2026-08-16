@@ -2,6 +2,7 @@ import { env } from 'cloudflare:test';
 import { beforeAll, expect, it } from 'vitest';
 import app from '../../src/index';
 import { applyAuthSchema, applyStoreSchema } from '../../src/db';
+import { applyCoreSchema } from '../support/schema';
 import { createUser, setEmailVerified } from '../../src/auth/users';
 import { signAccessToken } from '../../src/auth/jwt';
 
@@ -21,6 +22,9 @@ const auth = (t: string) => ({ headers: { Authorization: `Bearer ${t}`, 'Content
 beforeAll(async () => {
   await applyAuthSchema(env.DB);
   await applyStoreSchema(env.DB);
+  // runs/hops/sub_tasks: /api/benchmark now aggregates live D1 stats
+  // (reporting.ts), so the no-shadowing test below needs the core schema.
+  await applyCoreSchema(env.DB);
 });
 
 it('requires auth', async () => {
@@ -88,8 +92,9 @@ it('PATCH /tools with a null JSON body returns 400, not 500', async () => {
 // R1 regression: mounting storeRoutes at /api must not shadow the existing,
 // non-auth /api/* routes registered directly on the main app.
 it('does not shadow pre-existing non-auth /api/* routes', async () => {
-  // /api/benchmark is a static-fixture route with no DB dependency, so a
-  // non-200 here can only mean the store auth gate intercepted it.
+  // /api/benchmark is a no-auth route (live D1 aggregate since
+  // reporting.ts; schema applied in beforeAll), so a 401 here can only
+  // mean the store auth gate intercepted it.
   const res = await app.request('/api/benchmark', {}, env);
   expect(res.status).not.toBe(401);
   expect(res.status).toBe(200);

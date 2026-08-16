@@ -1,15 +1,25 @@
-import type { BenchmarkResult, RosterEntry, RunAttachment, TraceEvent } from './types';
-import { mockBenchmark, mockFunnel, mockRoster } from './mock/fixtures';
+import type { BenchmarkResult, RosterEntry, RunAttachment, TaskKind, TraceEvent, UserMemory, UserMemoryDetail } from './types';
+import { mockMemoryStore } from './components/memory/mockMemoryStore';
+import { mockBenchmark, mockBenchmarkReport, mockFunnel, mockRoster, mockRosterReport } from './mock/fixtures';
 import { buildScenario } from './mock/scenario';
 import { mockAuthStore } from './auth/mockAuthStore';
 import type { AuthUser } from './auth/types';
 import { mockStoreStore } from './store/mockStore';
-import type { Connection, ToolOverride, UserMcp, UserPrefs } from './store/types';
+import type { Connection, Routine, RoutineSchedule, ToolOverride, UserMcp, UserPrefs } from './store/types';
 import { APPS } from './store/apps';
 import type { ToolkitApp } from './store/apps';
 
-export { DEFAULT_PREFS } from './store/types';
-export type { Connection, UserPrefs, UserPrefsButton, FixedButtonAction, UserMcp, ToolOverride } from './store/types';
+export { DEFAULT_PREFS, ROUTINE_SCHEDULES } from './store/types';
+export type {
+  Connection,
+  UserPrefs,
+  UserPrefsButton,
+  FixedButtonAction,
+  UserMcp,
+  ToolOverride,
+  Routine,
+  RoutineSchedule,
+} from './store/types';
 export type { ToolkitApp } from './store/apps';
 export { CATEGORIES, TOP_CATEGORIES } from './store/apps';
 
@@ -35,6 +45,11 @@ export interface StartRunOpts {
   source: 'text' | 'voice';
   noCache?: boolean;
   attachments?: RunAttachment[];
+  /** Bearer for POST /api/run when logged in. Without it the worker's
+   * resolveActor attributes the run to the `__Host-anon` cookie session,
+   * so a logged-in user's runs would vanish from THEIR /api/sessions
+   * history. Anonymous callers omit it — the cookie is their identity. */
+  accessToken?: string | null;
   onEvent(event: TraceEvent): void;
   onError?(err: unknown): void;
 }
@@ -100,7 +115,13 @@ function startLiveRun(opts: StartRunOpts): RunHandle {
     try {
       const res = await fetch(`${API_BASE}/api/run`, {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        // credentials so the signed `__Host-anon` cookie rides along for
+        // anonymous runs; bearer (when present) wins on the worker side.
+        credentials: 'include',
+        headers: {
+          'content-type': 'application/json',
+          ...(opts.accessToken ? { authorization: `Bearer ${opts.accessToken}` } : {}),
+        },
         body: JSON.stringify({
           userId: opts.userId,
           text: opts.text,
@@ -199,6 +220,101 @@ export async function fetchBenchmark(): Promise<BenchmarkResult> {
   const res = await fetch(`${API_BASE}/api/benchmark`);
   if (!res.ok) throw new Error(`GET /api/benchmark failed: ${res.status}`);
   return res.json();
+}
+
+// ---- v3 report shapes — mirrors worker/src/reporting.ts (same contract-copy
+// convention as ui/src/types.ts). Served live by /api/roster and
+// /api/benchmark since the reporting rebuild. ----
+
+export interface RosterModelStats {
+  runs: number;
+  hops: number;
+  passRate: number | null;
+  totalCostUsd: number;
+  avgLatencyMs: number | null;
+}
+
+export interface RosterModelEntry {
+  role: 'rung0' | 'rung1' | 'alternate';
+  modelId: string;
+  modelClass: string;
+  paramsB: number;
+  contextLength: number;
+  pricePerMTokIn: number;
+  pricePerMTokOut: number;
+  hfDownloads: number | null;
+  servable: boolean;
+  stats: RosterModelStats;
+}
+
+export interface RosterReport {
+  policyVersion: string;
+  verifiedAt: string | null;
+  generatedAt: string;
+  kinds: Array<{ kind: TaskKind; models: RosterModelEntry[] }>;
+}
+
+export interface BenchmarkReport {
+  generatedAt: string;
+  source: 'live';
+  policyVersion: string;
+  totals: {
+    runs: number;
+    totalCostUsd: number;
+    baselineCostUsd: number;
+    savingsPct: number;
+    cacheHitRate: number;
+    avgLatencyMs: number;
+    p50LatencyMs: number;
+    p95LatencyMs: number;
+  };
+  bars: Array<{ key: string; label: string; costUsd: number; note?: string }>;
+  perKind: Array<{
+    kind: string;
+    hops: number;
+    passRate: number;
+    costUsd: number;
+    avgLatencyMs: number;
+    topModel: string | null;
+  }>;
+  recentRuns: Array<{
+    id: string;
+    promptSnippet: string;
+    models: string[];
+    costUsd: number;
+    baselineCostUsd: number;
+    savedPct: number;
+    status: string;
+    createdAt: number;
+    totalMs: number;
+  }>;
+  note?: string;
+}
+
+/** Live-first with mock fallback (same posture as startRun): the roster page
+ * must render for a filmable demo even with no Worker running. */
+export async function fetchRosterReport(): Promise<RosterReport> {
+  if (MOCK) return mockRosterReport;
+  try {
+    const res = await fetch(`${API_BASE}/api/roster`);
+    if (!res.ok) throw new Error(`GET /api/roster failed: ${res.status}`);
+    return await res.json();
+  } catch (err) {
+    console.warn('[roster] backend unreachable, falling back to mock fixture', err);
+    return mockRosterReport;
+  }
+}
+
+export async function fetchBenchmarkReport(): Promise<BenchmarkReport> {
+  if (MOCK) return mockBenchmarkReport;
+  try {
+    const res = await fetch(`${API_BASE}/api/benchmark`);
+    if (!res.ok) throw new Error(`GET /api/benchmark failed: ${res.status}`);
+    return await res.json();
+  } catch (err) {
+    console.warn('[benchmark] backend unreachable, falling back to mock fixture', err);
+    return mockBenchmarkReport;
+  }
 }
 
 export async function fetchFunnel(): Promise<typeof mockFunnel> {
@@ -412,7 +528,59 @@ export const authApi = {
 // inline "log in" prompt instead of a hard error. */
 export type AuthedFetch = (path: string, init?: RequestInit) => Promise<Response>;
 
+/** One row of GET /api/sessions — the actor's own past runs, newest first. */
+export interface SessionSummary {
+  id: string;
+  requestText: string;
+  createdAt: number;
+  totalCostUsd: number;
+  status: string;
+}
+
+/** GET /api/run/:id — the persisted run row (snake_case, straight off D1)
+ * plus its hops/tool calls. The history drawer only renders the run row's
+ * prompt + summary fields; full trace replay is out of scope. */
+export interface RunDetail {
+  run: {
+    id: string;
+    user_id: string | null;
+    request_text: string;
+    source: string | null;
+    created_at: number;
+    status: string;
+    total_cost_usd: number | null;
+    baseline_cost_usd: number | null;
+    total_ms: number | null;
+    cache_hits: number | null;
+  };
+  hops: unknown[];
+  toolCalls: unknown[];
+}
+
 export const storeApi = {
+  /** The actor's recent runs for the history drawer. Works logged-out too —
+   * the `__Host-anon` cookie scopes the list to this browser's anonymous
+   * session. MOCK (or backend-down) history is the CURRENT session's turns,
+   * which Bar keeps in memory itself, so the fallback here is just []. */
+  async listSessions(authedFetch: AuthedFetch): Promise<SessionSummary[]> {
+    return withMockFallback(
+      async () => {
+        const res = await authedFetch('/api/sessions');
+        if (!res.ok) throw new AuthError(await readJsonError(res), res.status);
+        return res.json();
+      },
+      async () => [],
+    );
+  },
+
+  /** Loads one persisted run for read-only restore into the transcript. No
+   * bearer needed — like the SSE stream, the unguessable runId is the
+   * capability — but cookies ride so it works for anon actors either way. */
+  async getRunDetail(runId: string): Promise<RunDetail> {
+    const res = await fetch(`${API_BASE}/api/run/${encodeURIComponent(runId)}`, { credentials: 'include' });
+    if (!res.ok) throw new Error(`GET /api/run/${runId} failed: ${res.status}`);
+    return res.json();
+  },
   async getSettings(authedFetch: AuthedFetch): Promise<UserPrefs> {
     return withMockFallback(
       async () => {
@@ -455,6 +623,22 @@ export const storeApi = {
       },
       () => mockStoreStore.connect(toolkit),
     );
+  },
+
+  /** Resumes a run paused on a connection-required gate. No auth: like the
+   * SSE stream, the unguessable runId is the capability. `retry` only resumes
+   * if the toolkit is NOW connected (the worker re-checks and keeps waiting
+   * otherwise); `skip` always resumes without tool data. MOCK never pauses,
+   * so this is a no-op there. */
+  async resumeRun(runId: string, action: 'retry' | 'skip'): Promise<{ resumed: boolean; skipped?: boolean }> {
+    if (MOCK) return { resumed: true };
+    const res = await fetch(`${API_BASE}/api/run/${encodeURIComponent(runId)}/resume`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ action }),
+    });
+    if (!res.ok) throw new Error(`POST /api/run/${runId}/resume failed: ${res.status}`);
+    return res.json();
   },
 
   async disconnect(authedFetch: AuthedFetch, toolkit: string): Promise<void> {
@@ -593,6 +777,125 @@ export const storeApi = {
         if (!res.ok && res.status !== 204) throw new AuthError(await readJsonError(res), res.status);
       },
       () => mockStoreStore.setToolOverride(toolkit, tool, enabled),
+    );
+  },
+
+  // ---- Routines (worker table not yet built — contract per the UI/UX task:
+  // GET /api/routines -> Routine[]; POST /api/routines -> Routine; PUT/DELETE
+  // /api/routines/:id. RoutinesPanel.tsx (Settings) owns CRUD UI; Orbs.tsx /
+  // ButtonEditor.tsx bind a bar button to one via the `routine:<id>` action.
+  async listRoutines(authedFetch: AuthedFetch): Promise<Routine[]> {
+    return withMockFallback(
+      async () => {
+        const res = await authedFetch('/api/routines');
+        if (!res.ok) throw new AuthError(await readJsonError(res), res.status);
+        return res.json();
+      },
+      () => mockStoreStore.listRoutines(),
+    );
+  },
+
+  async createRoutine(
+    authedFetch: AuthedFetch,
+    input: { name: string; prompt: string; schedule: RoutineSchedule; enabled: boolean },
+  ): Promise<Routine> {
+    return withMockFallback(
+      async () => {
+        const res = await authedFetch('/api/routines', { method: 'POST', body: JSON.stringify(input) });
+        if (!res.ok) throw new AuthError(await readJsonError(res), res.status);
+        return res.json();
+      },
+      () => mockStoreStore.createRoutine(input),
+    );
+  },
+
+  async updateRoutine(
+    authedFetch: AuthedFetch,
+    id: string,
+    patch: Partial<{ name: string; prompt: string; schedule: RoutineSchedule; enabled: boolean }>,
+  ): Promise<void> {
+    return withMockFallback(
+      async () => {
+        const res = await authedFetch(`/api/routines/${encodeURIComponent(id)}`, {
+          method: 'PUT',
+          body: JSON.stringify(patch),
+        });
+        if (!res.ok && res.status !== 204) throw new AuthError(await readJsonError(res), res.status);
+      },
+      async () => {
+        await mockStoreStore.updateRoutine(id, patch);
+      },
+    );
+  },
+
+  async deleteRoutine(authedFetch: AuthedFetch, id: string): Promise<void> {
+    return withMockFallback(
+      async () => {
+        const res = await authedFetch(`/api/routines/${encodeURIComponent(id)}`, { method: 'DELETE' });
+        if (!res.ok && res.status !== 204) throw new AuthError(await readJsonError(res), res.status);
+      },
+      () => mockStoreStore.deleteRoutine(id),
+    );
+  },
+};
+
+// ---- /api/memories client — per-user memory system (roadmap sub-project
+// #3, worker memory/routes.ts). Anon-friendly on the worker side (the
+// signed anon cookie rides `credentials: 'include'` in authedFetch), so no
+// login gate here; `withMockFallback` keeps the /memory page demoable with
+// zero backend via the in-memory mock store.
+export const memoryApi = {
+  async list(authedFetch: AuthedFetch): Promise<UserMemory[]> {
+    return withMockFallback(
+      async () => {
+        const res = await authedFetch('/api/memories');
+        if (!res.ok) throw new AuthError(await readJsonError(res), res.status);
+        return res.json();
+      },
+      () => mockMemoryStore.list(),
+    );
+  },
+
+  async get(authedFetch: AuthedFetch, id: string): Promise<UserMemoryDetail> {
+    return withMockFallback(
+      async () => {
+        const res = await authedFetch(`/api/memories/${encodeURIComponent(id)}`);
+        if (!res.ok) throw new AuthError(await readJsonError(res), res.status);
+        return res.json();
+      },
+      () => mockMemoryStore.get(id),
+    );
+  },
+
+  async create(authedFetch: AuthedFetch, input: { title: string; contentMd: string }): Promise<UserMemory> {
+    return withMockFallback(
+      async () => {
+        const res = await authedFetch('/api/memories', { method: 'POST', body: JSON.stringify(input) });
+        if (!res.ok) throw new AuthError(await readJsonError(res), res.status);
+        return res.json();
+      },
+      () => mockMemoryStore.create(input),
+    );
+  },
+
+  async update(authedFetch: AuthedFetch, id: string, patch: { title?: string; contentMd?: string }): Promise<UserMemory> {
+    return withMockFallback(
+      async () => {
+        const res = await authedFetch(`/api/memories/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(patch) });
+        if (!res.ok) throw new AuthError(await readJsonError(res), res.status);
+        return res.json();
+      },
+      () => mockMemoryStore.update(id, patch),
+    );
+  },
+
+  async remove(authedFetch: AuthedFetch, id: string): Promise<void> {
+    return withMockFallback(
+      async () => {
+        const res = await authedFetch(`/api/memories/${encodeURIComponent(id)}`, { method: 'DELETE' });
+        if (!res.ok && res.status !== 204) throw new AuthError(await readJsonError(res), res.status);
+      },
+      () => mockMemoryStore.remove(id),
     );
   },
 };

@@ -10,9 +10,65 @@
   initial-value: 0deg;
 }
 
+/* ---- Theme tokens — dark/light mode slice ----
+   `--color-*` are raw "R G B" channel triples (no commas) so Tailwind's
+   `rgb(var(--x) / <alpha-value>)` pattern can layer opacity modifiers
+   (bg-surface/60, text-ink/70, …) on top, same as every other color in
+   tailwind.config. Accent is intentionally NOT themed — spec: "accent stays
+   the single accent" — so it's a plain custom property, not a channel triple.
+   `--mesh-*` feed Background.tsx's canvas gradient (imported via
+   getComputedStyle rather than duplicated there). */
 :root {
   color-scheme: dark;
   --accent: #5b8cff;
+
+  --color-void: 5 5 6;
+  --color-surface: 28 28 30;
+  --color-surface-raised: 36 36 38;
+  --color-surface-sunken: 20 20 22;
+  /* Foreground "ink" scale. `white` itself is remapped to this in
+     tailwind.config, so every existing text-white/*, border-white/*,
+     bg-white/* opacity tier app-wide reads off it automatically — white in
+     dark mode, near-black in light. NOT literal white; a handful of
+     deliberately-white surfaces (logo backing tiles, toggle knobs, text on
+     the constant accent chip) use the separate static `paper` token. */
+  --color-ink: 255 255 255;
+
+  /* Matches Background.tsx's canvas base gradient stops (MESH_COLORS[0] /
+     #050506) exactly, so the pre-canvas CSS gradient and the canvas that
+     fades in over it read as one continuous dark palette, not two
+     mismatched patches. */
+  --mesh-top: #0b0f2e;
+  --mesh-bottom: #050506;
+}
+
+[data-theme='light'] {
+  color-scheme: light;
+
+  --color-void: 246 247 250;
+  --color-surface: 255 255 255;
+  --color-surface-raised: 255 255 255;
+  --color-surface-sunken: 240 241 246;
+  --color-ink: 12 14 22;
+
+  --mesh-top: #eef1fb;
+  --mesh-bottom: #dbe1f5;
+}
+
+/* Pre-JS fallback only — theme.ts sets `data-theme` synchronously on
+   import (before React ever paints), so this rule is purely a safety net
+   for the sliver of time before the module executes on a slow connection. */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) {
+    color-scheme: light;
+    --color-void: 246 247 250;
+    --color-surface: 255 255 255;
+    --color-surface-raised: 255 255 255;
+    --color-surface-sunken: 240 241 246;
+    --color-ink: 12 14 22;
+    --mesh-top: #eef1fb;
+    --mesh-bottom: #dbe1f5;
+  }
 }
 
 html,
@@ -22,7 +78,8 @@ body,
 }
 
 body {
-  background: radial-gradient(ellipse 80% 60% at 50% -10%, #16182a 0%, #000 55%) fixed;
+  background: radial-gradient(ellipse 80% 60% at 50% -10%, var(--mesh-top) 0%, var(--mesh-bottom) 55%) fixed;
+  transition: background-color 0.3s ease;
 }
 
 /* ---- Electron Spotlight overlay (desktop/main.js loads /spotlight) ---- */
@@ -164,19 +221,25 @@ html.spotlight-shell canvas {
 }
 
 /* ---- Command bar glass pill ---- */
+/* Themed via the same --color-surface/--color-ink tokens as the Tailwind
+   `surface`/`ink` utilities (index.css §Theme tokens) — this is raw CSS
+   (not a Tailwind class) so it needs its own [data-theme] awareness rather
+   than getting it for free from the `white` remap in tailwind.config. */
 .bar-pill {
-  background: rgba(28, 28, 30, 0.72);
+  background: rgb(var(--color-surface) / 0.72);
   backdrop-filter: blur(34px) saturate(180%);
   -webkit-backdrop-filter: blur(34px) saturate(180%);
   border-radius: 9999px;
   /* A plain semi-transparent border follows the pill radius. (border-image
      ignores border-radius and rendered a rectangle — the "weird line".) The
      asymmetric brighter-on-top look comes from the inset highlight below. */
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16);
+  border: 1px solid rgb(var(--color-ink) / 0.1);
+  box-shadow: inset 0 1px 0 rgb(var(--color-ink) / 0.16);
   transition:
     transform 0.25s cubic-bezier(0.22, 1, 0.36, 1),
-    box-shadow 0.25s ease;
+    box-shadow 0.25s ease,
+    background-color 0.3s ease,
+    border-color 0.3s ease;
 }
 
 .bar-pill.is-dragover {
@@ -221,7 +284,7 @@ html.spotlight-shell canvas {
 }
 
 .ghost-text {
-  color: rgba(255, 255, 255, 0.28);
+  color: rgb(var(--color-ink) / 0.28);
   pointer-events: none;
 }
 

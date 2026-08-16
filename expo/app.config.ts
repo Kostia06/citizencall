@@ -22,6 +22,11 @@ const config: ExpoConfig = {
   ios: {
     supportsTablet: true,
     bundleIdentifier: 'dev.understudy.app',
+    infoPlist: {
+      // expo-audio ships no config plugin (no Info.plist auto-injection),
+      // unlike expo-secure-store/expo-web-browser above — set manually.
+      NSMicrophoneUsageDescription: 'Understudy uses the microphone to transcribe voice commands into the command bar.',
+    },
   },
   android: {
     package: 'dev.understudy.app',
@@ -32,6 +37,7 @@ const config: ExpoConfig = {
       monochromeImage: './assets/android-icon-monochrome.png',
     },
     predictiveBackGestureEnabled: false,
+    permissions: ['RECORD_AUDIO'],
   },
   web: {
     favicon: './assets/favicon.png',

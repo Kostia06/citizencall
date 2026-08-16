@@ -3,6 +3,10 @@ export interface UserPrefs {
   keybindings: Record<string, string>;
   buttons: Array<{ id: string; action: string; icon?: string; label?: string }>;
   contextPrompt: string;
+  /** Next-action ghost suggestions in the command bar (Settings toggle). */
+  suggestions: boolean;
+  /** UI theme; absent = follow prefers-color-scheme (UI-side default dark). */
+  theme?: 'dark' | 'light';
 }
 
 export const DEFAULT_PREFS: UserPrefs = {
@@ -15,9 +19,13 @@ export const DEFAULT_PREFS: UserPrefs = {
     { id: 'user', action: 'toggle:user' },
   ],
   contextPrompt: '',
+  suggestions: true,
 };
 
-const ALLOWED_KEYS = new Set(['version', 'keybindings', 'buttons', 'contextPrompt']);
+// The UI's Save sends the FULL draft, so every field the UI can hold must be
+// allowed here — an unknown key 400s the whole PUT (found in review: the
+// suggestions toggle and theme choice silently failed to persist live).
+const ALLOWED_KEYS = new Set(['version', 'keybindings', 'buttons', 'contextPrompt', 'suggestions', 'theme']);
 
 export function validatePrefsPatch(patch: unknown): { ok: true; value: Partial<UserPrefs> } | { ok: false; reason: string } {
   if (typeof patch !== 'object' || patch === null) return { ok: false, reason: 'Body must be an object.' };
@@ -26,6 +34,8 @@ export function validatePrefsPatch(patch: unknown): { ok: true; value: Partial<U
   if ('keybindings' in p && (typeof p.keybindings !== 'object' || p.keybindings === null)) return { ok: false, reason: 'keybindings must be an object.' };
   if ('buttons' in p && !Array.isArray(p.buttons)) return { ok: false, reason: 'buttons must be an array.' };
   if ('contextPrompt' in p && typeof p.contextPrompt !== 'string') return { ok: false, reason: 'contextPrompt must be a string.' };
+  if ('suggestions' in p && typeof p.suggestions !== 'boolean') return { ok: false, reason: 'suggestions must be a boolean.' };
+  if ('theme' in p && p.theme !== 'dark' && p.theme !== 'light') return { ok: false, reason: "theme must be 'dark' or 'light'." };
   return { ok: true, value: p as Partial<UserPrefs> };
 }
 
@@ -36,5 +46,7 @@ export function mergePrefs(base: UserPrefs, patch: Partial<UserPrefs>): UserPref
     keybindings: { ...base.keybindings, ...(patch.keybindings ?? {}) },
     buttons: patch.buttons ?? base.buttons,
     contextPrompt: patch.contextPrompt ?? base.contextPrompt,
+    suggestions: patch.suggestions ?? base.suggestions ?? true,
+    ...(patch.theme ?? base.theme ? { theme: patch.theme ?? base.theme } : {}),
   };
 }

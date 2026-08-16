@@ -1,6 +1,10 @@
 // Stage 1 — decompose. Turns normalized text into a Plan of SubTasks with a real
-// routed model call, checking the L3 plan cache first (SPEC.md §8: exact match on
-// normalized text, global, plan-only — never stores tool or model output).
+// routed model call, checking the L3 plan cache first (SPEC.md §8: global,
+// plan-only — never stores tool or model output). L3 is two-tier: exact match
+// on the normalized key (fast path, unchanged), then on exact miss a bounded
+// semantic near-match over recent plan-cache rows (cache/planSemantic.ts) —
+// the SPEC.md §8 "semantic L3" future work, done lexically since this stack
+// has no embedding provider.
 //
 // The planner runs on the frontier baseline: planning is a single small-output
 // call where correctness matters most, and it's amortized by the L3 cache — a
@@ -13,7 +17,8 @@
 // the worker still produces a usable plan deterministically.
 import { z } from 'zod';
 import type { Env } from '../env';
-import { getPlan, putPlan } from '../cache/plan';
+import { getPlan, normalizePlanKey } from '../cache/plan';
+import { findNearPlan, putPlanIndexed } from '../cache/planSemantic';
 import { callFeatherless } from '../providers/featherless';
 import type { Plan, Policy, SubTask, TaskKind } from '../types';
 
@@ -67,22 +72,82 @@ function systemPrompt(extraToolkits: string[]): string {
   ].join(' ');
 }
 
+export interface DecomposeResult {
+  plan: Plan;
+  cacheHit: boolean;
+  // How the hit was found. Additive: run.ts only reads plan/cacheHit, and the
+  // wire `plan` event's cacheHit stays a boolean (types.ts is out of scope).
+  cacheKind?: 'exact' | 'semantic';
+}
+
+// Action verbs that, combined with a MENTIONED catalog toolkit, guarantee a
+// tool call even when the planner model shrugs — "post a discord update"
+// must pause on the discord connection deterministically, not only when GLM
+// happens to set needsTools (observed live: it often doesn't).
+const ACTION_VERB = /\b(send|post|message|announce|create|reply|update|upload|schedule|share|publish)\b/i;
+
 export async function decompose(
   env: Env,
   db: D1Database,
   policy: Policy,
   normalizedText: string,
-  extraToolkits: string[] = []
-): Promise<{ plan: Plan; cacheHit: boolean }> {
+  extraToolkits: string[] = [],
+  mentionedToolkits: string[] = []
+): Promise<DecomposeResult> {
   // A cached plan carries the sub-task ids of the run that minted it —
-  // sub_tasks.id is a global PK, so every run must re-key the plan (fresh ids,
-  // dependsOn remapped) before inserting its own rows.
+  // sub_tasks.id is a global PK, so EVERY cache hit (exact or semantic) must
+  // re-key the plan (fresh ids, dependsOn remapped) before inserting its rows.
   const cached = await getPlan(db, normalizedText);
-  if (cached) return { plan: rekeyPlan(cached), cacheHit: true };
+  if (cached) return { plan: rekeyPlan(cached), cacheHit: true, cacheKind: 'exact' };
 
-  const plan = (await modelPlan(env, policy, normalizedText, extraToolkits)) ?? heuristicPlan(normalizedText);
-  await putPlan(db, normalizedText, plan);
+  // The toolkit vocabulary is part of the key: a plan minted when the
+  // planner couldn't see "discord" (pre-mention-detection, or before the
+  // user enabled an MCP) must not exact-hit the same prompt once it can —
+  // found live: a stale cached plan skipped the discord tool call entirely,
+  // so the connection-required pause never fired.
+  const vocab = [...extraToolkits].sort().join(',');
+  const key = normalizePlanKey(normalizedText) + (vocab ? `|tk:${vocab}` : '');
+  const near = await findNearPlan(db, key);
+  if (near) {
+    // Promote the borrow to an exact row under the new key (provenance in
+    // borrowed_from), so the next identical prompt takes the fast path.
+    await putPlanIndexed(db, key, near.plan, near.matchedKey);
+    return { plan: rekeyPlan(near.plan), cacheHit: true, cacheKind: 'semantic' };
+  }
+
+  // FAST PATH — a short prompt with no tool signal doesn't deserve an
+  // 18-second frontier planning call ("say hi" measured 18.1s of planning
+  // for a 1-sub-task plan the heuristic produces identically in ~0ms).
+  // Anything tool-shaped (hint regexes, a mentioned/MCP toolkit name) still
+  // gets the real planner.
+  const plan = isTrivialPrompt(normalizedText, extraToolkits)
+    ? heuristicPlan(normalizedText)
+    : ((await modelPlan(env, policy, normalizedText, extraToolkits)) ?? heuristicPlan(normalizedText));
+  ensureMentionedToolCall(plan, normalizedText, mentionedToolkits);
+  await putPlanIndexed(db, key, plan);
   return { plan, cacheHit: false };
+}
+
+/** Deterministic floor under the planner model: an action-verb prompt that
+ * names a catalog toolkit ("post a discord update…") gets a tool call on its
+ * final sub-task even when the model left toolCall empty. Mentions only —
+ * MCP toolkits aren't forced (their presence isn't a mention). */
+function ensureMentionedToolCall(plan: Plan, text: string, mentionedToolkits: string[]): void {
+  if (mentionedToolkits.length === 0) return;
+  if (!ACTION_VERB.test(text)) return;
+  if (plan.subTasks.some((s) => s.toolCall)) return;
+  const last = plan.subTasks[plan.subTasks.length - 1];
+  const toolkit = mentionedToolkits[0];
+  if (!last || !toolkit) return;
+  last.needsTools = true;
+  last.toolCall = { toolkit, tool: 'call', args: {} };
+}
+
+function isTrivialPrompt(text: string, extraToolkits: string[]): boolean {
+  if (text.length >= 140) return false;
+  if (TOOL_HINTS.some((h) => h.pattern.test(text))) return false;
+  const lower = text.toLowerCase();
+  return !extraToolkits.some((t) => lower.includes(t.toLowerCase()));
 }
 
 // Returns null (not throws) on any failure so the caller falls back to the
@@ -145,11 +210,15 @@ function buildSubTask(d: SubTaskDraft, idx: number, id: string, allowedToolkits:
 }
 
 function resolveTool(instruction: string, toolkitHint: string | null) {
+  // The model's own toolkit pick wins over the text patterns — "send a
+  // discord message about the repo" must stay discord, not get hijacked to
+  // github because "repo" matched a hint regex. Patterns are the fallback
+  // for plans where the model flagged needsTools but named no toolkit.
+  // MCP/catalog toolkits have no per-tool catalog yet — 'call' is the single
+  // generic tool name the MCP transport (pipeline/mcp.ts) dispatches on.
+  if (toolkitHint) return DEFAULT_TOOL[toolkitHint] ?? { toolkit: toolkitHint, tool: 'call' };
   const byText = TOOL_HINTS.find((h) => h.pattern.test(instruction));
   if (byText) return { toolkit: byText.toolkit, tool: byText.tool };
-  // MCP toolkits have no per-tool catalog yet — 'call' is the single generic
-  // tool name the MCP transport (pipeline/mcp.ts) will dispatch on.
-  if (toolkitHint) return DEFAULT_TOOL[toolkitHint] ?? { toolkit: toolkitHint, tool: 'call' };
   return undefined;
 }
 

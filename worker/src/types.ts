@@ -81,7 +81,7 @@ export type TraceEvent =
   | { t: 'run_start'; runId: string; userId: string; text: string; source: 'text' | 'voice' }
   | { t: 'transcript'; raw: string; final: boolean } // ← S2T
   | { t: 'normalized'; from: string; to: string; ms: number; modelId: string }
-  | { t: 'plan'; plan: Plan; cacheHit: boolean; ms: number }
+  | { t: 'plan'; plan: Plan; cacheHit: boolean; cacheKind?: 'exact' | 'semantic'; ms: number }
   | { t: 'route'; decision: RouteDecision }
   | { t: 'hop_start'; hop: Pick<Hop, 'id' | 'subTaskId' | 'modelId' | 'paramsB'> }
   | { t: 'hop_end'; hop: Hop }
@@ -89,6 +89,16 @@ export type TraceEvent =
   | { t: 'escalate'; from: string; to: string; reason: Verdict }
   | { t: 'cache_hit'; runId: string; cachedAt: number; ageMs: number }
   | { t: 'tool_skipped'; toolkit: string; tool: string; reason: string }
+  // The final sub-task's model output — the user-visible reply bubble.
+  | { t: 'answer'; subTaskId: string; text: string }
+  // Agent auto-wrote a user memory after this run (memory/*, memory-hook.ts).
+  // Emitted before run_end (the stream closes on run_end) and never recorded
+  // into the run cache, so replays don't re-announce a stale save.
+  | { t: 'memory_saved'; memoryId: string; title: string }
+  // Connection-required pause: the run is waiting for the user to connect a
+  // toolkit (or skip). Status stays 'running'; run_resumed always follows.
+  | { t: 'connection_required'; toolkit: string; subTaskId: string }
+  | { t: 'run_resumed'; toolkit: string; skipped: boolean }
   | {
       t: 'run_end';
       runId: string;

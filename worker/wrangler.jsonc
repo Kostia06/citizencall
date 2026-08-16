@@ -7,10 +7,16 @@
   "compatibility_date": "2025-08-01",
   "compatibility_flags": ["nodejs_compat"],
   "observability": { "enabled": true },
+  "routes": [
+    { "pattern": "citizencall.dev", "custom_domain": true },
+    { "pattern": "www.citizencall.dev", "custom_domain": true }
+  ],
   "assets": {
     "directory": "../ui/dist",
     "not_found_handling": "single-page-application",
-    "run_worker_first": ["/api/*", "/oauth/*", "/auth/*"]
+    // "/__scheduled" keeps `wrangler dev --test-scheduled`'s cron-trigger
+    // endpoint reachable instead of being swallowed by the SPA fallback.
+    "run_worker_first": ["/api/*", "/oauth/*", "/auth/*", "/__scheduled"]
   },
   "durable_objects": {
     "bindings": [{ "name": "RUN", "class_name": "RunDO" }]
@@ -20,12 +26,15 @@
     {
       "binding": "DB",
       "database_name": "understudy",
-      "database_id": "REPLACE_WITH_D1_ID"
+      "database_id": "13718207-6221-42f4-a512-06f8aa5a4021"
     }
   ],
   "vars": {
     "DEMO_USERS": "demo_kos,demo_teammate",
-    "APP_URL": "http://localhost:5173"
-  }
+    "APP_URL": "https://citizencall.dev"
+  },
+  // Routine scheduler tick — the scheduled handler in src/index.ts sweeps
+  // due user_routines every 15 minutes (see src/routines/scheduler.ts).
+  "triggers": { "crons": ["*/15 * * * *"] }
   // Secrets (set via `wrangler secret put`): AUTH_JWT_SECRET, RESEND_API_KEY
 }

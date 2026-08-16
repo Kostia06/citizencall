@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { Reorder, useReducedMotion } from 'framer-motion';
 import { FIXED_BUTTON_ACTIONS } from '../../store/types';
-import type { Connection, FixedButtonAction, UserPrefsButton } from '../../store/types';
+import type { Connection, FixedButtonAction, Routine, UserPrefsButton } from '../../store/types';
 import { APPS } from '../../store/apps';
 import type { ToolkitApp } from '../../store/apps';
 
@@ -13,6 +13,12 @@ import type { ToolkitApp } from '../../store/apps';
 const TOOLKIT_PREFIX = 'toolkit:';
 const toolkitAction = (slug: string) => `${TOOLKIT_PREFIX}${slug}`;
 const toolkitSlug = (action: string) => (action.startsWith(TOOLKIT_PREFIX) ? action.slice(TOOLKIT_PREFIX.length) : null);
+
+// Same encoding trick, for a routine (RoutinesPanel.tsx) — Orbs.tsx resolves
+// this the same way at render time.
+const ROUTINE_PREFIX = 'routine:';
+const routineAction = (id: string) => `${ROUTINE_PREFIX}${id}`;
+const routineId = (action: string) => (action.startsWith(ROUTINE_PREFIX) ? action.slice(ROUTINE_PREFIX.length) : null);
 
 const SLOT_LABELS: Record<string, string> = {
   github: 'GitHub orb',
@@ -70,16 +76,19 @@ function ToolkitIcon({ app, className = 'h-4 w-4' }: { app: ToolkitApp; classNam
       aria-hidden
       loading="lazy"
       onError={() => setFailed(true)}
-      className={`rounded-sm bg-white/95 object-contain p-0.5 ${className}`}
+      // Deliberately literal white backing (not the themed `ink` scale) —
+      // toolkit PNGs assume a white tile regardless of app theme.
+      className={`rounded-sm bg-paper object-contain p-0.5 ${className}`}
     />
   );
 }
 
-/** Resolves any action string (fixed or `toolkit:<slug>`) to a display icon
- * + name, shared by the mockup orbs and both action-picker grids. Falls back
- * to the full catalog (not just currently-connected apps) so a
- * since-disconnected toolkit still renders sensibly instead of a bare `?`. */
-function resolveActionMeta(action: string, iconClassName = 'h-4 w-4'): { icon: ReactNode; name: string } {
+/** Resolves any action string (fixed, `toolkit:<slug>`, or `routine:<id>`)
+ * to a display icon + name, shared by the mockup orbs and every
+ * action-picker grid. Toolkit lookup falls back to the full catalog (not
+ * just currently-connected apps) so a since-disconnected toolkit still
+ * renders sensibly instead of a bare `?`. */
+function resolveActionMeta(action: string, routines: Routine[], iconClassName = 'h-4 w-4'): { icon: ReactNode; name: string } {
   const fixed = ACTION_META[action as FixedButtonAction];
   if (fixed) return fixed;
   const slug = toolkitSlug(action);
@@ -88,24 +97,31 @@ function resolveActionMeta(action: string, iconClassName = 'h-4 w-4'): { icon: R
     if (app) return { icon: <ToolkitIcon app={app} className={iconClassName} />, name: app.name };
     return { icon: <span className="text-[13px] leading-none">⬡</span>, name: slug };
   }
-  return { icon: <span className="text-[10px] text-white/30">?</span>, name: action };
+  const rid = routineId(action);
+  if (rid) {
+    const routine = routines.find((r) => r.id === rid);
+    return { icon: <span className="text-[15px] leading-none">⟳</span>, name: routine?.name ?? 'Routine' };
+  }
+  return { icon: <span className="text-[10px] text-ink/30">?</span>, name: action };
 }
 
 const orbBase =
-  'relative flex h-11 w-11 shrink-0 items-center justify-center rounded-full border text-white/70 outline-none transition-colors duration-200';
+  'relative flex h-11 w-11 shrink-0 items-center justify-center rounded-full border text-ink/70 outline-none transition-colors duration-200';
 
 function MockOrb({
   button,
   selected,
   reduceMotion,
+  routines,
   onSelect,
 }: {
   button: UserPrefsButton;
   selected: boolean;
   reduceMotion: boolean;
+  routines: Routine[];
   onSelect(): void;
 }) {
-  const meta = resolveActionMeta(button.action, 'h-5 w-5');
+  const meta = resolveActionMeta(button.action, routines, 'h-5 w-5');
   return (
     <Reorder.Item
       as="div"
@@ -123,7 +139,7 @@ function MockOrb({
         className={`${orbBase} ${
           selected
             ? 'border-accent/70 bg-accent/15 shadow-glow-accent'
-            : 'border-white/10 bg-white/[0.04] hover:-translate-y-0.5 hover:bg-white/[0.08]'
+            : 'border-ink/10 bg-ink/[0.04] hover:-translate-y-0.5 hover:bg-ink/[0.08]'
         }`}
       >
         {meta.icon}
@@ -146,6 +162,7 @@ export default function ButtonEditor({
   buttons,
   onChange,
   connections = [],
+  routines = [],
 }: {
   buttons: UserPrefsButton[];
   onChange(next: UserPrefsButton[]): void;
@@ -154,6 +171,9 @@ export default function ButtonEditor({
    * point at any connected app, not just the fixed list. Empty/anonymous
    * degrades gracefully to the fixed actions only. */
   connections?: Connection[];
+  /** The user's routines (RoutinesPanel, same page) — offered as a third
+   * bindable-action group so a bar button can trigger one directly. */
+  routines?: Routine[];
 }) {
   const reduceMotion = !!useReducedMotion();
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -182,8 +202,8 @@ export default function ButtonEditor({
   return (
     <div className="flex flex-col gap-5">
       {/* The mockup — a miniature echo of the real bar pill + orbs. */}
-      <div className="flex items-center gap-4 rounded-full border border-white/10 bg-white/[0.03] px-5 py-3 shadow-lift backdrop-blur-soft">
-        <span className="min-w-0 flex-1 truncate text-[13px] text-white/25">Ask anything…</span>
+      <div className="flex items-center gap-4 rounded-full border border-ink/10 bg-ink/[0.03] px-5 py-3 shadow-lift backdrop-blur-soft">
+        <span className="min-w-0 flex-1 truncate text-[13px] text-ink/25">Ask anything…</span>
         <Reorder.Group
           as="div"
           axis="x"
@@ -197,12 +217,13 @@ export default function ButtonEditor({
               button={button}
               selected={button.id === selectedId}
               reduceMotion={reduceMotion}
+              routines={routines}
               onSelect={() => setSelectedId((id) => (id === button.id ? null : button.id))}
             />
           ))}
         </Reorder.Group>
       </div>
-      <p className="-mt-2 text-center text-[11px] text-white/25">
+      <p className="-mt-2 text-center text-[11px] text-ink/25">
         {reduceMotion ? 'Select an orb, then use the move controls to place it.' : 'Drag an orb to reorder, or click one to change its action.'}
       </p>
 
@@ -210,7 +231,7 @@ export default function ButtonEditor({
       {selected && (
         <div className="animate-chip-pop rounded-xl border border-accent/30 bg-surface-sunken/60 p-4">
           <div className="flex items-center justify-between gap-3">
-            <span className="text-[12.5px] font-medium text-white/70">
+            <span className="text-[12.5px] font-medium text-ink/70">
               {SLOT_LABELS[selected.id] ?? selected.id} — position {selectedIndex + 1} of {buttons.length}
             </span>
             <div className="flex items-center gap-1.5">
@@ -219,7 +240,7 @@ export default function ButtonEditor({
                 onClick={() => move(-1)}
                 disabled={selectedIndex <= 0}
                 aria-label={`Move ${SLOT_LABELS[selected.id] ?? selected.id} left`}
-                className="flex h-7 w-7 items-center justify-center rounded-lg border border-white/10 text-[12px] text-white/50 transition-colors hover:border-accent/40 hover:text-white/80 disabled:opacity-25 disabled:hover:border-white/10 disabled:hover:text-white/50"
+                className="flex h-7 w-7 items-center justify-center rounded-lg border border-ink/10 text-[12px] text-ink/50 transition-colors hover:border-accent/40 hover:text-ink/80 disabled:opacity-25 disabled:hover:border-ink/10 disabled:hover:text-ink/50"
               >
                 ←
               </button>
@@ -228,14 +249,14 @@ export default function ButtonEditor({
                 onClick={() => move(1)}
                 disabled={selectedIndex < 0 || selectedIndex >= buttons.length - 1}
                 aria-label={`Move ${SLOT_LABELS[selected.id] ?? selected.id} right`}
-                className="flex h-7 w-7 items-center justify-center rounded-lg border border-white/10 text-[12px] text-white/50 transition-colors hover:border-accent/40 hover:text-white/80 disabled:opacity-25 disabled:hover:border-white/10 disabled:hover:text-white/50"
+                className="flex h-7 w-7 items-center justify-center rounded-lg border border-ink/10 text-[12px] text-ink/50 transition-colors hover:border-accent/40 hover:text-ink/80 disabled:opacity-25 disabled:hover:border-ink/10 disabled:hover:text-ink/50"
               >
                 →
               </button>
             </div>
           </div>
 
-          <p className="mt-3 text-[10.5px] uppercase tracking-wide text-white/30">Actions</p>
+          <p className="mt-3 text-[10.5px] uppercase tracking-wide text-ink/30">Actions</p>
           <div className="mt-1.5 grid grid-cols-4 gap-2 sm:grid-cols-7">
             {FIXED_BUTTON_ACTIONS.map((action) => {
               const meta = ACTION_META[action];
@@ -249,8 +270,8 @@ export default function ButtonEditor({
                   title={meta.name}
                   className={`flex flex-col items-center gap-1.5 rounded-lg border px-2 py-2.5 text-[10.5px] transition-colors ${
                     active
-                      ? 'border-accent/70 bg-accent/15 text-white shadow-glow-accent'
-                      : 'border-white/10 bg-white/[0.02] text-white/50 hover:border-white/25 hover:text-white/80'
+                      ? 'border-accent/70 bg-accent/15 text-paper shadow-glow-accent'
+                      : 'border-ink/10 bg-ink/[0.02] text-ink/50 hover:border-ink/25 hover:text-ink/80'
                   }`}
                 >
                   <span className="flex h-6 w-6 items-center justify-center">{meta.icon}</span>
@@ -262,7 +283,7 @@ export default function ButtonEditor({
 
           {connectedApps.length > 0 && (
             <>
-              <p className="mt-3 text-[10.5px] uppercase tracking-wide text-white/30">Connected apps</p>
+              <p className="mt-3 text-[10.5px] uppercase tracking-wide text-ink/30">Connected apps</p>
               <div className="mt-1.5 grid grid-cols-4 gap-2 sm:grid-cols-7">
                 {connectedApps.map((app) => {
                   const action = toolkitAction(app.slug);
@@ -276,8 +297,8 @@ export default function ButtonEditor({
                       title={app.name}
                       className={`flex flex-col items-center gap-1.5 rounded-lg border px-2 py-2.5 text-[10.5px] transition-colors ${
                         active
-                          ? 'border-accent/70 bg-accent/15 text-white shadow-glow-accent'
-                          : 'border-white/10 bg-white/[0.02] text-white/50 hover:border-white/25 hover:text-white/80'
+                          ? 'border-accent/70 bg-accent/15 text-paper shadow-glow-accent'
+                          : 'border-ink/10 bg-ink/[0.02] text-ink/50 hover:border-ink/25 hover:text-ink/80'
                       }`}
                     >
                       <span className="flex h-6 w-6 items-center justify-center">
@@ -291,13 +312,42 @@ export default function ButtonEditor({
             </>
           )}
 
+          {routines.length > 0 && (
+            <>
+              <p className="mt-3 text-[10.5px] uppercase tracking-wide text-ink/30">Routines</p>
+              <div className="mt-1.5 grid grid-cols-4 gap-2 sm:grid-cols-7">
+                {routines.map((routine) => {
+                  const action = routineAction(routine.id);
+                  const active = selected.action === action;
+                  return (
+                    <button
+                      key={routine.id}
+                      type="button"
+                      aria-pressed={active}
+                      onClick={() => update(selected.id, { action })}
+                      title={routine.name}
+                      className={`flex flex-col items-center gap-1.5 rounded-lg border px-2 py-2.5 text-[10.5px] transition-colors ${
+                        active
+                          ? 'border-accent/70 bg-accent/15 text-paper shadow-glow-accent'
+                          : 'border-ink/10 bg-ink/[0.02] text-ink/50 hover:border-ink/25 hover:text-ink/80'
+                      }`}
+                    >
+                      <span className="flex h-6 w-6 items-center justify-center text-[15px] leading-none">⟳</span>
+                      <span className="truncate">{routine.name}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </>
+          )}
+
           <input
             type="text"
             value={selected.label ?? ''}
             onChange={(e) => update(selected.id, { label: e.target.value })}
             placeholder="Label (optional)"
             aria-label={`Label for ${SLOT_LABELS[selected.id] ?? selected.id}`}
-            className="mt-3 w-full rounded-lg border border-white/10 bg-surface-sunken px-3 py-1.5 text-[13px] text-white outline-none transition-colors placeholder:text-white/25 focus:border-accent/60"
+            className="mt-3 w-full rounded-lg border border-ink/10 bg-surface-sunken px-3 py-1.5 text-[13px] text-ink outline-none transition-colors placeholder:text-ink/25 focus:border-accent/60"
           />
         </div>
       )}

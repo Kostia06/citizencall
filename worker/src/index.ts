@@ -4,20 +4,22 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import type { Env } from './env';
-import { getRoster, getRun } from './db';
+import { getRun } from './db';
+import { buildBenchmarkReport, buildRosterReport } from './reporting';
 import { createConnectionLink, verifyState } from './providers/composio';
 import { getToolkitCatalog } from './providers/composio-catalog';
 import { AuthConfigUnavailableError, resolveAuthConfigId } from './providers/composio-auth-configs';
 import { MAX_AUDIO_BYTES, SttUpstreamError, transcribeAudio } from './providers/elevenlabs';
-import { policy } from './policy';
 import { authRoutes } from './auth/routes';
 import type { AuthVars } from './auth/middleware';
 import { resolveActor } from './auth/anon';
 import { storeRoutes } from './store/routes';
+import { memoryRoutes } from './memory/routes';
+import { routineRoutes } from './routines/routes';
+import { scheduled } from './routines/scheduler';
 import { upsertConnection } from './store/connections';
 import { checkAndIncrement } from './auth/throttle';
 import { suggestNextAction } from './pipeline/suggest';
-import resultsFixture from '../../artifacts/results.example.json';
 import funnelFixture from '../../artifacts/funnel.example.json';
 
 export { RunDO } from './run.do';
@@ -31,6 +33,9 @@ app.route('/auth', authRoutes);
 // and cannot shadow the non-auth /api/* routes registered below
 // (/api/run, /api/roster, /api/benchmark, /api/funnel, /api/connect).
 app.route('/api', storeRoutes);
+app.route('/api', memoryRoutes); // /api/memories* — per-route resolveActor, cannot shadow the routes below
+// Routine CRUD + manual trigger — resolveActor-scoped, claims only /api/routines*.
+app.route('/api', routineRoutes);
 
 const runRequestSchema = z.object({
   // Legacy display field — actor identity comes from resolveActor below, so
@@ -67,6 +72,15 @@ app.post('/api/run', async (c) => {
   return c.json({ runId });
 });
 
+// Resume a connection-required pause: {action:'retry'|'skip'} forwarded to
+// the run's DO (same idFromName routing as /start). Like /api/run/:id, the
+// unguessable runId is the capability — no additional auth requirement.
+app.post('/api/run/:id/resume', async (c) => {
+  const body = await c.req.text();
+  const stub = c.env.RUN.get(c.env.RUN.idFromName(c.req.param('id')));
+  return stub.fetch('https://run.do/resume', { method: 'POST', body });
+});
+
 app.get('/api/run/:id/stream', async (c) => {
   const stub = c.env.RUN.get(c.env.RUN.idFromName(c.req.param('id')));
   const headers = new Headers();
@@ -83,15 +97,14 @@ app.get('/api/run/:id', async (c) => {
   return c.json(run);
 });
 
-app.get('/api/roster', async (c) => {
-  const roster = await getRoster(c.env.DB);
-  return c.json({ roster, policyVersion: policy.version });
-});
+// Live report: policy ladders + alternates + real catalog prices merged with
+// aggregate run/hop stats from D1 (zeros when no runs yet) — reporting.ts.
+app.get('/api/roster', async (c) => c.json(await buildRosterReport(c.env.DB)));
 
-// results.json / funnel.json are harness artifacts (SPEC.md §3). Falling
-// back to the committed example fixtures keeps these routes live before the
-// harness has produced real ones — same pattern as policy.ts.
-app.get('/api/benchmark', (c) => c.json(resultsFixture));
+// funnel.json is a harness artifact (SPEC.md §3). Falling back to the
+// committed example fixture keeps the route live before the harness has
+// produced a real one — same pattern as policy.ts.
+app.get('/api/benchmark', async (c) => c.json(await buildBenchmarkReport(c.env.DB)));
 app.get('/api/funnel', (c) => c.json(funnelFixture));
 
 const suggestRequestSchema = z.object({ context: z.array(z.string()).max(50) });
@@ -243,4 +256,7 @@ app.get('/oauth/done', async (c) => {
   return c.redirect(`/settings?${params.toString()}`, 302);
 });
 
-export default app;
+// The default export stays the Hono app (tests rely on app.request), with
+// the cron `scheduled` handler attached so the module-worker runtime finds
+// both default.fetch and default.scheduled on the same object.
+export default Object.assign(app, { scheduled });

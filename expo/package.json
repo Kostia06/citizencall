@@ -5,6 +5,8 @@
   "dependencies": {
     "@shopify/flash-list": "2.0.2",
     "expo": "~57.0.13",
+    "expo-audio": "^57.0.3",
+    "expo-blur": "^57.0.2",
     "expo-constants": "~57.0.11",
     "expo-font": "~57.0.1",
     "expo-haptics": "~57.0.1",
