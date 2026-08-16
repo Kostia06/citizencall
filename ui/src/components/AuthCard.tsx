@@ -1,5 +1,4 @@
 import type { ReactNode } from 'react';
-import { Link } from 'react-router-dom';
 import { motion, useReducedMotion } from 'framer-motion';
 import { entranceStandard, entranceStandardReduced } from '../lib/motion';
 
@@ -10,14 +9,6 @@ export default function AuthCard({ title, subtitle, children }: { title: string;
   const reduceMotion = !!useReducedMotion();
   return (
     <div className="relative flex min-h-screen w-full items-center justify-center px-6">
-      <div className="absolute inset-x-0 top-0 px-6 pt-6 text-[11px] text-white/30">
-        <div className="mx-auto flex max-w-md items-center justify-between">
-          <Link to="/" className="transition-colors hover:text-white/70">
-            home
-          </Link>
-        </div>
-      </div>
-
       <motion.div
         initial={reduceMotion ? { opacity: 0 } : { opacity: 0, scale: 0.955, filter: 'blur(6px)' }}
         animate={reduceMotion ? { opacity: 1 } : { opacity: 1, scale: 1, filter: 'blur(0px)' }}
